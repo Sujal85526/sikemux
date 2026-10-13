@@ -6,6 +6,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::protocol::{ChatEvent, ChatEventKind};
 
 /// Past this the oldest half of the file goes, so a chat that never ends
@@ -13,7 +15,7 @@ use crate::protocol::{ChatEvent, ChatEventKind};
 pub(crate) const MAX_HISTORY_BYTES: u64 = 256 * 1024 * 1024;
 
 /// An event a page can start from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Point {
     index: u64,
     offset: u64,
@@ -32,6 +34,19 @@ pub(crate) struct History {
     points: Vec<Point>,
 }
 
+/// A history file let go of whole, for a core that takes the chat over to
+/// go on writing.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HistoryState {
+    path: PathBuf,
+    bytes: u64,
+    max_bytes: u64,
+    first: u64,
+    next: u64,
+    points: Vec<Point>,
+}
+
 /// Events from before some index, and where the page before them starts.
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Page {
@@ -39,13 +54,21 @@ pub(crate) struct Page {
     pub older_before: Option<u64>,
 }
 
-/// Removes what an earlier core left, which no chat of this one reads.
-pub(crate) fn clear(dir: &Path) {
+/// Removes what an earlier core left, but for the files of chats `keep`
+/// names, which this core took over.
+pub(crate) fn clear(dir: &Path, keep: &[String]) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
-        let _ = fs::remove_file(entry.path());
+        let path = entry.path();
+        let kept = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| keep.iter().any(|name| name == stem));
+        if !kept {
+            let _ = fs::remove_file(path);
+        }
     }
 }
 
@@ -76,6 +99,49 @@ impl History {
             first: 0,
             next: 0,
             points: Vec::new(),
+        }
+    }
+
+    /// Lets go of the file without removing it.
+    pub(crate) fn release(mut self) -> HistoryState {
+        let file = self.file.take();
+        let state = HistoryState {
+            path: self.path.clone(),
+            bytes: if file.is_some() { self.bytes } else { 0 },
+            max_bytes: self.max_bytes,
+            first: self.first,
+            next: self.next,
+            points: std::mem::take(&mut self.points),
+        };
+        if file.is_none() {
+            let _ = fs::remove_file(&self.path);
+        }
+        state
+    }
+
+    /// Goes on writing a file an earlier core let go of.
+    pub(crate) fn reopen(state: HistoryState) -> Self {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&state.path)
+            .and_then(|mut file| file.seek(SeekFrom::Start(state.bytes)).map(|_| file))
+            .inspect_err(|error| {
+                eprintln!(
+                    "sikemux core: a chat's history at {} was not kept through the update: {error}",
+                    state.path.display()
+                )
+            })
+            .ok();
+        let kept = file.is_some();
+        Self {
+            path: state.path,
+            file,
+            bytes: if kept { state.bytes } else { 0 },
+            max_bytes: state.max_bytes,
+            first: state.first,
+            next: state.next,
+            points: if kept { state.points } else { Vec::new() },
         }
     }
 

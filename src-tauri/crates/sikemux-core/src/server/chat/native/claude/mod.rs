@@ -12,16 +12,17 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::task::JoinHandle;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::protocol::ChatLaunch;
 
-use super::process::{Process, Writer};
+use super::process::{Lines, Process, Reading, Released, Writer};
 use super::session::{Backend, Opened, Prompt, Sink};
 use control::Control;
-use reader::{Reader, Shared, Turn};
+use reader::{Reader, ReaderState, Shared, Turn};
 
 /// Where a session starts: a new one under a chosen id, or a saved one.
 enum Start<'a> {
@@ -33,14 +34,23 @@ enum Start<'a> {
 struct Running {
     process: Process,
     control: Control,
-    reader: JoinHandle<()>,
-    task_stops: tokio::sync::mpsc::UnboundedSender<String>,
+    reading: Reading<Reader>,
+    task_stops: mpsc::UnboundedSender<String>,
 }
 
-impl Drop for Running {
-    fn drop(&mut self) {
-        self.reader.abort();
-    }
+/// What a Claude chat hands a core that takes it over.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeState {
+    control: Vec<(String, Value)>,
+    shared: Shared,
+    reader: ReaderState,
+    launch: ChatLaunch,
+    session_id: String,
+    models: Vec<Value>,
+    model: String,
+    effort: String,
+    aliases: HashMap<String, String>,
 }
 
 pub(crate) struct Claude {
@@ -201,9 +211,8 @@ impl Claude {
             ("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS", "1"),
         ]
         .map(|(key, value)| (key.to_owned(), value.to_owned()));
-        let (process, writer, mut lines) = Process::spawn(launch, args, env)?;
+        let (process, writer, lines) = Process::spawn(launch, args, env)?;
         let control = Control::new(writer);
-        let (task_stops, mut stopped) = tokio::sync::mpsc::unbounded_channel::<String>();
         let mut reader = Reader::new(
             sink.clone(),
             control.clone(),
@@ -214,22 +223,11 @@ impl Claude {
         if let Some(model) = model {
             reader.note_model(model);
         }
-        let reading = tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    message = lines.next() => match message {
-                        Some(message) => reader.handle(message),
-                        None => break,
-                    },
-                    Some(task) = stopped.recv() => reader.task_stopped(&task),
-                }
-            }
-            reader.close();
-        });
+        let (reading, task_stops) = Reading::start(reader, lines);
         let running = Running {
             process,
             control: control.clone(),
-            reader: reading,
+            reading,
             task_stops,
         };
         let initialized = tokio::select! {
@@ -615,6 +613,74 @@ impl Backend for Claude {
 
     async fn closed(&self) -> String {
         self.running.process.ended().await
+    }
+
+    async fn release(self) -> Result<(Value, Released), String> {
+        let Self {
+            launch,
+            running,
+            shared: _,
+            session_id,
+            models,
+            model,
+            effort,
+            aliases,
+        } = self;
+        let Running {
+            process,
+            control,
+            reading,
+            task_stops: _,
+        } = running;
+        let (reader, lines) = reading.stop().await.ok_or("Claude stopped")?;
+        let (reader, shared) = reader.into_state();
+        let shared =
+            std::mem::take(&mut *shared.lock().map_err(|_| "Claude's state is unavailable")?);
+        let state = ClaudeState {
+            control: control.state(),
+            shared,
+            reader,
+            launch,
+            session_id,
+            models,
+            model,
+            effort,
+            aliases,
+        };
+        let state = serde_json::to_value(state).map_err(|error| error.to_string())?;
+        let released = process.release(lines).await?;
+        Ok((state, released))
+    }
+
+    fn adopt(
+        _launch: &ChatLaunch,
+        sink: Sink,
+        state: Value,
+        (process, writer, lines): (Process, Writer, Lines),
+        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
+    ) -> Result<Self, String> {
+        let state: ClaudeState =
+            serde_json::from_value(state).map_err(|error| error.to_string())?;
+        let control = Control::restored(writer, state.control);
+        let shared = Arc::new(Mutex::new(state.shared));
+        let reader = Reader::restored(sink, control.clone(), shared.clone(), state.reader);
+        reader.answer_again(asked);
+        let (reading, task_stops) = Reading::start(reader, lines);
+        Ok(Self {
+            launch: state.launch,
+            running: Running {
+                process,
+                control,
+                reading,
+                task_stops,
+            },
+            shared,
+            session_id: state.session_id,
+            models: state.models,
+            model: state.model,
+            effort: state.effort,
+            aliases: state.aliases,
+        })
     }
 }
 

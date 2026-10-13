@@ -14,7 +14,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::sync::oneshot;
 use url::Url;
 use uuid::Uuid;
 
@@ -23,16 +25,14 @@ use crate::protocol::ChatLaunch;
 
 use super::file_link;
 use super::json::text;
-use super::process::{Lines, Process};
-use super::rpc::{error_text, Incoming, Rpc, Sent, ANSWER_WAIT};
+use super::process::{Lines, Process, Reading, Reads, Released, Writer};
+use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
+use approvals::Question;
 use commands::Command;
 use config::{Mode, Models};
 use items::Follow;
 use state::{Effect, Session};
-
-/// How long a stop waits for Muse to take it.
-const INTERRUPT_WAIT: Duration = Duration::from_secs(5);
 
 /// How many subagent conversations a resumed history reads.
 const MAX_SUBAGENT_SESSIONS: usize = 64;
@@ -76,100 +76,118 @@ impl Driver {
                 Effect::WorkStarted if !self.sink.running() => self.sink.work_started(),
                 Effect::WorkStarted => {}
                 Effect::WorkEnded(stop_reason) => self.sink.work_ended(stop_reason),
-                Effect::Follow(follow) => {
-                    let driver = self.clone();
-                    tokio::spawn(async move { driver.follow(follow).await });
-                }
+                Effect::Follow(follow) => self.follow(follow),
             }
         }
     }
 
-    async fn follow(&self, follow: Follow) {
-        match follow {
-            Follow::Subagent(child) => {
-                if let Err(error) = self
-                    .rpc
-                    .request("view/subscribe", json!({ "sessionId": child }))
-                    .await
-                {
-                    eprintln!("sikemux core: Muse subagent {child} could not be followed: {error}");
-                }
-            }
-            Follow::ReadSubagent { child, result } => {
-                let read = self
-                    .rpc
-                    .request(
-                        "session/read",
-                        json!({ "sessionId": child, "excludeItems": false }),
-                    )
-                    .await
-                    .ok();
-                let said: Vec<Value> = read
-                    .as_ref()
-                    .and_then(|read| read["history"]["items"].as_array())
-                    .cloned()
-                    .unwrap_or_default();
-                let effects = if said.iter().any(|item| item["kind"] != "userMessage") {
-                    self.lock().told_subagent(&child, &said)
-                } else {
-                    result
-                        .map(|result| self.lock().subagent_said(&child, &result))
-                        .unwrap_or_default()
-                };
-                self.apply(effects);
-            }
+    /// Asks Muse for what an item needs, read once the answer comes.
+    fn follow(&self, follow: Follow) {
+        let (method, params, purpose) = match follow {
+            Follow::Subagent(child) => (
+                "view/subscribe",
+                json!({ "sessionId": child }),
+                json!({ "subscribe": child }),
+            ),
+            Follow::ReadSubagent { child, result } => (
+                "session/read",
+                json!({ "sessionId": child, "excludeItems": false }),
+                json!({ "readSubagent": { "child": child, "result": result } }),
+            ),
             Follow::Patch {
                 session,
                 call,
                 output_ref,
-            } => {
-                let read = self
-                    .rpc
-                    .request(
-                        "item/readOutput",
-                        json!({ "sessionId": session, "itemId": call, "outputRef": output_ref }),
-                    )
-                    .await;
-                let Ok(read) = read else {
-                    return;
-                };
-                let content = match read["encoding"].as_str() {
-                    Some("base64") => read["content"]
-                        .as_str()
-                        .and_then(|content| {
-                            base64::engine::general_purpose::STANDARD
-                                .decode(content)
-                                .ok()
-                        })
-                        .and_then(|bytes| String::from_utf8(bytes).ok()),
-                    _ => read["content"].as_str().map(str::to_owned),
-                };
-                let Some(content) = content else {
-                    return;
-                };
-                let cwd = self.lock().cwd.clone();
-                let blocks =
-                    items::patch_blocks(&content, &cwd, &|path| std::fs::read_to_string(path).ok());
-                if !blocks.is_empty() {
-                    self.sink.update(
-                        &session,
-                        json!({ "sessionUpdate": "tool_call_update", "toolCallId": call, "content": blocks }),
-                    );
-                }
+            } => (
+                "item/readOutput",
+                json!({ "sessionId": session, "itemId": call, "outputRef": output_ref }),
+                json!({ "patch": { "session": session, "call": call } }),
+            ),
+        };
+        if let Err(error) = self.rpc.send_for(method, params, purpose) {
+            eprintln!("sikemux core: Muse was not asked {method}: {error}");
+        }
+    }
+
+    /// The answer to a request sent with `purpose`.
+    fn purpose_answered(&self, purpose: Value, result: Result<Value, Value>) {
+        if let Some(child) = purpose["subscribe"].as_str() {
+            if let Err(error) = result {
+                eprintln!(
+                    "sikemux core: Muse subagent {child} could not be followed: {}",
+                    error_text(&error)
+                );
+            }
+        } else if let Some(read) = purpose.get("readSubagent") {
+            let child = read["child"].as_str().unwrap_or_default();
+            let said: Vec<Value> = result
+                .ok()
+                .and_then(|read| read["history"]["items"].as_array().cloned())
+                .unwrap_or_default();
+            let effects = if said.iter().any(|item| item["kind"] != "userMessage") {
+                self.lock().told_subagent(child, &said)
+            } else {
+                read["result"]
+                    .as_str()
+                    .map(|result| self.lock().subagent_said(child, result))
+                    .unwrap_or_default()
+            };
+            self.apply(effects);
+        } else if let Some(patch) = purpose.get("patch") {
+            if let Ok(read) = result {
+                let session = patch["session"].as_str().unwrap_or_default();
+                let call = patch["call"].as_str().unwrap_or_default();
+                self.show_patch(session, call, &read);
+            }
+        } else if let Some(turn_id) = purpose["interrupt"].as_str() {
+            if result.is_ok() {
+                let effects = self.lock().interrupted(turn_id);
+                self.apply(effects);
+            }
+        } else if let Some(steer) = purpose.get("steer") {
+            if result.is_ok() {
+                let paths: Vec<String> =
+                    serde_json::from_value(steer["paths"].clone()).unwrap_or_default();
+                self.sink
+                    .prompted(steer["text"].as_str().unwrap_or_default(), &paths);
             }
         }
     }
 
-    async fn interrupt(&self, turn_id: String) {
+    fn show_patch(&self, session: &str, call: &str, read: &Value) {
+        let content = match read["encoding"].as_str() {
+            Some("base64") => read["content"]
+                .as_str()
+                .and_then(|content| {
+                    base64::engine::general_purpose::STANDARD
+                        .decode(content)
+                        .ok()
+                })
+                .and_then(|bytes| String::from_utf8(bytes).ok()),
+            _ => read["content"].as_str().map(str::to_owned),
+        };
+        let Some(content) = content else {
+            return;
+        };
+        let cwd = self.lock().cwd.clone();
+        let blocks =
+            items::patch_blocks(&content, &cwd, &|path| std::fs::read_to_string(path).ok());
+        if !blocks.is_empty() {
+            self.sink.update(
+                        session,
+                        json!({ "sessionUpdate": "tool_call_update", "toolCallId": call, "content": blocks }),
+                    );
+        }
+    }
+
+    /// Asks Muse to stop the turn with this id.
+    fn interrupt(&self, turn_id: String) {
         let session_id = self.lock().session_id.clone();
-        let asked = self.rpc.request(
+        let _ = self.rpc.send_for(
             "turn/interrupt",
             json!({ "sessionId": session_id, "commandId": command_id(), "turnId": turn_id }),
+            json!({ "interrupt": turn_id }),
         );
-        if let Ok(Ok(_)) = tokio::time::timeout(INTERRUPT_WAIT, asked).await {
-            let effects = self.lock().interrupted(&turn_id);
-            self.apply(effects);
-        }
     }
 
     /// Puts one stage of an approval to the person, once.
@@ -182,17 +200,29 @@ impl Driver {
             return;
         }
         let wire_session = params["sessionId"].as_str().unwrap_or_default().to_owned();
+        let request = question.request.clone();
+        let Ok(question) = serde_json::to_value(&question) else {
+            return;
+        };
+        let reply = json!({ "session": wire_session, "question": question });
         let driver = self.clone();
         tokio::spawn(async move {
-            let chosen = driver.sink.ask(question.request.clone()).await;
-            if let Some(decision) =
-                question.decision(&wire_session, command_id(), chosen.as_deref())
-            {
-                if let Err(error) = driver.rpc.request("approval/decide", decision).await {
-                    eprintln!("sikemux core: Muse did not take an approval: {error}");
-                }
-            }
+            let chosen = driver.sink.ask(request, reply.clone()).await;
+            driver.decide(&reply, chosen).await;
         });
+    }
+
+    /// Tells Muse what the person chose for the approval `reply` holds.
+    async fn decide(&self, reply: &Value, chosen: Option<String>) {
+        let Ok(question) = serde_json::from_value::<Question>(reply["question"].clone()) else {
+            return;
+        };
+        let session = reply["session"].as_str().unwrap_or_default();
+        if let Some(decision) = question.decision(session, command_id(), chosen.as_deref()) {
+            if let Err(error) = self.rpc.request("approval/decide", decision).await {
+                eprintln!("sikemux core: Muse did not take an approval: {error}");
+            }
+        }
     }
 
     fn notification(&self, method: &str, params: &Value) {
@@ -229,24 +259,39 @@ impl Driver {
                 .refuse(id, &format!("Sikemux does not handle {method}")),
         }
     }
+}
 
-    /// Reads Muse's output until it closes.
-    fn read(self, mut lines: Lines) {
-        tokio::spawn(async move {
-            while let Some(message) = lines.next().await {
-                match self.rpc.read(message) {
-                    Some(Incoming::Notification { method, params }) => {
-                        self.notification(&method, &params)
-                    }
-                    Some(Incoming::Request { id, method, params }) => {
-                        self.request(id, &method, &params)
-                    }
-                    None => {}
-                }
-            }
-            self.rpc.close();
-        });
+impl Reads for Driver {
+    type Nudge = ();
+
+    fn message(&mut self, message: Value) {
+        match self.rpc.read(message) {
+            Some(Incoming::Notification { method, params }) => self.notification(&method, &params),
+            Some(Incoming::Request { id, method, params }) => self.request(id, &method, &params),
+            Some(Incoming::Answer { purpose, result }) => self.purpose_answered(purpose, result),
+            None => {}
+        }
     }
+
+    fn closed(&mut self) {
+        self.rpc.close();
+    }
+}
+
+/// What a Muse chat hands a core that takes it over.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MuseState {
+    rpc: RpcState,
+    session: Session,
+    session_tools: bool,
+    launch: ChatLaunch,
+    cwd: String,
+    models: Models,
+    model: String,
+    effort: Option<String>,
+    mode: Mode,
+    skills: Value,
 }
 
 /// Why starting failed, with the last thing Muse printed when it stopped.
@@ -262,6 +307,7 @@ fn start_error(process: &Process, error: String) -> String {
 struct Host {
     process: Process,
     driver: Driver,
+    reading: Reading<Driver>,
     /// Whether sessions can be given tool servers of their own.
     session_tools: bool,
 }
@@ -280,7 +326,7 @@ impl Host {
         let (process, writer, lines) = Process::spawn(&bare, args, Vec::<(String, String)>::new())?;
         let rpc = Rpc::versioned(writer);
         let driver = Driver { rpc, sink, session };
-        driver.clone().read(lines);
+        let (reading, _) = Reading::start(driver.clone(), lines);
         let initialized = driver
             .rpc
             .request(
@@ -305,6 +351,7 @@ impl Host {
         Ok(Self {
             process,
             driver,
+            reading,
             session_tools,
         })
     }
@@ -430,7 +477,7 @@ impl Muse {
         };
         let input = self.prompt_input(prompt)?;
         self.rpc()
-            .start(
+            .start_for(
                 "turn/steer",
                 json!({
                     "sessionId": self.session_id(),
@@ -438,6 +485,7 @@ impl Muse {
                     "expectedTurnId": turn_id,
                     "input": input,
                 }),
+                Some(json!({ "steer": { "text": prompt.text, "paths": prompt.paths } })),
             )
             .map(Some)
             .map_err(|error| error_text(&error))
@@ -490,8 +538,7 @@ impl Muse {
             Ok(started) => {
                 let turn_id = text(&started, "turnId").unwrap_or(&id).to_owned();
                 if self.driver().lock().started(turn, &turn_id) {
-                    let driver = self.driver().clone();
-                    tokio::spawn(async move { driver.interrupt(turn_id).await });
+                    self.driver().interrupt(turn_id);
                 }
                 Ok(())
             }
@@ -818,8 +865,7 @@ impl Backend for Muse {
     async fn cancel(&mut self) -> Result<(), String> {
         let turn = self.driver().lock().cancel();
         if let Some(turn_id) = turn {
-            let driver = self.driver().clone();
-            tokio::spawn(async move { driver.interrupt(turn_id).await });
+            self.driver().interrupt(turn_id);
         }
         Ok(())
     }
@@ -959,5 +1005,82 @@ impl Backend for Muse {
 
     async fn closed(&self) -> String {
         self.host.process.ended().await
+    }
+
+    async fn release(self) -> Result<(Value, Released), String> {
+        let Self {
+            host,
+            launch,
+            cwd,
+            models,
+            model,
+            effort,
+            mode,
+            skills,
+        } = self;
+        let Host {
+            process,
+            driver,
+            reading,
+            session_tools,
+        } = host;
+        let (_, lines) = reading.stop().await.ok_or("Muse stopped")?;
+        let session = std::mem::replace(
+            &mut *driver.lock(),
+            Session::new(String::new(), String::new()),
+        );
+        let state = MuseState {
+            rpc: driver.rpc.state(),
+            session,
+            session_tools,
+            launch,
+            cwd,
+            models,
+            model,
+            effort,
+            mode,
+            skills,
+        };
+        let state = serde_json::to_value(state).map_err(|error| error.to_string())?;
+        let released = process.release(lines).await?;
+        Ok((state, released))
+    }
+
+    fn adopt(
+        _launch: &ChatLaunch,
+        sink: Sink,
+        state: Value,
+        (process, writer, lines): (Process, Writer, Lines),
+        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
+    ) -> Result<Self, String> {
+        let state: MuseState = serde_json::from_value(state).map_err(|error| error.to_string())?;
+        let driver = Driver {
+            rpc: Rpc::restored(writer, true, state.rpc),
+            sink,
+            session: Arc::new(Mutex::new(state.session)),
+        };
+        for (reply, answered) in asked {
+            let driver = driver.clone();
+            tokio::spawn(async move {
+                let chosen = answered.await.ok().flatten();
+                driver.decide(&reply, chosen).await;
+            });
+        }
+        let (reading, _) = Reading::start(driver.clone(), lines);
+        Ok(Self {
+            host: Host {
+                process,
+                driver,
+                reading,
+                session_tools: state.session_tools,
+            },
+            launch: state.launch,
+            cwd: state.cwd,
+            models: state.models,
+            model: state.model,
+            effort: state.effort,
+            mode: state.mode,
+            skills: state.skills,
+        })
     }
 }

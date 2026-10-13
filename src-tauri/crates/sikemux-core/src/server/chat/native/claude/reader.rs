@@ -5,7 +5,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use tokio::sync::oneshot;
 use tokio::task::AbortHandle;
 
 use crate::acp::account::{Failure, FailureKind};
@@ -13,6 +15,7 @@ use crate::acp::account::{Failure, FailureKind};
 use super::super::super::feed;
 use super::super::super::states::{self, Held, Subagent, Task as TaskState};
 use super::super::json::{self, text};
+use super::super::process::Reads;
 use super::super::session::{Sink, TurnEnd};
 use super::control::Control;
 use super::permission;
@@ -49,6 +52,7 @@ const TERMINAL_COMMANDS: [&str; 8] = [
 
 /// The turn a prompt from this side started, as the reader and the driver
 /// both see it.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Turn {
     pub number: u64,
     /// Every message sent into the turn: its prompt and any steered in since.
@@ -62,7 +66,7 @@ pub(crate) struct Turn {
     pub failure: Option<Failure>,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub(crate) struct Shared {
     pub turn: Option<Turn>,
     /// Every message this side wrote, whose echoes are not shown again.
@@ -75,12 +79,14 @@ pub(crate) struct Shared {
     pub untitled: Option<String>,
 }
 
+#[derive(Serialize, Deserialize)]
 struct Tool {
     name: String,
     input: Value,
     session: String,
 }
 
+#[derive(Serialize, Deserialize)]
 struct Child {
     name: String,
     /// The session whose transcript holds this subagent's card.
@@ -89,6 +95,7 @@ struct Child {
     background: bool,
 }
 
+#[derive(Serialize, Deserialize)]
 struct Task {
     name: String,
     ended: bool,
@@ -97,12 +104,21 @@ struct Task {
 pub(crate) struct Reader {
     sink: Sink,
     control: Control,
+    shared: Arc<Mutex<Shared>>,
+    permissions: Arc<Mutex<HashMap<String, AbortHandle>>>,
+    data: ReaderState,
+}
+
+/// What the reader knows of the session, as plain data, for a core that
+/// takes the chat over to read on from.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReaderState {
     cwd: PathBuf,
     session_id: String,
-    shared: Arc<Mutex<Shared>>,
     /// Text and thinking streamed for the current top-level message, which
     /// the whole message repeats when it lands.
-    streamed: Vec<(u64, &'static str, String)>,
+    streamed: Vec<(u64, String, String)>,
     stream_message_id: Option<String>,
     tools: HashMap<String, Tool>,
     shown: HashSet<String>,
@@ -122,7 +138,6 @@ pub(crate) struct Reader {
     used: Option<u64>,
     size: u64,
     model: Option<String>,
-    permissions: Arc<Mutex<HashMap<String, AbortHandle>>>,
 }
 
 fn usage_total(usage: &Value) -> Option<u64> {
@@ -267,33 +282,55 @@ impl Reader {
         session_id: String,
         shared: Arc<Mutex<Shared>>,
     ) -> Self {
+        Self::restored(
+            sink,
+            control,
+            shared,
+            ReaderState {
+                cwd,
+                session_id,
+                streamed: Vec::new(),
+                stream_message_id: None,
+                tools: HashMap::new(),
+                shown: HashSet::new(),
+                children: HashMap::new(),
+                subagents: HashMap::new(),
+                held: HashMap::new(),
+                tasks: HashMap::new(),
+                foreground: HashMap::new(),
+                compaction: None,
+                task_plan: TaskPlan::default(),
+                used: None,
+                size: 200_000,
+                model: None,
+            },
+        )
+    }
+
+    /// Reads on from where an earlier reader of the same Claude stopped.
+    pub fn restored(
+        sink: Sink,
+        control: Control,
+        shared: Arc<Mutex<Shared>>,
+        data: ReaderState,
+    ) -> Self {
         Self {
             sink,
             control,
-            cwd,
-            session_id,
             shared,
-            streamed: Vec::new(),
-            stream_message_id: None,
-            tools: HashMap::new(),
-            shown: HashSet::new(),
-            children: HashMap::new(),
-            subagents: HashMap::new(),
-            held: HashMap::new(),
-            tasks: HashMap::new(),
-            foreground: HashMap::new(),
-            compaction: None,
-            task_plan: TaskPlan::default(),
-            used: None,
-            size: 200_000,
-            model: None,
             permissions: Arc::new(Mutex::new(HashMap::new())),
+            data,
         }
+    }
+
+    /// What the reader knows, and the state it shares with the driver.
+    pub fn into_state(self) -> (ReaderState, Arc<Mutex<Shared>>) {
+        (self.data, self.shared)
     }
 
     pub fn note_model(&mut self, model: &str) {
         if let Some(size) = window_from_name(model) {
-            self.size = size;
+            self.data.size = size;
         }
     }
 
@@ -308,26 +345,40 @@ impl Reader {
     /// subagent a tool call spawned. A subagent not yet announced holds it.
     fn send(&mut self, parent: Option<&str>, update: Value) {
         let Some(parent) = parent else {
-            self.sink.update(&self.session_id, update);
+            self.sink.update(&self.data.session_id, update);
             return;
         };
-        match self.children.get(parent) {
-            Some(session) if self.subagents.get(session).is_none_or(|child| child.ended) => {}
+        match self.data.children.get(parent) {
+            Some(session)
+                if self
+                    .data
+                    .subagents
+                    .get(session)
+                    .is_none_or(|child| child.ended) => {}
             Some(session) => self.sink.update(session, update),
-            None => self.held.entry(parent.to_owned()).or_default().push(update),
+            None => self
+                .data
+                .held
+                .entry(parent.to_owned())
+                .or_default()
+                .push(update),
         }
     }
 
     /// The session a tool call spawned by `parent` belongs to.
     fn session_of(&self, parent: Option<&str>) -> String {
         parent
-            .and_then(|parent| self.children.get(parent))
-            .map_or_else(|| self.session_id.clone(), Clone::clone)
+            .and_then(|parent| self.data.children.get(parent))
+            .map_or_else(|| self.data.session_id.clone(), Clone::clone)
     }
 
     pub fn handle(&mut self, message: Value) {
         match message.get("type").and_then(Value::as_str) {
-            Some("control_response") => self.control.answered(&message),
+            Some("control_response") => {
+                if let Some((purpose, result)) = self.control.answered(&message) {
+                    self.purpose_answered(&purpose, result);
+                }
+            }
             Some("control_request") => self.request(&message),
             Some("control_cancel_request") => {
                 if let Some(id) = text(&message, "request_id") {
@@ -359,8 +410,8 @@ impl Reader {
                 }
             }
             Some("conversation_reset") => {
-                self.task_plan.clear();
-                self.send(None, self.task_plan.plan());
+                self.data.task_plan.clear();
+                self.send(None, self.data.task_plan.plan());
             }
             _ => {}
         }
@@ -389,21 +440,22 @@ impl Reader {
         let name = text(&request, "tool_name").unwrap_or("Tool").to_owned();
         let input = request.get("input").cloned().unwrap_or_else(|| json!({}));
         let parent = self
+            .data
             .tools
             .get(&tool_id)
             .map(|tool| tool.session.clone())
-            .filter(|session| *session != self.session_id);
-        let session = parent.unwrap_or_else(|| self.session_id.clone());
-        if !self.shown.contains(&tool_id) && !tools::is_plan_tool(&name) {
-            self.shown.insert(tool_id.clone());
-            self.tools.entry(tool_id.clone()).or_insert(Tool {
+            .filter(|session| *session != self.data.session_id);
+        let session = parent.unwrap_or_else(|| self.data.session_id.clone());
+        if !self.data.shown.contains(&tool_id) && !tools::is_plan_tool(&name) {
+            self.data.shown.insert(tool_id.clone());
+            self.data.tools.entry(tool_id.clone()).or_insert(Tool {
                 name: name.clone(),
                 input: input.clone(),
                 session: session.clone(),
             });
             self.sink.update(
                 &session,
-                tools::tool_call(&tool_id, &name, &input, &self.cwd),
+                tools::tool_call(&tool_id, &name, &input, &self.data.cwd),
             );
         }
         let mode = self
@@ -412,24 +464,74 @@ impl Reader {
             .map(|shared| shared.mode.clone())
             .unwrap_or_default();
         let asked = permission::request(
-            &session, &tool_id, &name, &input, &request, &self.cwd, &mode,
+            &session,
+            &tool_id,
+            &name,
+            &input,
+            &request,
+            &self.data.cwd,
+            &mode,
         );
+        let reply = json!({
+            "requestId": request_id,
+            "toolId": tool_id,
+            "input": input,
+            "request": request,
+        });
         let sink = self.sink.clone();
+        self.answer_later(reply.clone(), async move { sink.ask(asked, reply).await });
+    }
+
+    /// Answers Claude's permission request `reply` holds once the person has
+    /// chosen, unless Claude takes the request back first.
+    pub fn answer_later(
+        &self,
+        reply: Value,
+        chosen: impl std::future::Future<Output = Option<String>> + Send + 'static,
+    ) {
+        let Some(id) = reply["requestId"].as_str().map(str::to_owned) else {
+            return;
+        };
         let control = self.control.clone();
         let permissions = self.permissions.clone();
-        let id = request_id.clone();
+        let removing = id.clone();
         let task = tokio::spawn(async move {
-            let chosen = sink.ask(asked).await;
+            let chosen = chosen.await;
             if let Ok(mut permissions) = permissions.lock() {
-                permissions.remove(&id);
+                permissions.remove(&removing);
             }
-            control.respond(
-                &id,
-                permission::answer(&tool_id, &input, &request, chosen.as_deref()),
+            let answer = permission::answer(
+                reply["toolId"].as_str().unwrap_or_default(),
+                &reply["input"],
+                &reply["request"],
+                chosen.as_deref(),
             );
+            control.respond(&removing, answer);
         });
         if let Ok(mut permissions) = self.permissions.lock() {
-            permissions.insert(request_id, task.abort_handle());
+            permissions.insert(id, task.abort_handle());
+        }
+    }
+
+    /// Answers the person's questions an earlier core put, as they choose.
+    pub fn answer_again(&self, asked: Vec<(Value, oneshot::Receiver<Option<String>>)>) {
+        for (reply, answered) in asked {
+            self.answer_later(reply, async move { answered.await.ok().flatten() });
+        }
+    }
+
+    /// The answer to a control request sent with `purpose`.
+    fn purpose_answered(&self, purpose: &Value, result: Result<Value, String>) {
+        if purpose.get("title").is_some() {
+            let title = result
+                .ok()
+                .and_then(|named| feed::title(text(&named, "title")?));
+            if let Some(title) = title {
+                self.sink.update(
+                    &self.data.session_id,
+                    json!({ "sessionUpdate": "session_info_update", "title": title }),
+                );
+            }
         }
     }
 
@@ -440,18 +542,18 @@ impl Reader {
         };
         match text(event, "type") {
             Some("message_start") => {
-                self.stream_message_id = event
+                self.data.stream_message_id = event
                     .pointer("/message/id")
                     .and_then(Value::as_str)
                     .map(str::to_owned);
                 if parent.is_none() {
-                    self.streamed.clear();
+                    self.data.streamed.clear();
                     if let Some(model) = event.pointer("/message/model").and_then(Value::as_str) {
-                        self.model = Some(model.to_owned());
+                        self.data.model = Some(model.to_owned());
                         self.note_model(model);
                     }
                     if let Some(used) = event.pointer("/message/usage").and_then(usage_total) {
-                        self.used = Some(used);
+                        self.data.used = Some(used);
                     }
                 }
             }
@@ -480,13 +582,16 @@ impl Reader {
                 };
                 if parent.is_none() {
                     let index = event.get("index").and_then(Value::as_u64).unwrap_or(0);
-                    match self.streamed.last_mut() {
+                    match self.data.streamed.last_mut() {
                         Some((last, last_kind, streamed))
                             if *last == index && *last_kind == kind =>
                         {
                             streamed.push_str(&chunk)
                         }
-                        _ => self.streamed.push((index, kind, chunk.clone())),
+                        _ => self
+                            .data
+                            .streamed
+                            .push((index, kind.to_owned(), chunk.clone())),
                     }
                 }
                 let block = if kind == "text" {
@@ -494,7 +599,7 @@ impl Reader {
                 } else {
                     json!({ "type": "thinking", "thinking": chunk })
                 };
-                let message_id = self.stream_message_id.clone();
+                let message_id = self.data.stream_message_id.clone();
                 if let Some(update) =
                     tools::content_chunk(&block, "assistant", message_id.as_deref())
                 {
@@ -504,10 +609,10 @@ impl Reader {
             Some("message_delta") if parent.is_none() => {
                 if let Some(usage) = event.get("usage").filter(|usage| usage.is_object()) {
                     if let (Some(used), Some(output)) = (
-                        self.used,
+                        self.data.used,
                         usage.get("output_tokens").and_then(Value::as_u64),
                     ) {
-                        self.used = Some(used.max(output));
+                        self.data.used = Some(used.max(output));
                     }
                 }
             }
@@ -522,9 +627,9 @@ impl Reader {
         let name = text(block, "name").unwrap_or("Tool").to_owned();
         let input = block.get("input").cloned().unwrap_or_else(|| json!({}));
         let session = self.session_of(parent);
-        let known = self.tools.contains_key(&id);
+        let known = self.data.tools.contains_key(&id);
         if !streaming || !known {
-            self.tools.insert(
+            self.data.tools.insert(
                 id.clone(),
                 Tool {
                     name: name.clone(),
@@ -544,11 +649,11 @@ impl Reader {
         if tools::is_subagent_tool(&name) {
             return;
         }
-        if self.shown.insert(id.clone()) {
-            let update = tools::tool_call(&id, &name, &input, &self.cwd);
+        if self.data.shown.insert(id.clone()) {
+            let update = tools::tool_call(&id, &name, &input, &self.data.cwd);
             self.send(parent, update);
         } else if !streaming {
-            let update = tools::tool_call_refined(&id, &name, &input, &self.cwd);
+            let update = tools::tool_call_refined(&id, &name, &input, &self.data.cwd);
             self.send(parent, update);
         }
     }
@@ -570,11 +675,11 @@ impl Reader {
         };
         if parent.is_none() {
             if let Some(model) = text(inner, "model").filter(|model| *model != "<synthetic>") {
-                self.model = Some(model.to_owned());
+                self.data.model = Some(model.to_owned());
                 self.note_model(model);
             }
             if let Some(used) = inner.get("usage").and_then(usage_total) {
-                self.used = Some(used);
+                self.data.used = Some(used);
             }
         }
         let message_id = text(inner, "id").map(str::to_owned);
@@ -591,7 +696,8 @@ impl Reader {
                     };
                     let mut rest = full.to_owned();
                     if parent.is_none() {
-                        if let Some((_, streamed_kind, streamed)) = self.streamed.get(position) {
+                        if let Some((_, streamed_kind, streamed)) = self.data.streamed.get(position)
+                        {
                             if *streamed_kind == kind
                                 && !streamed.is_empty()
                                 && full.starts_with(streamed.as_str())
@@ -626,7 +732,7 @@ impl Reader {
             }
         }
         if parent.is_none() {
-            self.streamed.clear();
+            self.data.streamed.clear();
         }
     }
 
@@ -675,7 +781,7 @@ impl Reader {
             let Some(id) = text(result, "tool_use_id").map(str::to_owned) else {
                 continue;
             };
-            let Some(tool) = self.tools.get(&id) else {
+            let Some(tool) = self.data.tools.get(&id) else {
                 continue;
             };
             let (name, input, session) =
@@ -683,6 +789,7 @@ impl Reader {
             if tools::is_plan_tool(&name) {
                 if parent.is_none() {
                     if let Some(plan) = self
+                        .data
                         .task_plan
                         .apply_result(&name, &input, result, structured)
                     {
@@ -693,10 +800,10 @@ impl Reader {
             }
             if tools::is_subagent_tool(&name) {
                 let failed = result.get("is_error").and_then(Value::as_bool) == Some(true);
-                if failed && !self.children.contains_key(&id) {
-                    let mut update = tools::tool_call(&id, &name, &input, &self.cwd);
+                if failed && !self.data.children.contains_key(&id) {
+                    let mut update = tools::tool_call(&id, &name, &input, &self.data.cwd);
                     let completed =
-                        tools::tool_result(&id, &name, &input, result, structured, &self.cwd);
+                        tools::tool_result(&id, &name, &input, result, structured, &self.data.cwd);
                     if let (Some(update), Some(completed)) =
                         (update.as_object_mut(), completed.as_object())
                     {
@@ -710,7 +817,7 @@ impl Reader {
                 }
                 continue;
             }
-            let update = tools::tool_result(&id, &name, &input, result, structured, &self.cwd);
+            let update = tools::tool_result(&id, &name, &input, result, structured, &self.data.cwd);
             self.sink.update(&session, update);
         }
     }
@@ -734,16 +841,16 @@ impl Reader {
             .and_then(Value::as_object)
             .and_then(|usage| self.window_of(usage))
         {
-            self.size = size;
+            self.data.size = size;
         }
-        let used = self.used;
+        let used = self.data.used;
         if let Some(used) = used {
             let mut update =
-                json!({ "sessionUpdate": "usage_update", "used": used, "size": self.size });
+                json!({ "sessionUpdate": "usage_update", "used": used, "size": self.data.size });
             if let Some(cost) = result.get("total_cost_usd").and_then(Value::as_f64) {
                 update["cost"] = json!({ "amount": cost, "currency": "USD" });
             }
-            self.sink.update(&self.session_id, update);
+            self.sink.update(&self.data.session_id, update);
         }
         let answers = text(result, "user_message_uuid");
         // A turn that background work started, rather than a message, carries its origin.
@@ -827,27 +934,14 @@ impl Reader {
         if description.trim().chars().count() < 10 {
             return;
         }
-        let control = self.control.clone();
-        let sink = self.sink.clone();
-        let session_id = self.session_id.clone();
-        tokio::spawn(async move {
-            let named = control
-                .request(json!({ "subtype": "generate_session_title", "description": description, "persist": true }))
-                .await;
-            let title = named
-                .ok()
-                .and_then(|named| feed::title(text(&named, "title")?));
-            if let Some(title) = title {
-                sink.update(
-                    &session_id,
-                    json!({ "sessionUpdate": "session_info_update", "title": title }),
-                );
-            }
-        });
+        let _ = self.control.send_for(
+            json!({ "subtype": "generate_session_title", "description": description, "persist": true }),
+            json!({ "title": true }),
+        );
     }
 
     fn window_of(&self, usage: &Map<String, Value>) -> Option<u64> {
-        let model = self.model.as_deref().unwrap_or_default();
+        let model = self.data.model.as_deref().unwrap_or_default();
         let common = |key: &str| {
             key.chars()
                 .zip(model.chars())
@@ -872,7 +966,7 @@ impl Reader {
                     .pointer("/compact_metadata/post_tokens")
                     .and_then(Value::as_u64)
                 {
-                    self.used = Some(used);
+                    self.data.used = Some(used);
                 }
                 self.compacted("completed", None);
             }
@@ -897,8 +991,8 @@ impl Reader {
                 let status = text(message, "status").unwrap_or("completed").to_owned();
                 let summary = text(message, "summary");
                 // Work started outside any tracked task still wakes the agent.
-                if !self.tasks.contains_key(&id) && !self.subagents.contains_key(&id) {
-                    if self.foreground.contains_key(&id) {
+                if !self.data.tasks.contains_key(&id) && !self.data.subagents.contains_key(&id) {
+                    if self.data.foreground.contains_key(&id) {
                         return;
                     }
                     let name = summary
@@ -923,6 +1017,7 @@ impl Reader {
                     })
                     .unwrap_or_default();
                 let gone: Vec<String> = self
+                    .data
                     .tasks
                     .iter()
                     .filter(|(id, task)| !task.ended && !live.contains(id.as_str()))
@@ -948,7 +1043,7 @@ impl Reader {
             Some("commands_changed") => {
                 if let Some(commands) = message.get("commands") {
                     self.sink
-                        .update(&self.session_id, available_commands(commands));
+                        .update(&self.data.session_id, available_commands(commands));
                 }
             }
             Some("local_command_output") => {
@@ -963,16 +1058,17 @@ impl Reader {
                 let Some(id) = text(message, "tool_use_id") else {
                     return;
                 };
-                if !self.shown.contains(id) {
+                if !self.data.shown.contains(id) {
                     return;
                 }
                 let reason = text(message, "decision_reason")
                     .or_else(|| text(message, "message"))
                     .unwrap_or("not allowed");
                 let session = self
+                    .data
                     .tools
                     .get(id)
-                    .map_or_else(|| self.session_id.clone(), |tool| tool.session.clone());
+                    .map_or_else(|| self.data.session_id.clone(), |tool| tool.session.clone());
                 self.sink.update(
                     &session,
                     json!({
@@ -1011,7 +1107,7 @@ impl Reader {
         if let Some(description) = description.filter(|description| !description.is_empty()) {
             update["description"] = json!(description);
         }
-        self.sink.update(&self.session_id, update);
+        self.sink.update(&self.data.session_id, update);
     }
 
     /// Claude Code went idle: anything the turn still waited on is over.
@@ -1039,11 +1135,11 @@ impl Reader {
     }
 
     fn status(&mut self, message: &Value) {
-        if text(message, "status") == Some("compacting") && self.compaction.is_none() {
+        if text(message, "status") == Some("compacting") && self.data.compaction.is_none() {
             let id = text(message, "uuid")
                 .map(str::to_owned)
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-            self.compaction = Some(id.clone());
+            self.data.compaction = Some(id.clone());
             self.send(
                 None,
                 json!({
@@ -1068,7 +1164,7 @@ impl Reader {
     }
 
     fn compacted(&mut self, status: &str, error: Option<String>) {
-        let Some(id) = self.compaction.take() else {
+        let Some(id) = self.data.compaction.take() else {
             return;
         };
         let mut update =
@@ -1077,7 +1173,7 @@ impl Reader {
             update["content"] =
                 json!([{ "type": "content", "content": { "type": "text", "text": error } }]);
         }
-        self.sink.update(&self.session_id, update);
+        self.sink.update(&self.data.session_id, update);
     }
 
     fn task_started(&mut self, message: &Value) {
@@ -1097,16 +1193,16 @@ impl Reader {
             None => !matches!(kind, Some("local_bash" | "local_agent")),
         };
         if !backgrounded {
-            self.foreground.insert(task_id, message.clone());
+            self.data.foreground.insert(task_id, message.clone());
             return;
         }
-        if self.tasks.contains_key(&task_id) {
+        if self.data.tasks.contains_key(&task_id) {
             return;
         }
         // Claude Code reports a monitor as a shell; only the tool that started it tells them apart.
         let monitor = spawner
             .as_deref()
-            .and_then(|id| self.tools.get(id))
+            .and_then(|id| self.data.tools.get(id))
             .is_some_and(|tool| tool.name == "Monitor");
         let task_type = if monitor {
             "monitor".to_owned()
@@ -1123,7 +1219,7 @@ impl Reader {
         let name = text(message, "workflow_name")
             .unwrap_or(&description)
             .to_owned();
-        self.tasks.insert(
+        self.data.tasks.insert(
             task_id.clone(),
             Task {
                 name: name.clone(),
@@ -1145,15 +1241,20 @@ impl Reader {
         if let Some(spawner) = spawner {
             update["toolCallId"] = json!(spawner);
         }
-        self.sink.update(&self.session_id, update);
+        self.sink.update(&self.data.session_id, update);
     }
 
     /// The subagent whose tool call started a background task, since the task
     /// is listed with the chat's own and would otherwise look like the chat's.
     fn owner_of(&self, tool_id: Option<&str>) -> Option<String> {
-        let session = &self.tools.get(tool_id?)?.session;
-        (session != &self.session_id)
-            .then(|| self.subagents.get(session).map(|child| child.name.clone()))
+        let session = &self.data.tools.get(tool_id?)?.session;
+        (session != &self.data.session_id)
+            .then(|| {
+                self.data
+                    .subagents
+                    .get(session)
+                    .map(|child| child.name.clone())
+            })
             .flatten()
     }
 
@@ -1161,15 +1262,15 @@ impl Reader {
         let session_id = task_id.to_owned();
         // An agent that finished with its own background work still running is
         // started again by that work, under the call that first spawned it.
-        if self.subagents.contains_key(task_id) {
+        if self.data.subagents.contains_key(task_id) {
             self.resume_child(&session_id, spawner, message);
             return;
         }
-        if self.children.contains_key(spawner) {
+        if self.data.children.contains_key(spawner) {
             return;
         }
-        let (input, parent_session) = self.tools.get(spawner).map_or_else(
-            || (Value::Null, self.session_id.clone()),
+        let (input, parent_session) = self.data.tools.get(spawner).map_or_else(
+            || (Value::Null, self.data.session_id.clone()),
             |tool| (tool.input.clone(), tool.session.clone()),
         );
         let name = states::first_text(&[
@@ -1195,8 +1296,10 @@ impl Reader {
             .unwrap_or_else(|| {
                 input.get("run_in_background").and_then(Value::as_bool) == Some(true)
             });
-        self.children.insert(spawner.to_owned(), session_id.clone());
-        self.subagents.insert(
+        self.data
+            .children
+            .insert(spawner.to_owned(), session_id.clone());
+        self.data.subagents.insert(
             session_id.clone(),
             Child {
                 name: name.clone(),
@@ -1205,7 +1308,7 @@ impl Reader {
                 background,
             },
         );
-        for update in self.held.remove(spawner).unwrap_or_default() {
+        for update in self.data.held.remove(spawner).unwrap_or_default() {
             self.sink.update(&session_id, update);
         }
     }
@@ -1213,9 +1316,10 @@ impl Reader {
     /// A message sent to a subagent wakes the one already on screen, so its
     /// card picks up where it left off rather than a second card starting.
     fn resume_child(&mut self, session_id: &str, spawner: &str, message: &Value) {
-        self.children
+        self.data
+            .children
             .insert(spawner.to_owned(), session_id.to_owned());
-        let Some(child) = self.subagents.get_mut(session_id) else {
+        let Some(child) = self.data.subagents.get_mut(session_id) else {
             return;
         };
         if let Some(background) = message.get("is_backgrounded").and_then(Value::as_bool) {
@@ -1227,7 +1331,7 @@ impl Reader {
             self.sink
                 .update(&parent, Subagent::Running.update(session_id));
         }
-        for update in self.held.remove(spawner).unwrap_or_default() {
+        for update in self.data.held.remove(spawner).unwrap_or_default() {
             self.sink.update(session_id, update);
         }
     }
@@ -1236,7 +1340,7 @@ impl Reader {
         let Some(id) = text(message, "task_id") else {
             return;
         };
-        if self.tasks.get(id).is_none_or(|task| task.ended) {
+        if self.data.tasks.get(id).is_none_or(|task| task.ended) {
             return;
         }
         let mut update = json!({ "sessionUpdate": "async_task_progress", "asyncTaskId": id });
@@ -1257,7 +1361,7 @@ impl Reader {
                 "durationMs": field("duration_ms"),
             });
         }
-        self.sink.update(&self.session_id, update);
+        self.sink.update(&self.data.session_id, update);
     }
 
     fn task_ended(
@@ -1267,7 +1371,7 @@ impl Reader {
         summary: Option<&str>,
         output: Option<&str>,
     ) {
-        if let Some(child) = self.subagents.get_mut(task_id) {
+        if let Some(child) = self.data.subagents.get_mut(task_id) {
             let Some(state) = states::outcome(status).map(Subagent::from) else {
                 return;
             };
@@ -1278,8 +1382,9 @@ impl Reader {
             let (parent, background, name) =
                 (child.parent.clone(), child.background, child.name.clone());
             // An agent whose spawner has already finished reports to the chat itself.
-            let reports_to_chat = parent == self.session_id
+            let reports_to_chat = parent == self.data.session_id
                 || self
+                    .data
                     .subagents
                     .get(&parent)
                     .is_some_and(|spawner| spawner.ended);
@@ -1293,7 +1398,7 @@ impl Reader {
         let Some(state) = TaskState::from_status(status).filter(|state| state.ended()) else {
             return;
         };
-        let Some(task) = self.tasks.get_mut(task_id) else {
+        let Some(task) = self.data.tasks.get_mut(task_id) else {
             return;
         };
         if task.ended {
@@ -1307,7 +1412,7 @@ impl Reader {
         if let Some(output) = output {
             update["outputFilePath"] = json!(output);
         }
-        self.sink.update(&self.session_id, update);
+        self.sink.update(&self.data.session_id, update);
     }
 
     /// Background work Claude Code reports ending, which wakes the agent; the
@@ -1317,7 +1422,7 @@ impl Reader {
             return;
         };
         self.sink.update(
-            &self.session_id,
+            &self.data.session_id,
             json!({ "sessionUpdate": "task_notice", "taskId": task_id, "name": name, "state": state.as_str() }),
         );
     }
@@ -1325,15 +1430,15 @@ impl Reader {
     /// A task the person stopped from the app, said at once rather than when
     /// Claude Code gets round to it.
     pub fn task_stopped(&mut self, task_id: &str) {
-        let Some(task) = self.tasks.get_mut(task_id).filter(|task| !task.ended) else {
+        let Some(task) = self.data.tasks.get_mut(task_id).filter(|task| !task.ended) else {
             return;
         };
         task.ended = true;
         let name = task.name.clone();
         self.sink
-            .update(&self.session_id, TaskState::Stopped.update(task_id));
+            .update(&self.data.session_id, TaskState::Stopped.update(task_id));
         self.sink.update(
-            &self.session_id,
+            &self.data.session_id,
             json!({ "sessionUpdate": "notice", "severity": "info", "title": "Task stopped by user", "description": format!("{name}.") }),
         );
     }
@@ -1341,18 +1446,31 @@ impl Reader {
     /// Work the turn was waiting on that Claude Code moved to the background,
     /// which then runs on past the turn.
     fn backgrounded(&mut self, task_id: &str) {
-        if let Some(child) = self.subagents.get_mut(task_id) {
+        if let Some(child) = self.data.subagents.get_mut(task_id) {
             child.background = true;
             return;
         }
-        if let Some(mut started) = self.foreground.remove(task_id) {
+        if let Some(mut started) = self.data.foreground.remove(task_id) {
             started["is_backgrounded"] = json!(true);
             self.task_started(&started);
         }
     }
+}
+
+impl Reads for Reader {
+    /// A task the person stopped from the app.
+    type Nudge = String;
+
+    fn message(&mut self, message: Value) {
+        self.handle(message);
+    }
+
+    fn nudged(&mut self, task_id: String) {
+        self.task_stopped(&task_id);
+    }
 
     /// Claude Code is gone: nothing it asked can be answered any more.
-    pub fn close(&mut self) {
+    fn closed(&mut self) {
         self.control.close();
         if let Ok(permissions) = self.permissions.lock() {
             for handle in permissions.values() {

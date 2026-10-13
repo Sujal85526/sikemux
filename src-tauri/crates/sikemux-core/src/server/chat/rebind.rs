@@ -2,6 +2,7 @@
 //! own ran out of usage, or after a sign-in, with the prompt that failed sent
 //! again once the agent is back.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::acp::account::{self, SignIn};
@@ -15,10 +16,14 @@ use super::super::connection::ClientId;
 pub(super) enum Outcome {
     Ended(SessionEnd),
     Rebind(Box<Rebind>),
+    /// The agent was let go of, still running, for a core that replaces
+    /// this one to take up.
+    Released,
 }
 
 /// A prompt to send again once the agent is back.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct Replay {
     /// Who sent it, while nobody else has been told it was sent.
     pub announce: Option<ClientId>,

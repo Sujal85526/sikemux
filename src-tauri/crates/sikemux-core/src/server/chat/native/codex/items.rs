@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use super::super::file_link;
@@ -549,7 +550,7 @@ pub(super) fn replayed(item: &Value, read: &impl Fn(&str) -> Option<String>) -> 
 }
 
 /// What the chat has been shown of the items streaming in.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub(super) struct Items {
     phases: HashMap<String, Value>,
     streamed_reasoning: HashSet<String>,

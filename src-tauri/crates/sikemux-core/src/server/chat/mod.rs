@@ -28,7 +28,8 @@ use super::activity::Activity;
 use super::connection::{ClientConn, ClientId};
 use super::remote::unix_ms;
 use super::{Core, CoreError, CoreResult};
-use feed::{Feed, Standing};
+use feed::{Feed, FeedState, Standing};
+use native::Begin;
 
 const MAX_AGENT_ID: usize = 200;
 const START_TIMEOUT: Duration = Duration::from_secs(150);
@@ -43,6 +44,9 @@ const CANCEL_GRACE: Duration = Duration::from_secs(10);
 /// How long after its last subagent ends a chat waits for the agent to take
 /// up the subagent's report before it counts as finished.
 const SUBAGENT_WAKE_GRACE: Duration = Duration::from_secs(3);
+/// How long a chat has to let go of its agent for an update before it is
+/// stopped and started again on its session instead.
+const RELEASE_WAIT: Duration = Duration::from_secs(5);
 
 pub(crate) enum ChatCommand {
     Prompt {
@@ -86,6 +90,10 @@ pub(crate) enum ChatCommand {
         reply: oneshot::Sender<Result<(), String>>,
     },
     Cancel,
+    /// Lets go of the agent, still running, for a core that replaces this one.
+    HandOver {
+        reply: oneshot::Sender<Result<native::Handed, String>>,
+    },
 }
 
 #[derive(Clone)]
@@ -101,6 +109,20 @@ struct PendingPermission {
     answer: oneshot::Sender<Option<String>>,
     request: Value,
     at: u64,
+    /// What the agent's backend needs to answer the agent with the choice.
+    reply: Value,
+}
+
+/// A question still put to the person, as plain data, for a core that takes
+/// the chat over to keep asking.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Asked {
+    pub request_id: String,
+    pub option_ids: Vec<String>,
+    pub request: Value,
+    pub at: u64,
+    pub reply: Value,
 }
 
 /// Who started a chat, and with which of the app's launchers.
@@ -134,6 +156,9 @@ pub(crate) struct Chat {
     /// A turn of this chat was answered, so its provider has it saved.
     pub answered: AtomicBool,
     approving: AtomicBool,
+    /// The chat's loop waits for its next command, so it can let go of its
+    /// agent at once.
+    pub at_rest: AtomicBool,
 }
 
 impl Chat {
@@ -326,6 +351,7 @@ impl Chat {
         option_ids: Vec<String>,
         answer: oneshot::Sender<Option<String>>,
         request: Value,
+        reply: Value,
     ) -> bool {
         let Ok(mut permissions) = self.permissions.lock() else {
             let _ = answer.send(None);
@@ -336,6 +362,7 @@ impl Chat {
             answer,
             request,
             at: unix_ms(),
+            reply,
         };
         let attention = self.attention(&request_id, &pending);
         permissions.insert(request_id, pending);
@@ -345,6 +372,44 @@ impl Chat {
         }
         self.announce(&Event::Attention { attention });
         true
+    }
+
+    /// Keeps asking a question an earlier core put to the person, who has
+    /// been shown it already. Answers with where their choice will come.
+    pub(crate) fn hold_again(&self, asked: Asked) -> oneshot::Receiver<Option<String>> {
+        let (answer, answered) = oneshot::channel();
+        if let Ok(mut permissions) = self.permissions.lock() {
+            permissions.insert(
+                asked.request_id,
+                PendingPermission {
+                    option_ids: asked.option_ids,
+                    answer,
+                    request: asked.request,
+                    at: asked.at,
+                    reply: asked.reply,
+                },
+            );
+        }
+        answered
+    }
+
+    /// The questions still put to the person, as plain data.
+    fn asked(&self) -> Vec<Asked> {
+        let Ok(permissions) = self.permissions.lock() else {
+            return Vec::new();
+        };
+        let mut asked: Vec<Asked> = permissions
+            .iter()
+            .map(|(request_id, pending)| Asked {
+                request_id: request_id.clone(),
+                option_ids: pending.option_ids.clone(),
+                request: pending.request.clone(),
+                at: pending.at,
+                reply: pending.reply.clone(),
+            })
+            .collect();
+        asked.sort_by_key(|asked| asked.at);
+        asked
     }
 
     fn attention(&self, request_id: &str, pending: &PendingPermission) -> Attention {
@@ -503,8 +568,164 @@ impl Chat {
         Some(ChatRecord {
             launch: self.relaunch(&self.current_launch())?,
             origin: self.origin.clone(),
+            notice: None,
         })
     }
+
+    fn handable(&self) -> bool {
+        self.is_ready() && self.at_rest.load(Ordering::Acquire)
+    }
+
+    /// Whether the agent is at work: on a turn, or with subagents or
+    /// background tasks going.
+    pub(crate) fn busy(&self) -> bool {
+        self.turn_running()
+            || self.held.load(Ordering::Acquire)
+            || self.feed.running_subagents() > 0
+            || self.feed.running_tasks() > 0
+    }
+
+    fn flags(&self) -> Flags {
+        Flags {
+            running: self.running.load(Ordering::Acquire),
+            unprompted: self.unprompted.load(Ordering::Acquire),
+            turned: self.turned.load(Ordering::Acquire),
+            held: self.held.load(Ordering::Acquire),
+            answered: self.answered.load(Ordering::Acquire),
+            approving: self.approving.load(Ordering::Acquire),
+        }
+    }
+
+    /// Lets go of the agent, still running, for a core that replaces this
+    /// one. Answers with how to start the chat again instead, and why, when
+    /// it cannot.
+    async fn hand_over(self: Arc<Self>) -> Option<HandOver> {
+        let record = self.resumable();
+        let why = if self.handable() {
+            match self.release().await {
+                Ok(handed) => return Some(HandOver::Live(Box::new(handed))),
+                Err(why) => why,
+            }
+        } else if self.is_ready() {
+            "it was busy with a request".to_owned()
+        } else {
+            "it was still starting".to_owned()
+        };
+        if let Some(task) = Chats::halt(&self) {
+            let _ = tokio::time::timeout(STOP_SETTLE, task).await;
+        }
+        let record = record?;
+        Some(HandOver::Resume(Box::new(ChatRecord {
+            notice: Some(why),
+            ..record
+        })))
+    }
+
+    async fn release(&self) -> Result<HandedChat, String> {
+        let (reply, answer) = oneshot::channel();
+        self.send(ChatCommand::HandOver { reply })
+            .map_err(|_| "it had stopped".to_owned())?;
+        let handed = match tokio::time::timeout(RELEASE_WAIT, answer).await {
+            Ok(Ok(handed)) => handed?,
+            Ok(Err(_)) => return Err("it had stopped".into()),
+            Err(_) => return Err("it did not let go of its agent in time".into()),
+        };
+        let task = self.task.lock().ok().and_then(|mut task| task.take());
+        if let Some(task) = task {
+            let _ = tokio::time::timeout(STOP_SETTLE, task).await;
+        }
+        let Some(feed) = self.feed.release() else {
+            native::kill_released(&handed.released);
+            return Err("its transcript could not be kept".into());
+        };
+        Ok(HandedChat {
+            live: LiveChat {
+                record: self.resumable(),
+                launch: self.launch.clone(),
+                current: self.current_launch(),
+                origin: self.origin.clone(),
+                flags: self.flags(),
+                feed,
+                asked: self.asked(),
+                session: handed.session,
+                backend: handed.backend,
+                agent: handed.released.record(),
+            },
+            released: handed.released,
+        })
+    }
+}
+
+/// What said whether a chat was at work, carried to the core that takes it
+/// over.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Flags {
+    running: bool,
+    unprompted: bool,
+    turned: bool,
+    held: bool,
+    answered: bool,
+    approving: bool,
+}
+
+/// A chat handed whole to a core that replaces this one: the agent goes on
+/// running, and the new core reads on where this one stopped.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LiveChat {
+    /// How to start the chat again on its session should taking its agent
+    /// up fail, once a turn has made the provider keep it.
+    pub record: Option<ChatRecord>,
+    launch: ChatLaunch,
+    current: ChatLaunch,
+    origin: Origin,
+    flags: Flags,
+    feed: FeedState,
+    asked: Vec<Asked>,
+    session: native::SessionState,
+    backend: Value,
+    pub agent: native::AgentRecord,
+}
+
+/// A [`LiveChat`] and the pipes to its agent, still open in this process.
+pub(crate) struct HandedChat {
+    pub live: LiveChat,
+    pub released: native::Released,
+}
+
+/// What becomes of a chat when the core replaces itself.
+pub(crate) enum HandOver {
+    Live(Box<HandedChat>),
+    /// Started again on its session, saying why.
+    Resume(Box<ChatRecord>),
+}
+
+pub(crate) use native::kill_released;
+
+/// Stops a chat agent no core will take up.
+pub(crate) fn kill_agent(pid: u32) {
+    native::kill_agent(pid);
+}
+
+/// The notice a chat shows when an update started its agent again rather
+/// than carrying it over.
+pub(crate) fn update_notice(why: &str) -> Value {
+    serde_json::json!({
+        "sessionUpdate": "notice",
+        "severity": "warning",
+        "title": "Sikemux restarted this agent while it updated",
+        "description": format!("The agent could not be carried over because {why}. Anything it was doing stopped."),
+    })
+}
+
+/// A chat the core cannot hand over to its replacement while it is at work.
+#[derive(Clone, Debug)]
+pub(crate) struct Blocker {
+    pub agent_id: String,
+    pub provider: String,
+    pub title: Option<String>,
+    pub reason: String,
 }
 
 /// A chat handed to a core that replaces this one, which starts it again on
@@ -515,6 +736,9 @@ pub(crate) struct ChatRecord {
     pub launch: ChatLaunch,
     #[serde(flatten)]
     pub origin: Origin,
+    /// Why the chat was started again rather than carried over, said in it
+    /// once it is back.
+    pub notice: Option<String>,
 }
 
 #[derive(Default)]
@@ -527,13 +751,24 @@ pub(crate) struct Chats {
 
 impl Chats {
     pub(crate) fn new(history: Option<PathBuf>) -> Self {
-        if let Some(dir) = history.as_deref() {
-            history::clear(dir);
-        }
         Self {
             history,
             ..Self::default()
         }
+    }
+
+    /// Removes the history an earlier core left, but for the chats this one
+    /// took over.
+    pub(crate) fn clear_history(&self) {
+        let Some(dir) = self.history.as_deref() else {
+            return;
+        };
+        let keep: Vec<String> = self
+            .all()
+            .iter()
+            .map(|chat| chat.feed.id().to_owned())
+            .collect();
+        history::clear(dir, &keep);
     }
 
     pub(crate) fn get(&self, agent_id: &str) -> Option<Arc<Chat>> {
@@ -564,8 +799,31 @@ impl Chats {
         self.chats.lock().map(|chats| chats.len()).unwrap_or(0)
     }
 
-    pub(crate) fn any_turn_running(&self) -> bool {
-        self.all().iter().any(|chat| chat.turn_running())
+    /// Whether every chat can let go of its agent now.
+    pub(crate) fn all_handable(&self) -> bool {
+        self.all().iter().all(|chat| chat.handable())
+    }
+
+    /// The chats at work that an update now would stop and start again
+    /// rather than carry over.
+    pub(crate) fn blockers(&self) -> Vec<Blocker> {
+        let mut blockers: Vec<Blocker> = self
+            .all()
+            .iter()
+            .filter(|chat| chat.busy() && !chat.handable())
+            .map(|chat| Blocker {
+                agent_id: chat.agent_id().to_owned(),
+                provider: chat.provider().to_owned(),
+                title: chat.feed.title(),
+                reason: if chat.is_ready() {
+                    "busy".to_owned()
+                } else {
+                    "starting".to_owned()
+                },
+            })
+            .collect();
+        blockers.sort_by(|a, b| a.agent_id.cmp(&b.agent_id));
+        blockers
     }
 
     pub(crate) fn attentions(&self) -> Vec<Attention> {
@@ -635,19 +893,18 @@ impl Chats {
         }
     }
 
-    /// Stops every chat, waiting a moment for their processes to go, and says
-    /// how to start again the ones a provider keeps.
-    pub(crate) async fn hand_over(&self) -> Vec<ChatRecord> {
-        let chats = self.take_all();
-        let records = chats.iter().filter_map(|chat| chat.resumable()).collect();
-        let tasks: Vec<_> = chats.iter().filter_map(|chat| Self::halt(chat)).collect();
-        let _ = tokio::time::timeout(STOP_SETTLE, async {
-            for task in tasks {
-                let _ = task.await;
-            }
-        })
-        .await;
-        records
+    /// Lets go of every chat's agent for a core that replaces this one, and
+    /// stops the chats that cannot let go, saying how to start them again.
+    pub(crate) async fn hand_over(&self) -> Vec<HandOver> {
+        let mut releasing = tokio::task::JoinSet::new();
+        for chat in self.take_all() {
+            releasing.spawn(chat.hand_over());
+        }
+        let mut handed = Vec::new();
+        while let Some(done) = releasing.join_next().await {
+            handed.extend(done.ok().flatten());
+        }
+        handed
     }
 
     fn insert(
@@ -655,29 +912,43 @@ impl Chats {
         core: &Arc<Core>,
         launch: ChatLaunch,
         origin: Origin,
+        kept: Option<(Arc<Feed>, Flags)>,
     ) -> CoreResult<(Arc<Chat>, mpsc::UnboundedReceiver<ChatCommand>)> {
         let mut chats = self.chats.lock().map_err(CoreError::poisoned)?;
         if chats.contains_key(&launch.agent_id) {
             return Err("ACP session is already running".into());
         }
         let (commands, queue) = mpsc::unbounded_channel();
+        let (feed, flags) = kept.unwrap_or_else(|| {
+            let feed = Feed::new(
+                launch.agent_id.clone(),
+                launch.permission_mode.clone(),
+                self.history.as_deref(),
+            );
+            let flags = Flags {
+                running: false,
+                unprompted: false,
+                turned: false,
+                held: false,
+                answered: false,
+                approving: crate::acp::approves_for_user(&launch.permission_mode),
+            };
+            (feed, flags)
+        });
         let chat = Arc::new(Chat {
             generation: self.next_generation.fetch_add(1, Ordering::Relaxed),
             commands,
             task: Mutex::new(None),
-            feed: Feed::new(
-                launch.agent_id.clone(),
-                launch.permission_mode.clone(),
-                self.history.as_deref(),
-            ),
+            feed,
             permissions: Mutex::new(HashMap::new()),
             readiness: watch::channel(Readiness::Starting).0,
-            running: AtomicBool::new(false),
-            unprompted: AtomicBool::new(false),
-            turned: AtomicBool::new(false),
-            held: AtomicBool::new(false),
-            answered: AtomicBool::new(false),
-            approving: AtomicBool::new(crate::acp::approves_for_user(&launch.permission_mode)),
+            running: AtomicBool::new(flags.running),
+            unprompted: AtomicBool::new(flags.unprompted),
+            turned: AtomicBool::new(flags.turned),
+            held: AtomicBool::new(flags.held),
+            answered: AtomicBool::new(flags.answered),
+            approving: AtomicBool::new(flags.approving),
+            at_rest: AtomicBool::new(false),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -708,7 +979,7 @@ pub(crate) fn idle(core: &Arc<Core>, agent_id: &str, provider: &str, cwd: &str) 
     };
     let (chat, _) = core
         .chats
-        .insert(core, launch, Origin::default())
+        .insert(core, launch, Origin::default(), None)
         .unwrap_or_else(|error| panic!("{error}"));
     chat
 }
@@ -746,23 +1017,34 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
 
 /// Starts the chat's connection. The task ends the chat however the
 /// connection ends.
-fn launch(core: &Arc<Core>, chat: &Arc<Chat>, mut queue: mpsc::UnboundedReceiver<ChatCommand>) {
+fn launch(
+    core: &Arc<Core>,
+    chat: &Arc<Chat>,
+    mut queue: mpsc::UnboundedReceiver<ChatCommand>,
+    begin: Begin,
+) {
     let ending = chat.clone();
     let owner = core.clone();
     let task = tokio::spawn(async move {
         // The agent can be started again under the chat, on another account
         // or after a sign-in, and the chat carries on through it.
-        let mut rebind = None;
+        let mut begin = begin;
         let result = loop {
             let launch = ending.current_launch();
             let kind = native::Kind::of(ending.provider());
-            let ran = native::run(kind, ending.clone(), launch, &mut queue, rebind.take()).await;
-            ending.feed.agent_gone();
+            let ran = native::run(kind, ending.clone(), launch, &mut queue, begin).await;
+            if !matches!(ran, Ok(rebind::Outcome::Released)) {
+                ending.feed.agent_gone();
+            }
             match ran {
                 Ok(rebind::Outcome::Rebind(next)) => {
                     ending.set_current(next.launch.clone());
-                    rebind = Some(next);
+                    begin = Begin::Start {
+                        rebind: Some(next),
+                        notice: None,
+                    };
                 }
+                Ok(rebind::Outcome::Released) => return,
                 Ok(rebind::Outcome::Ended(end)) => break Ok(end),
                 Err(error) => break Err(error),
             }
@@ -802,12 +1084,20 @@ pub(crate) fn begin(
         started_by: subscriber.and_then(|client| client.peer.device_id()),
         launcher,
     };
-    let (chat, queue) = core.chats.insert(core, launch_spec, origin)?;
+    let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
     core.seen.active(chat.agent_id());
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
-    launch(core, &chat, queue);
+    launch(
+        core,
+        &chat,
+        queue,
+        Begin::Start {
+            rebind: None,
+            notice: None,
+        },
+    );
     Ok(chat)
 }
 
@@ -831,12 +1121,56 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
         eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}");
         return;
     }
-    match core.chats.insert(core, record.launch, record.origin) {
-        Ok((chat, queue)) => launch(core, &chat, queue),
+    let notice = record.notice.as_deref().map(update_notice);
+    match core.chats.insert(core, record.launch, record.origin, None) {
+        Ok((chat, queue)) => launch(
+            core,
+            &chat,
+            queue,
+            Begin::Start {
+                rebind: None,
+                notice,
+            },
+        ),
         Err(error) => {
             eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}")
         }
     }
+}
+
+/// Takes up a chat an earlier core handed over whole, its agent still
+/// running on `pipes`. Answers with why it could not be.
+pub(crate) fn adopt(
+    core: &Arc<Core>,
+    live: LiveChat,
+    pipes: [std::os::fd::OwnedFd; 3],
+) -> Result<(), String> {
+    validate(&live.current).map_err(|error| error.to_string())?;
+    let feed = Feed::restored(live.launch.agent_id.clone(), live.feed);
+    let (chat, queue) = core
+        .chats
+        .insert(core, live.launch, live.origin, Some((feed, live.flags)))
+        .map_err(|error| error.to_string())?;
+    chat.set_current(live.current);
+    if chat.turn_running() {
+        core.seen.started(chat.agent_id());
+    }
+    if !live.asked.is_empty() {
+        core.seen.wants_a_look(chat.agent_id());
+    }
+    launch(
+        core,
+        &chat,
+        queue,
+        Begin::Adopt(Box::new(native::Adopted {
+            session: live.session,
+            backend: live.backend,
+            agent: live.agent,
+            pipes,
+            asked: live.asked,
+        })),
+    );
+    Ok(())
 }
 
 /// Answers once the running chat is ready, or says why it never got there.

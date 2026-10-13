@@ -83,10 +83,10 @@ pub mod frozen {
 
     /// The format of the state a core hands to its replacement. A core only
     /// replaces itself with a binary that reads its format.
-    pub const RESUME_FORMAT: u32 = 4;
+    pub const RESUME_FORMAT: u32 = 5;
 
     /// Every hand-over format a core of this build takes over from.
-    pub const READS_FORMATS: [u32; 4] = [1, 2, 3, RESUME_FORMAT];
+    pub const READS_FORMATS: [u32; 5] = [1, 2, 3, 4, RESUME_FORMAT];
 
     /// The argument that makes a core binary print its [`UpgradeInfo`].
     pub const UPGRADE_INFO_ARG: &str = "--upgrade-info";
@@ -99,6 +99,9 @@ pub mod frozen {
         Upgrade { binary: PathBuf },
         /// Stop every session and exit.
         StopEverything,
+        /// Which chats an update now would stop rather than carry over while
+        /// their agents work. Answered with [`FrozenReply::UpdateBlockers`].
+        UpdateBlockers,
     }
 
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,6 +120,22 @@ pub mod frozen {
         Deferred {
             message: String,
         },
+        UpdateBlockers {
+            chats: Vec<UpdateBlocker>,
+        },
+    }
+
+    /// A chat whose agent is at work, which an update now would stop and
+    /// start again on its session.
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct UpdateBlocker {
+        pub agent_id: String,
+        pub provider: String,
+        pub title: Option<String>,
+        /// `starting` while the agent is still starting, `busy` while the
+        /// chat is in the middle of a request.
+        pub reason: String,
     }
 
     /// What `<binary> core --upgrade-info` prints, as one JSON object.

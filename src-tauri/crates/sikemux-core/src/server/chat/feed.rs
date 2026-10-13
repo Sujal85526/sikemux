@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::protocol::{
@@ -16,7 +17,7 @@ use crate::protocol::{
 
 use super::super::access::Peer;
 use super::super::connection::{ClientConn, ClientId};
-use super::history::{History, Page, MAX_HISTORY_BYTES};
+use super::history::{History, HistoryState, Page, MAX_HISTORY_BYTES};
 use super::states::{Subagent, Task};
 
 /// One frame's worth of streamed updates travels as a single event. Each
@@ -54,7 +55,7 @@ const STANDING_UPDATES: [&str; 6] = [
 ];
 
 /// What a kept event still stands for, until a later one replaces or ends it.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
 enum Holds {
     Update(String),
     TaskSpawned(String),
@@ -62,6 +63,7 @@ enum Holds {
     Subagent(String),
 }
 
+#[derive(Serialize, Deserialize)]
 struct Entry {
     event: ChatEvent,
     bytes: usize,
@@ -82,12 +84,15 @@ pub(crate) struct Tail {
 /// The ordered events a late client replays. Text streamed into one message
 /// is kept as one event, which the chat would have joined up anyway. Each is
 /// written to the history on disk once nothing more joins it.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Replay {
     entries: VecDeque<Entry>,
     bytes: usize,
     max_bytes: usize,
     max_events: usize,
     trimmed: bool,
+    /// Handed over on its own, since the file stays where it is.
+    #[serde(skip)]
     history: Option<History>,
     next_index: u64,
     in_turn: bool,
@@ -137,6 +142,7 @@ fn session_title(payload: &Value) -> Option<String> {
 }
 
 /// A subagent or background task the agent has going.
+#[derive(Serialize, Deserialize)]
 struct Going {
     id: String,
     /// The session whose transcript shows it.
@@ -149,7 +155,7 @@ struct Going {
 
 /// The subagents and background tasks the agent has going, which end with
 /// it when its process goes.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct Work {
     subagents: Vec<Going>,
     tasks: Vec<Going>,
@@ -684,6 +690,7 @@ impl Replay {
 }
 
 /// One event as clients heard it.
+#[derive(Serialize, Deserialize)]
 struct Sent {
     seq: u64,
     event: ChatEvent,
@@ -694,7 +701,7 @@ struct Sent {
 
 /// The newest events as sent, numbered, so a client that held everything
 /// up to some number can be told just the rest.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct Recent {
     sent: VecDeque<Sent>,
     bytes: usize,
@@ -764,6 +771,21 @@ struct Inner {
     closed: bool,
 }
 
+/// A feed as plain data, for a core that takes the chat over. Clients that
+/// held a mark of it catch up from where they were.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FeedState {
+    id: String,
+    seq: u64,
+    recent: Recent,
+    replay: Replay,
+    history: Option<HistoryState>,
+    start: Option<ChatStart>,
+    permission_mode: String,
+    title: Option<String>,
+}
+
 pub(crate) struct Feed {
     agent_id: String,
     /// Names this run of the chat's agent in the marks clients hold.
@@ -800,6 +822,58 @@ impl Feed {
                 closed: false,
             }),
         })
+    }
+
+    /// Takes up a feed an earlier core let go of.
+    pub(crate) fn restored(agent_id: String, state: FeedState) -> Arc<Self> {
+        let mut replay = state.replay;
+        replay.history = state.history.map(History::reopen);
+        Arc::new(Self {
+            agent_id,
+            id: state.id,
+            runtime: tokio::runtime::Handle::current(),
+            inner: Mutex::new(Inner {
+                subscribers: HashMap::new(),
+                seq: state.seq,
+                recent: state.recent,
+                replay,
+                pending: Vec::new(),
+                pending_bytes: 0,
+                flush_scheduled: false,
+                start: state.start,
+                permission_mode: state.permission_mode,
+                title: state.title,
+                closed: false,
+            }),
+        })
+    }
+
+    /// Lets go of the feed for a core that takes the chat over, once what is
+    /// waiting to go out has gone. Nothing said here after that is kept.
+    pub(crate) fn release(&self) -> Option<FeedState> {
+        let mut inner = self.inner.lock().ok()?;
+        self.flush_locked(&mut inner);
+        inner.closed = true;
+        let history = inner.replay.history.take().map(History::release);
+        let replay = std::mem::replace(
+            &mut inner.replay,
+            Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None),
+        );
+        Some(FeedState {
+            id: self.id.clone(),
+            seq: inner.seq,
+            recent: std::mem::take(&mut inner.recent),
+            replay,
+            history,
+            start: inner.start.clone(),
+            permission_mode: inner.permission_mode.clone(),
+            title: inner.title.clone(),
+        })
+    }
+
+    /// The name of the file the feed keeps its history in.
+    pub(crate) fn id(&self) -> &str {
+        &self.id
     }
 
     fn broadcast(&self, inner: &mut Inner, kind: ChatEventKind, payload: Value) {

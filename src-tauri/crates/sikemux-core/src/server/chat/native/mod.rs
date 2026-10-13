@@ -20,8 +20,20 @@ use tokio::sync::mpsc;
 
 use crate::protocol::ChatLaunch;
 
-use super::rebind::{Outcome, Rebind};
+use super::rebind::Outcome;
 use super::{Chat, ChatCommand};
+
+pub(crate) use process::{AgentRecord, Released};
+pub(crate) use session::{Adopted, Begin, Handed, SessionState};
+
+/// Stops an agent that was let go of but that no core will take up.
+pub(crate) fn kill_released(released: &Released) {
+    process::kill_group(released.pid);
+}
+
+pub(crate) fn kill_agent(pid: u32) {
+    process::kill_group(pid);
+}
 
 /// What a client rebuilding a chat needs to tell its turns apart: when a
 /// replayed update first happened, in Unix milliseconds, and whether it began
@@ -85,12 +97,12 @@ pub(super) async fn run(
     chat: Arc<Chat>,
     launch: ChatLaunch,
     commands: &mut mpsc::UnboundedReceiver<ChatCommand>,
-    rebind: Option<Box<Rebind>>,
+    begin: Begin,
 ) -> Result<Outcome, String> {
     match kind {
-        Kind::Claude => session::run::<claude::Claude>(chat, launch, commands, rebind).await,
-        Kind::Codex => session::run::<codex::Codex>(chat, launch, commands, rebind).await,
-        Kind::Muse => session::run::<muse::Muse>(chat, launch, commands, rebind).await,
-        Kind::Acp => session::run::<acp::Acp>(chat, launch, commands, rebind).await,
+        Kind::Claude => session::run::<claude::Claude>(chat, launch, commands, begin).await,
+        Kind::Codex => session::run::<codex::Codex>(chat, launch, commands, begin).await,
+        Kind::Muse => session::run::<muse::Muse>(chat, launch, commands, begin).await,
+        Kind::Acp => session::run::<acp::Acp>(chat, launch, commands, begin).await,
     }
 }

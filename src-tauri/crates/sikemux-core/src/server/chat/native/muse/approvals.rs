@@ -7,6 +7,7 @@ use super::super::json::{text, text_or_empty};
 
 /// One stage of an approval the person is asked about, and how to tell Muse
 /// what they chose.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub(super) struct Question {
     pub request: Value,
     approval_id: String,

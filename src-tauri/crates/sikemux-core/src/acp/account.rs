@@ -36,7 +36,7 @@ pub fn directory(provider: &str, env: &BTreeMap<String, String>) -> Option<PathB
 /// Who the provider is signed in as: an account id, or `SignedOut`. `None`
 /// when that cannot be told, such as for a provider without account files or
 /// a file caught halfway through being written.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SignIn {
     Account(String),
     SignedOut,
@@ -102,7 +102,7 @@ fn codex_sign_in(auth: &Value) -> Option<SignIn> {
 }
 
 /// What a failed turn needs from the person, or from the chat on their behalf.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FailureKind {
     /// The account is signed out, or its sign-in no longer works.
@@ -112,7 +112,7 @@ pub enum FailureKind {
     Other,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, serde::Deserialize)]
 pub struct Failure {
     pub kind: FailureKind,
     pub title: String,

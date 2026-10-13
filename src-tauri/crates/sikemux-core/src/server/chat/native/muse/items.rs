@@ -535,6 +535,7 @@ pub(super) fn subagent_result(item: &Value) -> Option<String> {
 }
 
 /// One subagent with a card in the chat.
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Child {
     parent: String,
     ended: bool,
@@ -543,6 +544,7 @@ struct Child {
 }
 
 /// A tool call that runs on after its turn.
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Background {
     ended: bool,
 }
@@ -567,6 +569,7 @@ pub(super) enum Follow {
 }
 
 /// A message or reasoning arriving in pieces.
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Streaming {
     thought: bool,
     /// Whether any piece of it has reached the chat.
@@ -574,7 +577,7 @@ struct Streaming {
 }
 
 /// What the chat has been shown of the items streaming in.
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct Items {
     streaming: HashMap<String, Streaming>,
     shown: HashSet<String>,

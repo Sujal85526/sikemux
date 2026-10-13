@@ -13,15 +13,16 @@ use agent_client_protocol::schema::v1::{
     SetSessionModeRequest, AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES,
 };
 use agent_client_protocol::schema::ProtocolVersion;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::sync::oneshot;
 
 use crate::acp::account::{self, Failure};
 use crate::acp::{air, native, permission_mode_id, prompt_blocks};
 use crate::protocol::ChatLaunch;
 
-use super::process::{Lines, Process};
-use super::rpc::{error_text, Incoming, Rpc, Sent, ANSWER_WAIT};
+use super::process::{Lines, Process, Reading, Reads, Released, Writer};
+use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
 
 /// The error code an agent turns a prompt down with when it needs a sign-in.
@@ -48,7 +49,7 @@ fn start_error(process: &Process, error: String) -> String {
 
 /// The turn last prompted, the last one asked to stop while it ran, and
 /// whether the agent's output has closed.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct Turns {
     prompted: u64,
     cancelled: u64,
@@ -113,48 +114,92 @@ impl Driver {
     fn ask(&self, id: Value, request: Value) {
         let driver = self.clone();
         tokio::spawn(async move {
-            let outcome = match driver.sink.ask(request).await {
-                Some(option_id) => {
-                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
-                }
-                None => RequestPermissionOutcome::Cancelled,
-            };
-            let response = serde_json::to_value(RequestPermissionResponse::new(outcome))
-                .unwrap_or_else(|_| json!({}));
-            driver.rpc.respond(id, response);
+            let reply = json!({ "id": id });
+            let chosen = driver.sink.ask(request, reply.clone()).await;
+            driver.answer_permission(&reply, chosen);
         });
     }
 
-    /// Reads the agent's output until it closes.
-    fn read(self, mut lines: Lines) {
-        tokio::spawn(async move {
-            while let Some(message) = lines.next().await {
-                match self.rpc.read(message) {
-                    Some(Incoming::Notification { method, mut params })
-                        if method == CLIENT_METHOD_NAMES.session_update =>
-                    {
-                        let update = params
-                            .get_mut("update")
-                            .map(Value::take)
-                            .unwrap_or_default();
-                        let session_id = params["sessionId"].as_str().unwrap_or_default();
-                        self.sink.update(session_id, update);
-                    }
-                    Some(Incoming::Request { id, method, params })
-                        if method == CLIENT_METHOD_NAMES.session_request_permission =>
-                    {
-                        self.ask(id, params);
-                    }
-                    Some(Incoming::Request { id, method, .. }) => self
-                        .rpc
-                        .refuse(id, &format!("Sikemux does not handle {method}")),
-                    Some(Incoming::Notification { .. }) | None => {}
-                }
+    /// Tells the agent the option the person chose for the permission
+    /// request `reply` names, or that they never chose.
+    fn answer_permission(&self, reply: &Value, chosen: Option<String>) {
+        let outcome = match chosen {
+            Some(option_id) => {
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
             }
-            self.lock().gone = true;
-            self.rpc.close();
-        });
+            None => RequestPermissionOutcome::Cancelled,
+        };
+        let response = serde_json::to_value(RequestPermissionResponse::new(outcome))
+            .unwrap_or_else(|_| json!({}));
+        self.rpc.respond(reply["id"].clone(), response);
     }
+
+    /// The answer to a request sent with `purpose`.
+    fn purpose_answered(&self, purpose: Value, result: Result<Value, Value>) {
+        if let Some(turn) = purpose["prompt"].as_u64() {
+            self.answered(turn, result);
+        } else if let Some(steer) = purpose.get("steer") {
+            if result.is_ok_and(|answer| answer["outcome"] == "injected") {
+                let paths: Vec<String> =
+                    serde_json::from_value(steer["paths"].clone()).unwrap_or_default();
+                self.sink
+                    .prompted(steer["text"].as_str().unwrap_or_default(), &paths);
+            }
+        } else if purpose.get("stopTask").is_some() {
+            if let Err(error) = result {
+                self.sink.error(describe(&error));
+            }
+        }
+    }
+}
+
+impl Reads for Driver {
+    type Nudge = ();
+
+    fn message(&mut self, message: Value) {
+        match self.rpc.read(message) {
+            Some(Incoming::Notification { method, mut params })
+                if method == CLIENT_METHOD_NAMES.session_update =>
+            {
+                let update = params
+                    .get_mut("update")
+                    .map(Value::take)
+                    .unwrap_or_default();
+                let session_id = params["sessionId"].as_str().unwrap_or_default();
+                self.sink.update(session_id, update);
+            }
+            Some(Incoming::Request { id, method, params })
+                if method == CLIENT_METHOD_NAMES.session_request_permission =>
+            {
+                self.ask(id, params);
+            }
+            Some(Incoming::Request { id, method, .. }) => self
+                .rpc
+                .refuse(id, &format!("Sikemux does not handle {method}")),
+            Some(Incoming::Answer { purpose, result }) => self.purpose_answered(purpose, result),
+            Some(Incoming::Notification { .. }) | None => {}
+        }
+    }
+
+    fn closed(&mut self) {
+        self.lock().gone = true;
+        self.rpc.close();
+    }
+}
+
+/// What an ACP chat hands a core that takes it over.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AcpState {
+    rpc: RpcState,
+    turns: Turns,
+    provider: String,
+    session_id: String,
+    setup: Value,
+    steering: bool,
+    embedded_context: bool,
+    can_load: bool,
+    model_outside_config: bool,
 }
 
 /// The tool servers the chat hands its agent, skipping any it cannot read.
@@ -178,6 +223,7 @@ fn tool_servers(launch: &ChatLaunch) -> Vec<McpServer> {
 pub(crate) struct Acp {
     process: Process,
     driver: Driver,
+    reading: Reading<Driver>,
     provider: String,
     session_id: String,
     setup: Value,
@@ -311,6 +357,7 @@ impl Acp {
         if !self.steering {
             return Err("this agent cannot take a message mid-turn".to_owned());
         }
+        let purpose = json!({ "steer": { "text": prompt.text, "paths": prompt.paths } });
         let blocks = prompt_blocks(
             prompt.text,
             prompt.paths,
@@ -320,7 +367,7 @@ impl Acp {
         let steer = air::Steer::new(self.session_id.clone(), blocks);
         self.driver
             .rpc
-            .start(air::Steer::METHOD, params(steer)?)
+            .start_for(air::Steer::METHOD, params(steer)?, Some(purpose))
             .map_err(|error| describe(&error))
     }
 
@@ -345,7 +392,7 @@ impl Backend for Acp {
             sink,
             turns: Arc::default(),
         };
-        driver.clone().read(lines);
+        let (reading, _) = Reading::start(driver.clone(), lines);
         let failed = |error: String| start_error(&process, error);
 
         let initialize = InitializeRequest::new(ProtocolVersion::V1)
@@ -370,6 +417,7 @@ impl Backend for Acp {
         let mut acp = Self {
             process,
             driver,
+            reading,
             provider: launch.provider.clone(),
             session_id,
             model_outside_config: native::models_outside_config(&setup),
@@ -410,17 +458,11 @@ impl Backend for Acp {
         )?;
         let request = PromptRequest::new(self.session_id.clone(), blocks);
         self.driver.lock().prompted = turn;
-        let sent = self
-            .driver
-            .rpc
-            .start(AGENT_METHOD_NAMES.session_prompt, params(request)?)
-            .map_err(|error| describe(&error))?;
-        let driver = self.driver.clone();
-        tokio::spawn(async move {
-            let answer = sent.answer(None).await;
-            driver.answered(turn, answer);
-        });
-        Ok(())
+        self.driver.rpc.send_for(
+            AGENT_METHOD_NAMES.session_prompt,
+            params(request)?,
+            json!({ "prompt": turn }),
+        )
     }
 
     fn steer(
@@ -469,18 +511,11 @@ impl Backend for Acp {
             session_id: self.session_id.clone(),
             async_task_id: task_id.to_owned(),
         };
-        let sent = self
-            .driver
-            .rpc
-            .start(air::StopAsyncTask::METHOD, params(stop)?)
-            .map_err(|error| describe(&error))?;
-        let sink = self.driver.sink.clone();
-        tokio::spawn(async move {
-            if let Err(error) = sent.answer(None).await {
-                sink.error(describe(&error));
-            }
-        });
-        Ok(())
+        self.driver.rpc.send_for(
+            air::StopAsyncTask::METHOD,
+            params(stop)?,
+            json!({ "stopTask": task_id }),
+        )
     }
 
     async fn rewind(&mut self, _message_id: &str) -> Result<Option<String>, String> {
@@ -493,5 +528,72 @@ impl Backend for Acp {
 
     fn reloadable(&self) -> bool {
         self.can_load
+    }
+
+    async fn release(self) -> Result<(Value, Released), String> {
+        let Self {
+            process,
+            driver,
+            reading,
+            provider,
+            session_id,
+            setup,
+            steering,
+            embedded_context,
+            can_load,
+            model_outside_config,
+        } = self;
+        let (driver_back, lines) = reading.stop().await.ok_or("The agent stopped")?;
+        drop(driver_back);
+        let turns = std::mem::take(&mut *driver.lock());
+        let state = AcpState {
+            rpc: driver.rpc.state(),
+            turns,
+            provider,
+            session_id,
+            setup,
+            steering,
+            embedded_context,
+            can_load,
+            model_outside_config,
+        };
+        let state = serde_json::to_value(state).map_err(|error| error.to_string())?;
+        let released = process.release(lines).await?;
+        Ok((state, released))
+    }
+
+    fn adopt(
+        _launch: &ChatLaunch,
+        sink: Sink,
+        state: Value,
+        (process, writer, lines): (Process, Writer, Lines),
+        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
+    ) -> Result<Self, String> {
+        let state: AcpState = serde_json::from_value(state).map_err(|error| error.to_string())?;
+        let driver = Driver {
+            rpc: Rpc::restored(writer, true, state.rpc),
+            sink,
+            turns: Arc::new(Mutex::new(state.turns)),
+        };
+        for (reply, answered) in asked {
+            let driver = driver.clone();
+            tokio::spawn(async move {
+                let chosen = answered.await.ok().flatten();
+                driver.answer_permission(&reply, chosen);
+            });
+        }
+        let (reading, _) = Reading::start(driver.clone(), lines);
+        Ok(Self {
+            process,
+            driver,
+            reading,
+            provider: state.provider,
+            session_id: state.session_id,
+            setup: state.setup,
+            steering: state.steering,
+            embedded_context: state.embedded_context,
+            can_load: state.can_load,
+            model_outside_config: state.model_outside_config,
+        })
     }
 }

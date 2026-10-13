@@ -936,12 +936,12 @@ pub fn content_chunk(block: &Value, role: &str, message_id: Option<&str>) -> Opt
 }
 
 /// The task list built from TaskCreate/TaskUpdate/TaskList results and the task hooks (§4.6).
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TaskPlan {
     tasks: Vec<(String, TaskEntry)>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct TaskEntry {
     subject: Option<Value>,
     status: Value,

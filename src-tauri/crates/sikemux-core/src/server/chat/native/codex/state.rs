@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::acp::account;
@@ -37,6 +38,7 @@ pub(super) enum Reply {
 }
 
 /// The turn this side prompted.
+#[derive(Serialize, Deserialize)]
 struct Turn {
     number: u64,
     /// Codex's id for it, once Codex has said.
@@ -47,6 +49,7 @@ struct Turn {
     title: Option<String>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub(super) struct Session {
     pub thread_id: String,
     turn: Option<Turn>,
@@ -62,6 +65,7 @@ pub(super) struct Session {
     pub message_turns: HashMap<String, String>,
     items: Items,
     edits: HashMap<String, Value>,
+    #[serde(with = "super::super::json::pairs")]
     tool_calls: HashMap<(String, String), Vec<String>>,
     pub subagents: Subagents,
     pub token_usage: Option<Value>,
@@ -159,6 +163,12 @@ impl Session {
             questions: 0,
             gone: false,
         }
+    }
+
+    /// The turn that ended with subagents still at work, which is answered
+    /// once they end or a while has passed.
+    pub fn waiting_turn(&self) -> Option<u64> {
+        self.waiting.as_ref().map(|(turn, _)| *turn)
     }
 
     /// Turn `number` is being sent.

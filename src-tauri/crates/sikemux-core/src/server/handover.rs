@@ -6,11 +6,15 @@
 //!
 //! The command line repeats the descriptors and sessions, so a replacement
 //! that cannot read the directory still keeps every shell it can find.
+//!
+//! Chat agents are handed over the same way: their pipes stay open and their
+//! pid stays this process's child, so the new core reads on where the old
+//! one stopped while the agent works on.
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{DirBuilder, File, OpenOptions};
 use std::io::Write;
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
@@ -30,7 +34,7 @@ use crate::protocol::frozen::RESUME_FORMAT;
 use crate::protocol::{BuildIdentity, SessionExit, SessionId, SessionKind};
 
 use super::agent::{self, AgentActivity, AgentRecord};
-use super::chat::{self, ChatRecord};
+use super::chat::{self, ChatRecord, HandOver, LiveChat};
 use super::harness::HarnessRecord;
 use super::prepare::Owner;
 use super::session::{self, Session, SessionParts};
@@ -67,6 +71,10 @@ struct HandoverState {
     /// Chats a hand-over stops, which the replacement starts again on their
     /// provider sessions. Added in format 2.
     chats: Vec<ChatRecord>,
+    /// Chats whose agents go on running, which the replacement takes up
+    /// where this core stopped reading. Read one at a time, so a damaged
+    /// entry costs only its own chat. Added in format 5.
+    live_chats: Vec<Value>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -190,7 +198,7 @@ fn set_close_on_exec(fd: RawFd, close: bool) {
 
 /// Writes everything down and replaces the process with `binary`. Returns
 /// only if that failed, with every descriptor as it was.
-pub(crate) fn replace_process(core: &Core, binary: &Path, chats: &[ChatRecord]) -> CoreError {
+pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &[HandOver]) -> CoreError {
     let Some(listening) = core.listening.get() else {
         return "the core is not listening yet".into();
     };
@@ -224,6 +232,28 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, chats: &[ChatRecord]) 
             token: tools.token().to_owned(),
         })
     });
+    let mut chats = Vec::new();
+    let mut live_chats = Vec::new();
+    let mut chat_fds = Vec::new();
+    for chat in handed {
+        match chat {
+            HandOver::Resume(record) => chats.push(record.as_ref().clone()),
+            HandOver::Live(chat) => match serde_json::to_value(&chat.live) {
+                Ok(live) => {
+                    live_chats.push(live);
+                    chat_fds.extend(chat.released.fds());
+                }
+                Err(error) => {
+                    eprintln!("sikemux core: a chat's agent is started again after the update, as its state could not be written: {error}");
+                    chat::kill_released(&chat.released);
+                    chats.extend(chat.live.record.clone().map(|record| ChatRecord {
+                        notice: Some("its state could not be written down".into()),
+                        ..record
+                    }));
+                }
+            },
+        }
+    }
     let config = &listening.config;
     let state = HandoverState {
         format: RESUME_FORMAT,
@@ -244,7 +274,8 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, chats: &[ChatRecord]) 
         agent_sequence: agent::sequence_mark(),
         sessions: records,
         harness: serde_json::to_value(core.harness.record()).unwrap_or(Value::Null),
-        chats: chats.to_vec(),
+        chats,
+        live_chats,
     };
     let written = serde_json::to_vec(&state)
         .map_err(std::io::Error::other)
@@ -287,13 +318,17 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, chats: &[ChatRecord]) 
             .arg(format!("{}:{}:{pid}", session.id, session.fd()));
         keep.push(session.fd());
     }
+    for fd in chat_fds {
+        command.arg("--chat-fd").arg(fd.to_string());
+        keep.push(fd);
+    }
     for fd in &keep {
         set_close_on_exec(*fd, false);
     }
     eprintln!(
         "sikemux core: handing {} sessions and {} chats over to {}",
         sessions.len(),
-        chats.len(),
+        handed.len(),
         binary.display()
     );
     let error = command.exec();
@@ -316,6 +351,8 @@ pub(crate) struct Recovery {
     pub data_dir: Option<PathBuf>,
     pub idle_exit: Duration,
     pub sessions: Vec<(SessionId, RawFd, Option<u32>)>,
+    /// The pipes to chat agents that were handed over still running.
+    pub chat_fds: Vec<RawFd>,
     /// The listed descriptors that were open when the process started, with
     /// their file type. Only these are adopted or closed: anything opened
     /// since may have reused a number that was listed but already closed.
@@ -344,6 +381,7 @@ impl Recovery {
             .chain(self.lock_fd)
             .chain(self.tools_fd)
             .chain(self.sessions.iter().map(|(_, fd, _)| *fd))
+            .chain(self.chat_fds.iter().copied())
             .collect()
     }
 }
@@ -419,7 +457,18 @@ fn migrate(mut state: Value) -> Result<Value, String> {
                 }
                 state["format"] = Value::from(4);
             }
-            4 => return Ok(state),
+            4 => {
+                // Format 4 cores stopped every chat, and said nothing of why.
+                let chats = state.get_mut("chats").and_then(Value::as_array_mut);
+                for chat in chats.into_iter().flatten() {
+                    if let Some(chat) = chat.as_object_mut() {
+                        chat.insert("notice".into(), Value::Null);
+                    }
+                }
+                state["liveChats"] = Value::Array(Vec::new());
+                state["format"] = Value::from(5);
+            }
+            5 => return Ok(state),
             other => return Err(format!("it is in format {other}, not {RESUME_FORMAT}")),
         }
     }
@@ -495,6 +544,58 @@ fn adopt_listener(
     let listener = std::os::unix::net::UnixListener::bind(socket)?;
     std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o600))?;
     Ok(listener)
+}
+
+/// Takes up the pipes to a chat agent that was handed over still running.
+fn agent_pipes(live: &LiveChat, inherited: &mut Inherited) -> Option<[OwnedFd; 3]> {
+    let fds = [live.agent.stdin, live.agent.stdout, live.agent.stderr];
+    if !fds
+        .iter()
+        .all(|fd| inherited.open.get(fd) == Some(&libc::S_IFIFO))
+    {
+        return None;
+    }
+    let pipes = fds.map(|fd| {
+        inherited.claim(fd, libc::S_IFIFO);
+        // SAFETY: the descriptor was handed over open as a pipe and claimed
+        // here once, so this is its only owner.
+        unsafe { OwnedFd::from_raw_fd(fd) }
+    });
+    Some(pipes)
+}
+
+/// Takes up a chat whose agent was handed over still running, or starts it
+/// again on its session when it cannot be.
+fn adopt_chat(core: &Arc<Core>, live: Value, inherited: &mut Inherited) {
+    let live = match serde_json::from_value::<LiveChat>(live) {
+        Ok(live) => live,
+        Err(error) => {
+            eprintln!(
+                "sikemux core: A CHAT WAS LOST IN THE UPDATE: its state was damaged ({error})"
+            );
+            return;
+        }
+    };
+    let pid = live.agent.pid;
+    let record = live.record.clone();
+    let why = match agent_pipes(&live, inherited) {
+        Some(pipes) => match chat::adopt(core, live, pipes) {
+            Ok(()) => return,
+            Err(error) => error,
+        },
+        None => "its agent's pipes were not handed over".to_owned(),
+    };
+    eprintln!("sikemux core: a chat's agent is started again after the update: {why}");
+    chat::kill_agent(pid);
+    if let Some(record) = record {
+        chat::resume(
+            core,
+            ChatRecord {
+                notice: Some(why),
+                ..record
+            },
+        );
+    }
 }
 
 fn terminal_io(fd: RawFd, inherited: &mut Inherited) -> Result<AsyncFd<File>, String> {
@@ -700,6 +801,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
     let mut from = "an unknown build".to_owned();
     let mut tools_record = None;
     let mut chats = Vec::new();
+    let mut live_chats = Vec::new();
     if let Some(state) = state {
         from = format!("{} {}", state.from_build.version, state.from_build.commit);
         core.next_session_id
@@ -737,6 +839,11 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         }
         tools_record = state.tools;
         chats = state.chats;
+        live_chats = state.live_chats;
+    }
+    let carried = live_chats.len();
+    for live in live_chats {
+        adopt_chat(&core, live, &mut inherited);
     }
     for (id, fd, pid) in recovery.sessions.iter().copied() {
         if inherited.claimed.contains(&fd) || core.session(id).is_some() {
@@ -786,13 +893,14 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         );
     }
     eprintln!(
-        "sikemux core: took over from {from} with {} sessions and {} chats",
+        "sikemux core: took over from {from} with {} sessions and {} chats, {carried} of them still running",
         core.all_sessions().len(),
-        chats.len()
+        chats.len() + carried
     );
     for record in chats {
         chat::resume(&core, record);
     }
+    core.chats.clear_history();
     run_core(core, listener, lock, config).await
 }
 
@@ -918,8 +1026,9 @@ mod tests {
     #[test]
     fn format_one_state_gains_an_empty_chat_list() {
         let migrated = migrate(json!({ "format": 1, "sessions": [] })).expect("migrate");
-        assert_eq!(migrated["format"], 4);
+        assert_eq!(migrated["format"], 5);
         assert_eq!(migrated["chats"], json!([]));
+        assert_eq!(migrated["liveChats"], json!([]));
         assert_eq!(migrated["sessions"], json!([]));
     }
 
@@ -931,22 +1040,23 @@ mod tests {
             "chats": [{ "launch": {} }],
         }))
         .expect("migrate");
-        assert_eq!(migrated["format"], 4);
+        assert_eq!(migrated["format"], 5);
         assert_eq!(
             migrated["sessions"][0]["owner"],
             json!({ "project": "/p", "startedBy": null })
         );
         assert_eq!(
             migrated["chats"][0],
-            json!({ "launch": {}, "startedBy": null, "launcher": null })
+            json!({ "launch": {}, "startedBy": null, "launcher": null, "notice": null })
         );
     }
 
     #[test]
     fn current_state_is_left_as_it_is_and_unknown_formats_are_refused() {
         let current = json!({
-            "format": 4,
-            "chats": [{ "launch": {}, "startedBy": "phone", "launcher": "claude" }],
+            "format": 5,
+            "chats": [{ "launch": {}, "startedBy": "phone", "launcher": "claude", "notice": null }],
+            "liveChats": [],
         });
         assert_eq!(migrate(current.clone()).expect("migrate"), current);
         assert!(migrate(json!({ "format": 9 })).is_err());

@@ -6,7 +6,7 @@ use crate::protocol::{DeviceAccess, Request};
 
 use super::{CoreError, CoreResult};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Peer {
     /// The app or the CLI, over the core's own socket.
     Local,

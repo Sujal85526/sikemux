@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
 
@@ -21,6 +22,23 @@ const INTERNAL_ERROR: i64 = -32603;
 /// An answer, or the error object the agent turned the request down with.
 type Answer = oneshot::Sender<Result<Value, Value>>;
 
+/// A request still waiting on its answer. One with a `purpose` is answered
+/// through [`Incoming::Answer`] when nothing here waits on it any more, such
+/// as after a core that replaced this one took the agent up.
+struct Waiting {
+    answer: Option<Answer>,
+    purpose: Option<Value>,
+}
+
+/// The requests a backend still waits on that say what their answer is for,
+/// and the id the next request takes, as plain data.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RpcState {
+    pub next_id: i64,
+    pub waiting: Vec<(i64, Value)>,
+}
+
 /// One message the agent sent that is not an answer to this side.
 pub(crate) enum Incoming {
     Request {
@@ -31,6 +49,11 @@ pub(crate) enum Incoming {
     Notification {
         method: String,
         params: Value,
+    },
+    /// The answer to a request sent with a purpose, which nothing here waited on.
+    Answer {
+        purpose: Value,
+        result: Result<Value, Value>,
     },
 }
 
@@ -51,7 +74,7 @@ pub(crate) fn error_text(error: &Value) -> String {
 pub(crate) struct Rpc {
     writer: Writer,
     next_id: Arc<AtomicI64>,
-    waiting: Arc<Mutex<HashMap<i64, Answer>>>,
+    waiting: Arc<Mutex<HashMap<i64, Waiting>>>,
     /// Whether every message names its JSON-RPC version. Codex leaves it out;
     /// Muse refuses a message without it.
     versioned: bool,
@@ -73,7 +96,7 @@ impl Sent {
             Some(wait) => match tokio::time::timeout(wait, self.answered).await {
                 Ok(answered) => answered,
                 Err(_) => {
-                    self.rpc.forget(self.id);
+                    self.rpc.abandon(self.id);
                     return Err(unanswered(format!(
                         "The agent did not answer {}",
                         self.method
@@ -103,6 +126,45 @@ impl Rpc {
         }
     }
 
+    /// Goes on from `state`, which an earlier connection to the same agent
+    /// left: answers to its requests still find what they were for.
+    pub fn restored(writer: Writer, versioned: bool, state: RpcState) -> Self {
+        let waiting = state
+            .waiting
+            .into_iter()
+            .map(|(id, purpose)| {
+                let purpose = Some(purpose);
+                (
+                    id,
+                    Waiting {
+                        answer: None,
+                        purpose,
+                    },
+                )
+            })
+            .collect();
+        Self {
+            writer,
+            next_id: Arc::new(AtomicI64::new(state.next_id)),
+            waiting: Arc::new(Mutex::new(waiting)),
+            versioned,
+        }
+    }
+
+    /// Where the requests stand, for a connection that goes on after this one.
+    pub fn state(&self) -> RpcState {
+        let mut waiting: Vec<(i64, Value)> = self
+            .waiting()
+            .iter()
+            .filter_map(|(id, waiting)| Some((*id, waiting.purpose.clone()?)))
+            .collect();
+        waiting.sort_by_key(|(id, _)| *id);
+        RpcState {
+            next_id: self.next_id.load(Ordering::Acquire),
+            waiting,
+        }
+    }
+
     fn send(&self, mut message: Value) -> Result<(), String> {
         if self.versioned {
             message["jsonrpc"] = json!("2.0");
@@ -120,19 +182,49 @@ impl Rpc {
 
     /// Sends a request without waiting on its answer.
     pub fn start(&self, method: &str, params: Value) -> Result<Sent, Value> {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.start_for(method, params, None)
+    }
+
+    /// Sends a request whose answer, once nothing waits on the [`Sent`],
+    /// comes back as an [`Incoming::Answer`] with `purpose`.
+    pub fn start_for(
+        &self,
+        method: &str,
+        params: Value,
+        purpose: Option<Value>,
+    ) -> Result<Sent, Value> {
         let (answer, answered) = oneshot::channel();
-        self.waiting().insert(id, answer);
-        if let Err(error) = self.send(json!({ "id": id, "method": method, "params": params })) {
-            self.forget(id);
-            return Err(unanswered(error));
-        }
+        let id = self.send_request(method, params, Some(answer), purpose)?;
         Ok(Sent {
             rpc: self.clone(),
             id,
             method: method.to_owned(),
             answered,
         })
+    }
+
+    /// Sends a request whose answer comes back only as an
+    /// [`Incoming::Answer`] with `purpose`.
+    pub fn send_for(&self, method: &str, params: Value, purpose: Value) -> Result<(), String> {
+        self.send_request(method, params, None, Some(purpose))
+            .map(drop)
+            .map_err(|error| error_text(&error))
+    }
+
+    fn send_request(
+        &self,
+        method: &str,
+        params: Value,
+        answer: Option<Answer>,
+        purpose: Option<Value>,
+    ) -> Result<i64, Value> {
+        let id = self.next_id.fetch_add(1, Ordering::AcqRel);
+        self.waiting().insert(id, Waiting { answer, purpose });
+        if let Err(error) = self.send(json!({ "id": id, "method": method, "params": params })) {
+            self.forget(id);
+            return Err(unanswered(error));
+        }
+        Ok(id)
     }
 
     pub fn notify(&self, method: &str, params: Value) -> Result<(), String> {
@@ -154,12 +246,24 @@ impl Rpc {
         }));
     }
 
-    fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<i64, Answer>> {
+    fn waiting(&self) -> std::sync::MutexGuard<'_, HashMap<i64, Waiting>> {
         self.waiting.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn forget(&self, id: i64) {
         self.waiting().remove(&id);
+    }
+
+    /// Nothing waits on request `id` any more; one with a purpose still has
+    /// its answer read for it.
+    fn abandon(&self, id: i64) {
+        let mut waiting = self.waiting();
+        match waiting.get_mut(&id) {
+            Some(entry) if entry.purpose.is_some() => entry.answer = None,
+            _ => {
+                waiting.remove(&id);
+            }
+        }
     }
 
     /// Hands an answer to the request waiting on it, or reads the message as
@@ -177,15 +281,18 @@ impl Rpc {
             (Some(id), Some(method)) => Some(Incoming::Request { id, method, params }),
             (None, Some(method)) => Some(Incoming::Notification { method, params }),
             (Some(id), None) => {
-                let answer = id.as_i64().and_then(|id| self.waiting().remove(&id));
-                if let Some(answer) = answer {
-                    let result = match message.remove("error") {
-                        Some(error) => Err(error),
-                        None => Ok(message.remove("result").unwrap_or(Value::Null)),
-                    };
-                    let _ = answer.send(result);
-                }
-                None
+                let waiting = id.as_i64().and_then(|id| self.waiting().remove(&id))?;
+                let result = match message.remove("error") {
+                    Some(error) => Err(error),
+                    None => Ok(message.remove("result").unwrap_or(Value::Null)),
+                };
+                let result = match waiting.answer {
+                    Some(answer) => answer.send(result).err()?,
+                    None => result,
+                };
+                waiting
+                    .purpose
+                    .map(|purpose| Incoming::Answer { purpose, result })
             }
             (None, None) => None,
         }
@@ -193,8 +300,10 @@ impl Rpc {
 
     /// Fails every request still waiting, once the agent is gone.
     pub fn close(&self) {
-        for (_, answer) in self.waiting().drain() {
-            let _ = answer.send(Err(unanswered("The agent stopped before it answered")));
+        for (_, waiting) in self.waiting().drain() {
+            if let Some(answer) = waiting.answer {
+                let _ = answer.send(Err(unanswered("The agent stopped before it answered")));
+            }
         }
     }
 }

@@ -2,21 +2,24 @@
 //! its own protocol: turns, permission requests, accounts and starting the
 //! agent again under the chat.
 
+use std::os::fd::OwnedFd;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use crate::acp::account::{self, Failure, FailureKind};
+use crate::acp::account::{self, Failure, FailureKind, SignIn};
 use crate::acp::{permission, SessionEnd};
 use crate::protocol::{ChatContext, ChatEventKind, ChatLaunch, ChatStart};
 
 use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, Carried, Outcome, Rebind, Replay,
 };
-use super::super::{Chat, ChatCommand};
+use super::super::{Asked, Chat, ChatCommand};
+use super::process::{AgentRecord, Lines, Process, Released, Writer};
 
 /// What the person sent, for the agent to read in its own form.
 #[derive(Clone)]
@@ -200,10 +203,17 @@ impl Sink {
         }
     }
 
+    /// The person's message `text` went into the running turn.
+    pub fn prompted(&self, text: &str, paths: &[String]) {
+        self.chat.feed.prompted(NOBODY, None, text, paths);
+    }
+
     /// Asks the person about a tool call. `request` is shaped as an ACP
     /// permission request: the session, the tool call and its `options`.
+    /// `reply` is what the backend needs to answer the agent, kept with the
+    /// question so a core that takes the chat over can answer it too.
     /// Answers with the chosen option's id, or none when it was cancelled.
-    pub async fn ask(&self, mut request: Value) -> Option<String> {
+    pub async fn ask(&self, mut request: Value, reply: Value) -> Option<String> {
         if self.chat.approves() {
             if let Some(option_id) = permission::approval(&request) {
                 return Some(option_id);
@@ -223,13 +233,16 @@ impl Sink {
         let (answer, answered) = oneshot::channel();
         if self
             .chat
-            .hold_permission(request_id, option_ids, answer, request.clone())
+            .hold_permission(request_id, option_ids, answer, request.clone(), reply)
         {
             self.chat.emit(ChatEventKind::PermissionRequest, request);
         }
         answered.await.ok().flatten()
     }
 }
+
+/// No client: a message that went in on its own, which every client is told of.
+const NOBODY: crate::server::connection::ClientId = 0;
 
 /// The session an agent opened, as the chat reads it.
 pub(crate) struct Opened {
@@ -300,63 +313,150 @@ pub(crate) trait Backend: Sized + Send {
     fn reloadable(&self) -> bool {
         true
     }
+
+    /// Lets go of the agent without stopping it, answering with what a core
+    /// that takes it up needs: this side's state as plain data, and the
+    /// agent's process. On failure the agent is stopped.
+    fn release(self)
+        -> impl std::future::Future<Output = Result<(Value, Released), String>> + Send;
+
+    /// Takes up an agent an earlier core released, from the state `release`
+    /// answered. `asked` are the questions still put to the person, each with
+    /// its reply and the person's answer to come.
+    fn adopt(
+        launch: &ChatLaunch,
+        sink: Sink,
+        state: Value,
+        agent: (Process, Writer, Lines),
+        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
+    ) -> Result<Self, String>;
+}
+
+/// Where the chat's loop stands, as plain data, for a core that takes the
+/// chat over.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SessionState {
+    session_id: String,
+    setup: Value,
+    capabilities: Value,
+    turn: u64,
+    last_prompt: Option<Replay>,
+    failed_prompt: Option<Replay>,
+    exhausted: Vec<String>,
+    signed_in_again: bool,
+    signed_in_at_start: Option<SignIn>,
+    reloadable: bool,
+}
+
+/// A chat let go of by its loop.
+pub(crate) struct Handed {
+    pub session: SessionState,
+    pub backend: Value,
+    pub released: Released,
+}
+
+/// A chat another core let go of, to take up.
+pub(crate) struct Adopted {
+    pub session: SessionState,
+    pub backend: Value,
+    pub agent: AgentRecord,
+    pub pipes: [OwnedFd; 3],
+    pub asked: Vec<Asked>,
+}
+
+/// How the chat's loop gets its agent.
+pub(crate) enum Begin {
+    /// Starts the agent, or starts it again under the chat. `notice` is said
+    /// in the transcript once the agent is up.
+    Start {
+        rebind: Option<Box<Rebind>>,
+        notice: Option<Value>,
+    },
+    Adopt(Box<Adopted>),
 }
 
 pub(crate) async fn run<B: Backend>(
     chat: Arc<Chat>,
     launch: ChatLaunch,
     commands: &mut mpsc::UnboundedReceiver<ChatCommand>,
-    rebind: Option<Box<Rebind>>,
+    opening: Begin,
 ) -> Result<Outcome, String> {
-    chat.emit(ChatEventKind::Status, json!({ "state": "starting" }));
     let provider = launch.provider.clone();
-    let signed_in_at_start = account::signed_in(&provider, &launch.env);
-    let Carried {
-        replay,
-        mut exhausted,
-        mut signed_in_again,
-        notice,
-        quiet_load,
-    } = Carried::from(rebind);
-
     let (failed_tx, mut failed_rx) = mpsc::unbounded_channel::<Failed>();
     let (broken_tx, mut broken_rx) = mpsc::unbounded_channel::<String>();
-    let sink = Sink {
+    let sink = |quiet: bool| Sink {
         chat: chat.clone(),
-        failed: failed_tx,
-        broken: broken_tx,
+        failed: failed_tx.clone(),
+        broken: broken_tx.clone(),
         account: launch.account.as_ref().map(|account| account.id.clone()),
-        quiet: Arc::new(std::sync::atomic::AtomicBool::new(quiet_load)),
+        quiet: Arc::new(std::sync::atomic::AtomicBool::new(quiet)),
     };
-    chat.emit(ChatEventKind::Status, json!({ "state": "initializing" }));
-    let (mut backend, opened) = B::start(&launch, sink.clone()).await?;
-    sink.loaded();
-    let reloadable = backend.reloadable();
-
-    let mut session_id = opened.session_id.clone();
-    let mut setup = opened.setup;
-    let capabilities = opened.capabilities;
-    let start = ChatStart {
-        session_id: session_id.clone(),
-        capabilities: capabilities.clone(),
-        setup: setup.clone(),
+    let (mut backend, mut state, replay) = match opening {
+        Begin::Start { rebind, notice } => {
+            chat.emit(ChatEventKind::Status, json!({ "state": "starting" }));
+            let signed_in_at_start = account::signed_in(&provider, &launch.env);
+            let Carried {
+                replay,
+                exhausted,
+                signed_in_again,
+                notice: carried,
+                quiet_load,
+            } = Carried::from(rebind);
+            let sink = sink(quiet_load);
+            chat.emit(ChatEventKind::Status, json!({ "state": "initializing" }));
+            let (backend, opened) = B::start(&launch, sink.clone()).await?;
+            sink.loaded();
+            let state = SessionState {
+                session_id: opened.session_id,
+                setup: opened.setup,
+                capabilities: opened.capabilities,
+                turn: 0,
+                last_prompt: None,
+                failed_prompt: None,
+                exhausted,
+                signed_in_again,
+                signed_in_at_start,
+                reloadable: backend.reloadable(),
+            };
+            let start = state.start();
+            chat.mark_ready(start.clone());
+            chat.emit(
+                ChatEventKind::Ready,
+                serde_json::to_value(&start).unwrap_or_else(|_| json!({})),
+            );
+            for update in carried.into_iter().chain(notice) {
+                sink.update(&state.session_id, update);
+            }
+            (backend, state, replay)
+        }
+        Begin::Adopt(adopted) => {
+            let Adopted {
+                session,
+                backend: kept,
+                agent,
+                pipes,
+                asked,
+            } = *adopted;
+            let asked = asked
+                .into_iter()
+                .map(|asked| (asked.reply.clone(), chat.hold_again(asked)))
+                .collect();
+            let [stdin, stdout, stderr] = pipes;
+            let adopted = Process::adopt(&agent, stdin, stdout, stderr)
+                .inspect_err(|_| super::process::kill_group(agent.pid))
+                .and_then(|process| B::adopt(&launch, sink(false), kept, process, asked));
+            match adopted {
+                Ok(backend) => {
+                    chat.mark_ready(session.start());
+                    (backend, session, None)
+                }
+                Err(error) => return Ok(not_taken_over(&chat, &launch, &error)),
+            }
+        }
     };
-    chat.mark_ready(start.clone());
-    chat.emit(
-        ChatEventKind::Ready,
-        serde_json::to_value(&start).unwrap_or_else(|_| json!({})),
-    );
 
-    let mut turn: u64 = 0;
     let (stalled_tx, mut stalled_rx) = mpsc::unbounded_channel::<u64>();
-    // The prompt the running turn answers, and the one whose turn failed for
-    // want of an account, which a switch sends again.
-    let mut last_prompt: Option<Replay> = None;
-    let mut failed_prompt: Option<Replay> = None;
-
-    if let Some(update) = notice {
-        sink.update(&session_id, update);
-    }
     if let Some(replay) = replay {
         if let Some(from) = replay.announce {
             chat.feed.prompted(
@@ -367,15 +467,16 @@ pub(crate) async fn run<B: Backend>(
             );
         }
         chat.running.store(true, Ordering::Release);
-        turn += 1;
-        begin(&chat, &mut backend, turn, Prompt::from(&replay)).await;
-        last_prompt = Some(Replay {
+        state.turn += 1;
+        begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
+        state.last_prompt = Some(Replay {
             announce: None,
             ..replay
         });
     }
 
     let end = loop {
+        chat.at_rest.store(true, Ordering::Release);
         let command = tokio::select! {
             command = commands.recv() => match command {
                 Some(command) => command,
@@ -392,29 +493,29 @@ pub(crate) async fn run<B: Backend>(
                 break Outcome::Ended(SessionEnd::Exited);
             }
             Some(failed) = failed_rx.recv() => {
-                if failed.turn != turn {
+                if failed.turn != state.turn {
                     continue;
                 }
                 let current = launch.account.as_ref().map(|account| account.id.clone());
                 let retry = match failed.failure.kind {
-                    FailureKind::SignIn if reloadable && !signed_in_again => chat
+                    FailureKind::SignIn if state.reloadable && !state.signed_in_again => chat
                         .relaunch(&launch)
                         .map(|launch| Rebind {
                             launch,
-                            replay: last_prompt.clone(),
-                            exhausted: exhausted.clone(),
+                            replay: state.last_prompt.clone(),
+                            exhausted: state.exhausted.clone(),
                             signed_in_again: true,
                             notice: None,
                         }),
-                    FailureKind::Limit if reloadable => {
-                        let mut tried = exhausted.clone();
+                    FailureKind::Limit if state.reloadable => {
+                        let mut tried = state.exhausted.clone();
                         tried.extend(current.clone());
                         next_account(&provider, &launch, &tried).and_then(|next| {
                             let notice = switch_notice(&launch, next, "limit");
                             let moved = on_account(&provider, &launch, next);
                             chat.relaunch(&moved).map(|launch| Rebind {
                                 launch,
-                                replay: last_prompt.clone(),
+                                replay: state.last_prompt.clone(),
                                 exhausted: tried,
                                 signed_in_again: false,
                                 notice: Some(notice),
@@ -431,11 +532,11 @@ pub(crate) async fn run<B: Backend>(
                     chat.emit(ChatEventKind::TurnCompleted, response);
                 }
                 chat.emit(ChatEventKind::Error, failed.failure.payload(current.as_deref()));
-                failed_prompt = last_prompt.take();
+                state.failed_prompt = state.last_prompt.take();
                 continue;
             }
             Some(stalled) = stalled_rx.recv() => {
-                if chat.running.load(Ordering::Acquire) && turn == stalled {
+                if chat.running.load(Ordering::Acquire) && state.turn == stalled {
                     chat.emit(
                         ChatEventKind::Error,
                         error_message("The agent did not stop, so its session was restarted"),
@@ -445,6 +546,7 @@ pub(crate) async fn run<B: Backend>(
                 continue;
             }
         };
+        chat.at_rest.store(false, Ordering::Release);
         match command {
             ChatCommand::Prompt {
                 from,
@@ -460,9 +562,9 @@ pub(crate) async fn run<B: Backend>(
                     );
                     continue;
                 }
-                exhausted.clear();
-                signed_in_again = false;
-                failed_prompt = None;
+                state.exhausted.clear();
+                state.signed_in_again = false;
+                state.failed_prompt = None;
                 let replay = Replay {
                     announce: Some(from),
                     message_id,
@@ -473,10 +575,10 @@ pub(crate) async fn run<B: Backend>(
                 // A sign-in made elsewhere since the agent started is only
                 // read by a new agent process.
                 let changed = account::signed_in(&provider, &launch.env);
-                if reloadable
+                if state.reloadable
                     && changed.is_some()
-                    && signed_in_at_start.is_some()
-                    && changed != signed_in_at_start
+                    && state.signed_in_at_start.is_some()
+                    && changed != state.signed_in_at_start
                 {
                     if let Some(launch) = chat.relaunch(&launch) {
                         break Outcome::Rebind(Box::new(Rebind {
@@ -494,9 +596,9 @@ pub(crate) async fn run<B: Backend>(
                     &replay.text,
                     &replay.paths,
                 );
-                turn += 1;
-                begin(&chat, &mut backend, turn, Prompt::from(&replay)).await;
-                last_prompt = Some(Replay {
+                state.turn += 1;
+                begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
+                state.last_prompt = Some(Replay {
                     announce: None,
                     ..replay
                 });
@@ -521,14 +623,10 @@ pub(crate) async fn run<B: Backend>(
                         continue;
                     }
                 };
-                chat.feed.rewound(from, &session_id, &message_id);
+                chat.feed.rewound(from, &state.session_id, &message_id);
                 if let Some(moved) = moved {
-                    session_id = moved;
-                    let start = ChatStart {
-                        session_id: session_id.clone(),
-                        capabilities: capabilities.clone(),
-                        setup: setup.clone(),
-                    };
+                    state.session_id = moved;
+                    let start = state.start();
                     chat.mark_ready(start.clone());
                     chat.emit(
                         ChatEventKind::Ready,
@@ -536,9 +634,9 @@ pub(crate) async fn run<B: Backend>(
                     );
                 }
                 let _ = reply.send(Ok(()));
-                exhausted.clear();
-                signed_in_again = false;
-                failed_prompt = None;
+                state.exhausted.clear();
+                state.signed_in_again = false;
+                state.failed_prompt = None;
                 let replay = Replay {
                     announce: None,
                     message_id: Some(message_id),
@@ -553,9 +651,9 @@ pub(crate) async fn run<B: Backend>(
                     &replay.paths,
                 );
                 chat.running.store(true, Ordering::Release);
-                turn += 1;
-                begin(&chat, &mut backend, turn, Prompt::from(&replay)).await;
-                last_prompt = Some(replay);
+                state.turn += 1;
+                begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
+                state.last_prompt = Some(replay);
             }
             ChatCommand::SwitchAccount { account } => {
                 if chat.running.load(Ordering::Acquire) {
@@ -565,7 +663,7 @@ pub(crate) async fn run<B: Backend>(
                     );
                     continue;
                 }
-                if !reloadable {
+                if !state.reloadable {
                     chat.emit(
                         ChatEventKind::Error,
                         error_message("This agent cannot carry a chat to another account"),
@@ -579,7 +677,7 @@ pub(crate) async fn run<B: Backend>(
                 let notice = moves.then(|| switch_notice(&launch, &account, "chosen"));
                 let moved = on_account(&provider, &launch, &account);
                 if let Some(launch) = chat.relaunch(&moved) {
-                    let replay = failed_prompt.take();
+                    let replay = state.failed_prompt.take();
                     if replay.is_some() {
                         chat.running.store(true, Ordering::Release);
                     }
@@ -614,8 +712,8 @@ pub(crate) async fn run<B: Backend>(
                     backend.set_config(&config_id, &value).await
                 };
                 if let Ok(options) = &result {
-                    setup["configOptions"] = options.clone();
-                    chat.feed.set_setup(&setup);
+                    state.setup["configOptions"] = options.clone();
+                    chat.feed.set_setup(&state.setup);
                 }
                 let _ = reply.send(result.map(|options| json!({ "configOptions": options })));
             }
@@ -653,11 +751,61 @@ pub(crate) async fn run<B: Backend>(
             }
             ChatCommand::Cancel => {
                 let sent = backend.cancel().await;
-                chat.cancel_sent(sent, turn, &stalled_tx);
+                chat.cancel_sent(sent, state.turn, &stalled_tx);
+            }
+            ChatCommand::HandOver { reply } => {
+                let released = backend.release().await;
+                let handed = released.map(|(backend, released)| Handed {
+                    session: state,
+                    backend,
+                    released,
+                });
+                // Nobody waits for it any more, so the agent is stopped
+                // rather than left running unread.
+                if let Err(Ok(handed)) = reply.send(handed) {
+                    super::process::kill_group(handed.released.pid);
+                }
+                break Outcome::Released;
             }
         }
     };
     Ok(end)
+}
+
+impl SessionState {
+    fn start(&self) -> ChatStart {
+        ChatStart {
+            session_id: self.session_id.clone(),
+            capabilities: self.capabilities.clone(),
+            setup: self.setup.clone(),
+        }
+    }
+}
+
+/// A chat whose agent this core could not take over: it goes on in a new
+/// agent process on the same session, and says so.
+fn not_taken_over(chat: &Chat, launch: &ChatLaunch, error: &str) -> Outcome {
+    if chat.running.swap(false, Ordering::AcqRel) {
+        chat.emit(
+            ChatEventKind::TurnCompleted,
+            json!({ "stopReason": "cancelled" }),
+        );
+    }
+    chat.cancel_permissions();
+    let notice = super::super::update_notice(error);
+    match chat.relaunch(launch) {
+        Some(launch) => Outcome::Rebind(Box::new(Rebind {
+            launch,
+            replay: None,
+            exhausted: Vec::new(),
+            signed_in_again: false,
+            notice: Some(notice),
+        })),
+        None => {
+            chat.emit(ChatEventKind::Error, error_message(error));
+            Outcome::Ended(SessionEnd::Exited)
+        }
+    }
 }
 
 /// Starts turn `turn`, or says why it could not start.

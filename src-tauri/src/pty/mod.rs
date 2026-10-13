@@ -547,6 +547,9 @@ async fn upgrade_core(
             }
             Ok(FrozenReply::Deferred { .. }) => Ok(None),
             Ok(FrozenReply::Refused { message }) => Err(message),
+            Ok(FrozenReply::UpdateBlockers { .. }) => {
+                Err("the core answered another request".to_owned())
+            }
             Err(error) => Err(error.to_string()),
         }
     })

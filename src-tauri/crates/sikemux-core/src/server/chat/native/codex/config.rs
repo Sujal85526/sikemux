@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 /// The app's two permission modes, as the presets Codex's ACP adapter names
 /// them by. "read-only" still writes inside the workspace; it asks first for
 /// anything outside it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) enum Mode {
     Ask,
     FullAccess,
@@ -84,7 +84,7 @@ pub(super) fn modes(current: Mode) -> Value {
 }
 
 /// The models `model/list` offered, in its order.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct Models(pub Vec<Value>);
 
 impl Models {

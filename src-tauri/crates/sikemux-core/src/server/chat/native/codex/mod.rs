@@ -14,23 +14,22 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::sync::oneshot;
 use url::Url;
 
 use crate::acp::prompt_blocks;
 use crate::protocol::ChatLaunch;
 
 use super::file_link;
-use super::process::{Lines, Process};
-use super::rpc::{error_text, Incoming, Rpc, Sent, ANSWER_WAIT};
+use super::process::{Lines, Process, Reading, Reads, Released, Writer};
+use super::rpc::{error_text, Incoming, Rpc, RpcState, Sent, ANSWER_WAIT};
 use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
+use approvals::Question;
 use commands::Command;
 use config::{Mode, Models};
 use state::{Effect, Reply, Session};
-
-/// How long a stop waits for Codex to take it. Codex never answers an
-/// interrupt for a turn that is not running.
-const INTERRUPT_WAIT: Duration = Duration::from_secs(5);
 
 /// How long a finished turn waits for the subagents it started.
 const SUBAGENT_WAIT: Duration = Duration::from_secs(10 * 60);
@@ -61,32 +60,69 @@ impl Driver {
                 Effect::WorkStarted if !self.sink.running() => self.sink.work_started(),
                 Effect::WorkStarted => {}
                 Effect::WorkEnded(stop_reason) => self.sink.work_ended(stop_reason),
-                Effect::Interrupt(turn_id) => {
-                    let driver = self.clone();
-                    tokio::spawn(async move { driver.interrupt(turn_id).await });
-                }
-                Effect::AwaitSubagents(turn) => {
-                    let driver = self.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(SUBAGENT_WAIT).await;
-                        let effects = driver.lock().subagents_waited(turn);
-                        driver.apply(effects);
-                    });
-                }
+                Effect::Interrupt(turn_id) => self.interrupt(turn_id),
+                Effect::AwaitSubagents(turn) => self.await_subagents(turn),
             }
         }
     }
 
-    async fn interrupt(&self, turn_id: String) {
+    fn await_subagents(&self, turn: u64) {
+        let driver = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(SUBAGENT_WAIT).await;
+            let effects = driver.lock().subagents_waited(turn);
+            driver.apply(effects);
+        });
+    }
+
+    /// Asks Codex to stop the turn with this id. Codex never answers an
+    /// interrupt for a turn that is not running.
+    fn interrupt(&self, turn_id: String) {
         let thread_id = self.lock().thread_id.clone();
-        let asked = self.rpc.request(
+        let _ = self.rpc.send_for(
             "turn/interrupt",
             json!({ "threadId": thread_id, "turnId": turn_id }),
+            json!({ "interrupt": turn_id }),
         );
-        if let Ok(Ok(_)) = tokio::time::timeout(INTERRUPT_WAIT, asked).await {
-            let effects = self.lock().interrupted(&turn_id);
-            self.apply(effects);
+    }
+
+    /// The answer to a request sent with `purpose`.
+    fn purpose_answered(&self, purpose: Value, result: Result<Value, Value>) {
+        if let Some(turn_id) = purpose["interrupt"].as_str() {
+            if result.is_ok() {
+                let effects = self.lock().interrupted(turn_id);
+                self.apply(effects);
+            }
+        } else if let Some(steer) = purpose.get("steer") {
+            if result.is_ok() {
+                let paths: Vec<String> =
+                    serde_json::from_value(steer["paths"].clone()).unwrap_or_default();
+                self.sink
+                    .prompted(steer["text"].as_str().unwrap_or_default(), &paths);
+            }
         }
+    }
+
+    /// Tells Codex what the person chose for the question `reply` holds.
+    fn answer_question(&self, reply: &Value, chosen: Option<String>) {
+        let Ok(question) = serde_json::from_value::<Question>(reply["question"].clone()) else {
+            self.rpc
+                .refuse(reply["id"].clone(), "The question could not be read");
+            return;
+        };
+        if let Some(call) = question
+            .resumes
+            .as_ref()
+            .filter(|_| question.allows(chosen.as_deref()))
+        {
+            let session = question.request["sessionId"].as_str().unwrap_or_default();
+            self.sink.update(
+                session,
+                json!({ "sessionUpdate": "tool_call_update", "toolCallId": call, "status": "in_progress" }),
+            );
+        }
+        self.rpc
+            .respond(reply["id"].clone(), question.answer(chosen.as_deref()));
     }
 
     fn notification(&self, method: &str, params: &Value) {
@@ -102,49 +138,62 @@ impl Driver {
                 .rpc
                 .refuse(id, &format!("Sikemux does not handle {method}")),
             Reply::Ask(question) => {
+                let request = question.request.clone();
+                let reply = match serde_json::to_value(&question) {
+                    Ok(question) => json!({ "id": id, "question": question }),
+                    Err(_) => {
+                        self.rpc.respond(id, question.answer(None));
+                        return;
+                    }
+                };
                 let driver = self.clone();
                 tokio::spawn(async move {
-                    let chosen = driver.sink.ask(question.request.clone()).await;
-                    if let Some(call) = question
-                        .resumes
-                        .as_ref()
-                        .filter(|_| question.allows(chosen.as_deref()))
-                    {
-                        let session = question.request["sessionId"].as_str().unwrap_or_default();
-                        driver.sink.update(
-                            session,
-                            json!({ "sessionUpdate": "tool_call_update", "toolCallId": call, "status": "in_progress" }),
-                        );
-                    }
-                    driver.rpc.respond(id, question.answer(chosen.as_deref()));
+                    let chosen = driver.sink.ask(request, reply.clone()).await;
+                    driver.answer_question(&reply, chosen);
                 });
             }
         }
     }
+}
 
-    /// Reads Codex's output until it closes.
-    fn read(self, mut lines: Lines) {
-        tokio::spawn(async move {
-            while let Some(message) = lines.next().await {
-                match self.rpc.read(message) {
-                    Some(Incoming::Notification { method, params }) => {
-                        self.notification(&method, &params)
-                    }
-                    Some(Incoming::Request { id, method, params }) => {
-                        self.request(id, &method, &params)
-                    }
-                    None => {}
-                }
-            }
-            self.lock().gone = true;
-            self.rpc.close();
-        });
+impl Reads for Driver {
+    type Nudge = ();
+
+    fn message(&mut self, message: Value) {
+        match self.rpc.read(message) {
+            Some(Incoming::Notification { method, params }) => self.notification(&method, &params),
+            Some(Incoming::Request { id, method, params }) => self.request(id, &method, &params),
+            Some(Incoming::Answer { purpose, result }) => self.purpose_answered(purpose, result),
+            None => {}
+        }
     }
+
+    fn closed(&mut self) {
+        self.lock().gone = true;
+        self.rpc.close();
+    }
+}
+
+/// What a Codex chat hands a core that takes it over.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexState {
+    rpc: RpcState,
+    session: Session,
+    thread_id: String,
+    cwd: String,
+    models: Models,
+    model: String,
+    effort: Option<String>,
+    mode: Mode,
+    account: Value,
+    servers: Vec<String>,
 }
 
 pub(crate) struct Codex {
     process: Process,
     driver: Driver,
+    reading: Reading<Driver>,
     thread_id: String,
     cwd: String,
     models: Models,
@@ -274,9 +323,10 @@ impl Codex {
         let input = self.prompt_input(prompt)?;
         self.driver
             .rpc
-            .start(
+            .start_for(
                 "turn/steer",
                 json!({ "threadId": self.thread_id, "expectedTurnId": turn_id, "input": input }),
+                Some(json!({ "steer": { "text": prompt.text, "paths": prompt.paths } })),
             )
             .map(Some)
             .map_err(|error| error_text(&error))
@@ -452,7 +502,7 @@ impl Backend for Codex {
             sink,
             session: Arc::new(Mutex::new(Session::new(String::new()))),
         };
-        driver.clone().read(lines);
+        let (reading, _) = Reading::start(driver.clone(), lines);
         let failed = |error: String| start_error(&process, error);
 
         rpc.request(
@@ -533,6 +583,7 @@ impl Backend for Codex {
         let codex = Self {
             process,
             driver,
+            reading,
             thread_id: thread_id.clone(),
             cwd,
             models,
@@ -669,6 +720,79 @@ impl Backend for Codex {
 
     async fn closed(&self) -> String {
         self.process.ended().await
+    }
+
+    async fn release(self) -> Result<(Value, Released), String> {
+        let Self {
+            process,
+            driver,
+            reading,
+            thread_id,
+            cwd,
+            models,
+            model,
+            effort,
+            mode,
+            account,
+            servers,
+        } = self;
+        let (_, lines) = reading.stop().await.ok_or("Codex stopped")?;
+        let session = std::mem::replace(&mut *driver.lock(), Session::new(String::new()));
+        let state = CodexState {
+            rpc: driver.rpc.state(),
+            session,
+            thread_id,
+            cwd,
+            models,
+            model,
+            effort,
+            mode,
+            account,
+            servers,
+        };
+        let state = serde_json::to_value(state).map_err(|error| error.to_string())?;
+        let released = process.release(lines).await?;
+        Ok((state, released))
+    }
+
+    fn adopt(
+        _launch: &ChatLaunch,
+        sink: Sink,
+        state: Value,
+        (process, writer, lines): (Process, Writer, Lines),
+        asked: Vec<(Value, oneshot::Receiver<Option<String>>)>,
+    ) -> Result<Self, String> {
+        let state: CodexState = serde_json::from_value(state).map_err(|error| error.to_string())?;
+        let waiting = state.session.waiting_turn();
+        let driver = Driver {
+            rpc: Rpc::restored(writer, false, state.rpc),
+            sink,
+            session: Arc::new(Mutex::new(state.session)),
+        };
+        for (reply, answered) in asked {
+            let driver = driver.clone();
+            tokio::spawn(async move {
+                let chosen = answered.await.ok().flatten();
+                driver.answer_question(&reply, chosen);
+            });
+        }
+        if let Some(turn) = waiting {
+            driver.await_subagents(turn);
+        }
+        let (reading, _) = Reading::start(driver.clone(), lines);
+        Ok(Self {
+            process,
+            driver,
+            reading,
+            thread_id: state.thread_id,
+            cwd: state.cwd,
+            models: state.models,
+            model: state.model,
+            effort: state.effort,
+            mode: state.mode,
+            account: state.account,
+            servers: state.servers,
+        })
     }
 }
 

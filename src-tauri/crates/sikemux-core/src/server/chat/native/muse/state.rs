@@ -24,6 +24,7 @@ pub(super) enum Effect {
 }
 
 /// The turn this side prompted.
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Turn {
     number: u64,
     id: String,
@@ -32,6 +33,7 @@ struct Turn {
     title: Option<String>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub(super) struct Session {
     pub session_id: String,
     pub cwd: String,

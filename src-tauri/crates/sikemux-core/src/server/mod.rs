@@ -849,6 +849,7 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
         .await
         .map_err(std::io::Error::other)??;
     let core = Core::new(config.build.clone(), config.data_dir.as_deref())?;
+    core.chats.clear_history();
     if let Some(path) = config.cli_endpoint.clone() {
         match tools::ToolEndpoint::start(core.clone(), path).await {
             Ok(tools) => {

@@ -5,7 +5,7 @@ use serde_json::{json, Map, Value};
 
 /// The app's two permission modes. Muse's sandbox is fixed for the life of
 /// the `muse serve` process, so the mode also decides how it is started.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) enum Mode {
     /// Muse's own default: the sandbox keeps commands inside the folder, and
     /// Muse asks before going past it.
@@ -53,7 +53,7 @@ impl Mode {
 }
 
 /// The models `model/list` offered, newest first.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct Models(pub Vec<Value>);
 
 impl Models {
