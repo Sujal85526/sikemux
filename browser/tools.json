@@ -84,7 +84,7 @@
       "name": "browser_state",
       "row": {"verb": "read", "kind": "read", "icon": "eye", "target": ["{selector}"]},
       "method": "browser.state",
-      "description": "Read the tab: url, title, numbered elements, text, tabs and recent downloads. A selector reads only the text of the parts it matches.",
+      "description": "Read the tab: url, title, numbered elements, text, tabs and recent downloads.",
       "properties": {
         "fullText": {
           "type": "boolean"
@@ -1380,7 +1380,7 @@
       "name": "skills",
       "row": {"verb": "skills", "kind": "edit", "icon": "book", "target": ["{action} {name}", "{action} from {source}", "{action}"]},
       "method": "skills.manage",
-      "description": "List, create, install or remove skills every agent in Sikemux gets.",
+      "description": "Manage the skills every agent in Sikemux gets.",
       "properties": {
         "action": {
           "type": "string",
