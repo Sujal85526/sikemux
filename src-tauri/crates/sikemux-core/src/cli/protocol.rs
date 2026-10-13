@@ -123,6 +123,8 @@ pub const PLUGIN_METHODS: &[&str] = &["plugins.tools", "plugins.call"];
 /// The tools server waits on this to hear that plugins may offer its agent
 /// different tools, such as after the person signs in to one.
 pub const PLUGINS_CHANGED_METHOD: &str = "plugins.changed";
+/// The tools server asks this for the built-in tools and the guide.
+pub const TOOLS_MANIFEST_METHOD: &str = "tools.manifest";
 
 pub fn is_browser_method(method: &str) -> bool {
     BROWSER_METHODS.contains(&method)
@@ -169,6 +171,7 @@ pub fn validate_harness(request: &HarnessRequest) -> Result<(), String> {
         && !is_sim_method(&request.method)
         && !is_plugin_method(&request.method)
         && request.method != PLUGINS_CHANGED_METHOD
+        && request.method != TOOLS_MANIFEST_METHOD
     {
         return Err("unknown harness method".into());
     }

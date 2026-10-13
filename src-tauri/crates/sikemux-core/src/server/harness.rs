@@ -16,7 +16,7 @@ use tokio::time::Instant;
 
 use crate::cli::protocol::{
     is_browser_method, is_plugin_method, is_sim_method, validate_harness, HarnessRequest,
-    PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD,
+    PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
 };
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
 use crate::harness::journal::{JournalRecord, Journals};
@@ -398,6 +398,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         }
         "events.wait" => events_wait(core, &request).await,
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
+        TOOLS_MANIFEST_METHOD => crate::cli::manifest::served(),
         "task.start" => task_start(core, &request, false).await,
         "task.restart" => task_start(core, &request, true).await,
         "workspace.inspect" => {
@@ -969,7 +970,11 @@ async fn output_appears(
 /// method. Listing plugin tools is not a call.
 fn tool_name(request: &HarnessRequest) -> Option<String> {
     match request.method.as_str() {
-        "plugins.tools" | PLUGINS_CHANGED_METHOD | SIM_OFFERED_METHOD | SIM_CANCEL_METHOD => None,
+        "plugins.tools"
+        | PLUGINS_CHANGED_METHOD
+        | TOOLS_MANIFEST_METHOD
+        | SIM_OFFERED_METHOD
+        | SIM_CANCEL_METHOD => None,
         "plugins.call" => request
             .params
             .get("tool")
