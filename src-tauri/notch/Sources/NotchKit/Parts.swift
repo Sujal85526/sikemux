@@ -31,8 +31,8 @@ struct SubagentCount: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            IconView(icon: Icons.agent, size: 10).foregroundStyle(Theme.live.opacity(0.75))
-            Text("\(count)").font(Theme.ui(11, .medium)).monospacedDigit().foregroundStyle(Theme.inkFaint)
+            IconView(icon: Icons.agent, size: 10).foregroundStyle(Theme.live)
+            Text("\(count)").font(Theme.ui(11, .medium)).monospacedDigit().foregroundStyle(Theme.ink)
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
@@ -45,8 +45,8 @@ struct ShellCount: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            IconView(icon: Icons.command, size: 11).foregroundStyle(Theme.warn.opacity(0.75))
-            Text("\(count)").font(Theme.ui(11, .medium)).monospacedDigit().foregroundStyle(Theme.inkFaint)
+            IconView(icon: Icons.command, size: 11).foregroundStyle(Theme.warn)
+            Text("\(count)").font(Theme.ui(11, .medium)).monospacedDigit().foregroundStyle(Theme.ink)
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
