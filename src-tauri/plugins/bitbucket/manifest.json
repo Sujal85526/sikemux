@@ -159,6 +159,45 @@
       "required": ["owner", "name", "number", "method", "sha"]
     },
     {
+      "name": "bitbucket_decline",
+      "row": {"verb": "decline", "kind": "delete", "icon": "close", "target": ["{name}#{number}"]},
+      "method": "setPullState",
+      "description": "Decline a pull request. Bitbucket cannot reopen a declined pull request, so do it only when asked.",
+      "properties": {
+        "owner": { "type": "string", "description": "The workspace." },
+        "name": { "type": "string", "description": "The repository slug." },
+        "number": { "type": "integer", "description": "The pull request's id." },
+        "state": { "type": "string", "enum": ["closed"] }
+      },
+      "required": ["owner", "name", "number", "state"]
+    },
+    {
+      "name": "bitbucket_create_issue",
+      "row": {"verb": "create", "kind": "edit", "icon": "square-plus", "target": ["{title}"], "detail": ["{name}"]},
+      "method": "createIssue",
+      "description": "Create an issue in the repository's Bitbucket tracker. The body is markdown. A repository whose issues live in Jira has no tracker here.",
+      "properties": {
+        "owner": { "type": "string", "description": "The workspace." },
+        "name": { "type": "string", "description": "The repository slug." },
+        "title": { "type": "string" },
+        "body": { "type": "string" }
+      },
+      "required": ["owner", "name", "title"]
+    },
+    {
+      "name": "bitbucket_issue_state",
+      "row": {"verb": "move", "kind": "move", "icon": "status", "target": ["{name} issue {number} to {state}"]},
+      "method": "setIssueState",
+      "description": "Close an issue, which marks it resolved, or reopen it.",
+      "properties": {
+        "owner": { "type": "string", "description": "The workspace." },
+        "name": { "type": "string", "description": "The repository slug." },
+        "number": { "type": "integer", "description": "The issue's id." },
+        "state": { "type": "string", "enum": ["open", "closed"] }
+      },
+      "required": ["owner", "name", "number", "state"]
+    },
+    {
       "name": "bitbucket_rerun",
       "row": {"verb": "rerun", "kind": "execute", "icon": "refresh", "target": ["pipeline {runId}"], "detail": ["{name}"]},
       "method": "rerun",

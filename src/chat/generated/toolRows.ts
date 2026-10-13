@@ -145,6 +145,16 @@ export const TOOL_ROWS = {
         detail: ["{method}"],
         plugin: "sikemux.bitbucket",
     },
+    bitbucket_decline: { verb: "decline", kind: "delete", icon: "close", target: ["{name}#{number}"], plugin: "sikemux.bitbucket" },
+    bitbucket_create_issue: {
+        verb: "create",
+        kind: "edit",
+        icon: "square-plus",
+        target: ["{title}"],
+        detail: ["{name}"],
+        plugin: "sikemux.bitbucket",
+    },
+    bitbucket_issue_state: { verb: "move", kind: "move", icon: "status", target: ["{name} issue {number} to {state}"], plugin: "sikemux.bitbucket" },
     bitbucket_rerun: {
         verb: "rerun",
         kind: "execute",
