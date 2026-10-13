@@ -574,7 +574,9 @@ export default function Device() {
       ) : (
         <>
           <View style={styles.list}>
-            <MaskedView style={styles.list} maskElement={<UnderBar height={barHeight} open={unpinned} bottom={bottom} />}>
+            <MaskedView
+              style={styles.list}
+              maskElement={<UnderBar height={barHeight} open={unpinned} bottom={bottom + NEW_CHAT_HEIGHT + 24} />}>
               <Animated.ScrollView
                 {...scrollPause}
                 onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrolled } } }], { useNativeDriver: true })}
