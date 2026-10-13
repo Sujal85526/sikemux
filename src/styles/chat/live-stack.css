@@ -121,11 +121,6 @@
     padding-left: 26px;
 }
 
-.chat-workflow-agent > svg:last-child {
-    flex: none;
-    margin-left: auto;
-}
-
 .chat-workflow-cost {
     flex: none;
     margin-left: auto;
@@ -136,8 +131,7 @@
     white-space: nowrap;
 }
 
-.chat-workflow-cost + svg:last-child,
-.chat-workflow-cost + .chat-task-spinner {
+.chat-workflow-cost + .chat-task-end {
     margin-left: 2px;
 }
 
@@ -148,11 +142,11 @@
     opacity: 0.6;
 }
 
-.chat-workflow-agent.state-completed > svg:last-child {
+.chat-workflow-agent.state-completed > .chat-task-end {
     color: color-mix(in srgb, var(--live) 58%, var(--ink-faint));
 }
 
-.chat-workflow-agent.state-failed > svg:last-child {
+.chat-workflow-agent.state-failed > .chat-task-end {
     color: var(--danger);
 }
 
@@ -168,6 +162,20 @@
 
 .chat-task-agent > .agent-glyph {
     flex: none;
+}
+
+/* The same 18px slot as the stop button and the group's chevron, so every
+   mark down the right edge shares one centre line. */
+.chat-task-end {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 18px;
+    margin-left: auto;
+}
+
+.chat-task-end > .chat-task-spinner {
+    margin-left: 0;
 }
 
 .chat-task-spinner {

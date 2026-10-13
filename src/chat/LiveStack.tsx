@@ -72,9 +72,11 @@ function WorkflowAgentRow({ agent }: { agent: AcpWorkflowAgent }) {
             <span className="chat-task-name">{agent.label}</span>
             <span className={`chat-task-detail${running ? " chat-shimmer" : ""}`}>{running && detail ? <Shimmer>{detail}</Shimmer> : detail}</span>
             {cost && <span className="chat-workflow-cost">{cost}</span>}
-            {running && <span className="chat-task-spinner" aria-hidden="true" />}
-            {agent.state === "completed" && <IconCheck size={10} aria-label="done" />}
-            {agent.state === "failed" && <IconClose size={10} aria-label="failed" />}
+            <span className="chat-task-end">
+                {running && <span className="chat-task-spinner" aria-hidden="true" />}
+                {agent.state === "completed" && <IconCheck size={10} aria-label="done" />}
+                {agent.state === "failed" && <IconClose size={10} aria-label="failed" />}
+            </span>
         </div>
     );
 }
@@ -106,7 +108,9 @@ export function RunningSubagents({ subagents, folds }: { subagents: AcpSubagent[
                     <span className="chat-task-detail chat-shimmer">
                         <Shimmer>{subagentActivity(subagent)}</Shimmer>
                     </span>
-                    <span className="chat-task-spinner" aria-hidden="true" />
+                    <span className="chat-task-end">
+                        <span className="chat-task-spinner" aria-hidden="true" />
+                    </span>
                 </div>
             ))}
         </Group>
