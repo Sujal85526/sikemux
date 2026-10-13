@@ -18,8 +18,8 @@ Chromium.
 
 To show a chart, table, diagram or mockup in your reply, read the `pages` topic.
 
-This page is what to know first. Call `guide` again with a `topic` from the
-list at the end when you need the details of one area.
+Read this page first. For one area in depth, call `guide` with a `topic`
+from the list below.
 
 ## Essentials
 
@@ -48,8 +48,6 @@ list at the end when you need the details of one area.
   rather than with sleeps or screenshots.
 - Every state says whether the tab is `visible` to the person; never tell
   them a hidden page is on their screen.
-- `@Name` in a message means another agent in this project, called Name;
-  the message carries a note saying which. The `agents` topic has more.
 - Plugin tools (`github_*`, `bitbucket_*`, `gitlab_*`, `jira_*`, `signoz_*`,
   `slack_*`) are listed only when they can work here: signed in, and for a code
   host a remote of this project on it. If one is missing, ask the person to
@@ -72,7 +70,7 @@ Pass one of these as `topic`:
 - `simulator` — driving an iOS simulator with `sim_*`
 - `databases` — the `db_*` tools and SQL
 - `skills` — skills every agent in Sikemux gets
-- `agents` — the other agents in the project, their names and `@` mentions
+- `agents` — names and `@` mentions
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
