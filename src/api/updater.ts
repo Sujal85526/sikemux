@@ -2,7 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invokeCommand as invoke } from "./invoke";
 import type { ReleaseCredits } from "./releases";
-import { getState, setState, type PendingUpdate, type UpdateCheckOutcome, type UpdateOperationState } from "../state/store";
+import { getState, setState, type PendingUpdate, type UpdateBlocker, type UpdateCheckOutcome, type UpdateOperationState } from "../state/store";
 import { errMessage, notify, reportError, swallow } from "../state/toast";
 import { formatBytes } from "../lib/format";
 
@@ -25,11 +25,22 @@ export interface UpdateInstallProgress {
 }
 
 const BUSY_UPDATE_STATES: ReadonlySet<UpdateOperationState> = new Set(["preparing", "downloading", "installing", "restarting"]);
+const BLOCKER_POLL_MS = 2_000;
 
 let activeInstall: Promise<void> | null = null;
+let blockerPoll: ReturnType<typeof setTimeout> | null = null;
 
 export function isUpdateBusy(state: UpdateOperationState | undefined): boolean {
     return state !== undefined && BUSY_UPDATE_STATES.has(state);
+}
+
+/** An install under way, or one waiting on agents to finish starting. */
+function isUpdateUnderway(state: UpdateOperationState | undefined): boolean {
+    return state === "waiting" || isUpdateBusy(state);
+}
+
+export function waitingLabel(count: number): string {
+    return `Update waiting on ${count} agent${count === 1 ? "" : "s"}`;
 }
 
 function validByteCount(value: unknown): value is number {
@@ -54,10 +65,12 @@ export function updateDownloadPercent(pending: Pick<PendingUpdate, "downloadedBy
     return Math.min(100, Math.max(0, Math.floor((pending.downloadedBytes / pending.totalBytes) * 100)));
 }
 
-export function updateStatusLabel(pending: PendingUpdate): string {
+export function updateStatusLabel(pending: PendingUpdate, waitingOn = 0): string {
     switch (pending.state) {
         case "available":
             return `Update · v${pending.version}`;
+        case "waiting":
+            return waitingLabel(waitingOn);
         case "preparing":
             return "Preparing update…";
         case "downloading": {
@@ -103,14 +116,14 @@ export function updateCheckLabel(outcome: UpdateCheckOutcome): string {
 // a check that only fails into a swallowed error is indistinguishable from
 // being up to date.
 async function runUpdateCheck(announce: boolean): Promise<void> {
-    if (isUpdateBusy(getState().pendingUpdate?.state)) return;
+    if (isUpdateUnderway(getState().pendingUpdate?.state)) return;
     const channel = getState().updateChannel;
     try {
         const update = await invoke<UpdateInfo | null>("update_check", { channel });
         setState({ lastUpdateCheck: { at: Date.now(), channel, error: null } });
         // The periodic check may have started just before an install. Never let
         // its stale response erase newer operation progress.
-        if (isUpdateBusy(getState().pendingUpdate?.state)) return;
+        if (isUpdateUnderway(getState().pendingUpdate?.state)) return;
         if (!update) {
             setState({ pendingUpdate: null });
             if (announce) notify("info", `Sikemux is up to date on the ${channel} channel.`);
@@ -154,13 +167,60 @@ export function checkForUpdateNow(): Promise<void> {
     return tracked;
 }
 
-async function installPendingUpdateOnce(): Promise<void> {
+/** The chats an update now would stop rather than carry over. A core that
+ *  cannot say holds nothing up. */
+async function updateBlockers(): Promise<UpdateBlocker[]> {
+    try {
+        return await invoke<UpdateBlocker[]>("update_blockers");
+    } catch (error) {
+        swallow("update blockers")(error);
+        return [];
+    }
+}
+
+function setWaiting(blockers: UpdateBlocker[]): void {
+    setState((state) => ({
+        updateBlockers: blockers,
+        pendingUpdate: state.pendingUpdate ? { ...state.pendingUpdate, state: "waiting", error: null } : null,
+    }));
+}
+
+function pollBlockers(): void {
+    if (blockerPoll) return;
+    blockerPoll = setTimeout(() => {
+        blockerPoll = null;
+        if (getState().pendingUpdate?.state !== "waiting") return;
+        void updateBlockers().then((blockers) => {
+            if (getState().pendingUpdate?.state !== "waiting") return;
+            if (blockers.length === 0) {
+                void installPendingUpdate();
+                return;
+            }
+            setState({ updateBlockers: blockers });
+            pollBlockers();
+        });
+    }, BLOCKER_POLL_MS);
+}
+
+async function installPendingUpdateOnce(force: boolean): Promise<void> {
     if (!getState().pendingUpdate) await checkForUpdate();
     const pending = getState().pendingUpdate;
     if (!pending || isUpdateBusy(pending.state)) return;
     const channel = getState().updateChannel;
 
+    // Agents at work are carried over the update still running. One that is
+    // still starting cannot be, so the install waits for it unless forced.
+    if (!force) {
+        const blockers = await updateBlockers();
+        if (blockers.length > 0) {
+            setWaiting(blockers);
+            pollBlockers();
+            return;
+        }
+    }
+
     setState((state) => ({
+        updateBlockers: [],
         pendingUpdate: state.pendingUpdate
             ? {
                   ...state.pendingUpdate,
@@ -202,9 +262,29 @@ async function installPendingUpdateOnce(): Promise<void> {
     }
 }
 
+/** Installs now, stopping the agents the update would otherwise wait on;
+ *  they start again on their sessions once Sikemux is back. */
+export function forceUpdate(): Promise<void> {
+    if (activeInstall) return activeInstall;
+    const operation = installPendingUpdateOnce(true);
+    const tracked = operation.finally(() => {
+        if (activeInstall === tracked) activeInstall = null;
+    });
+    activeInstall = tracked;
+    return tracked;
+}
+
+/** Stops waiting on agents; the update stays available to install later. */
+export function cancelWaitingUpdate(): void {
+    setState((state) => ({
+        updateBlockers: [],
+        pendingUpdate: state.pendingUpdate?.state === "waiting" ? { ...state.pendingUpdate, state: "available" } : state.pendingUpdate,
+    }));
+}
+
 export function installPendingUpdate(): Promise<void> {
     if (activeInstall) return activeInstall;
-    const operation = installPendingUpdateOnce();
+    const operation = installPendingUpdateOnce(false);
     const tracked = operation.finally(() => {
         if (activeInstall === tracked) activeInstall = null;
     });

@@ -479,3 +479,12 @@ mod tests {
         );
     }
 }
+
+/// The chats at work that an update now would stop and start again rather
+/// than carry over, which the app waits on before it installs one.
+#[tauri::command]
+pub async fn update_blockers(
+    manager: State<'_, PtyManager>,
+) -> AppResult<Vec<sikemux_core::protocol::frozen::UpdateBlocker>> {
+    Ok(manager.update_blockers().await)
+}

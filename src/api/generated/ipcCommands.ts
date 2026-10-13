@@ -69,6 +69,7 @@ export const IPC_COMMANDS = [
     "observability_ui_activity",
     "update_check",
     "update_install",
+    "update_blockers",
     "usage_report_active",
     "release_avatars",
     "release_notes",

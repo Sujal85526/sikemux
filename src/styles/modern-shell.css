@@ -204,6 +204,11 @@ textarea:focus,
     cursor: progress;
 }
 
+.rail-update-waiting {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
 .rail-update-error {
     color: var(--danger);
     border-color: color-mix(in srgb, var(--danger) 50%, transparent);

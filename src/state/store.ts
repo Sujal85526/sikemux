@@ -120,7 +120,17 @@ export interface DomainState {
     agentWorktreeDefaults: Record<string, boolean>;
 }
 
-export type UpdateOperationState = "available" | "preparing" | "downloading" | "installing" | "restarting" | "error";
+export type UpdateOperationState = "available" | "waiting" | "preparing" | "downloading" | "installing" | "restarting" | "error";
+
+/** A chat at work that installing an update now would stop and start again,
+ *  rather than carry over with its agent still running. */
+export interface UpdateBlocker {
+    agentId: string;
+    provider: string;
+    title: string | null;
+    /** `starting` while its agent starts, `busy` in the middle of a request. */
+    reason: string;
+}
 
 export interface PendingUpdate {
     version: string;
@@ -198,6 +208,8 @@ export interface ViewState {
     lastSessionId: string | null;
 
     pendingUpdate: PendingUpdate | null;
+    /** The chats a waiting update waits on before it installs. */
+    updateBlockers: UpdateBlocker[];
     lastUpdateCheck: UpdateCheckOutcome | null;
 }
 
@@ -323,6 +335,7 @@ export const useStore = create<StoreState>(() => {
         terminalTitles: {},
         lastSessionId: null,
         pendingUpdate: null,
+        updateBlockers: [],
         lastUpdateCheck: null,
     };
 });

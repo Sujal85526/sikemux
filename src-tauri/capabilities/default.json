@@ -87,6 +87,7 @@
     "allow-observability-ui-activity",
     "allow-update-check",
     "allow-update-install",
+    "allow-update-blockers",
     "allow-usage-report-active",
     "allow-release-avatars",
     "allow-release-notes",

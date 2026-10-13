@@ -17,7 +17,7 @@ use sikemux_core::client::{
     await_deferred_upgrade, await_upgrade, ensure_running, frozen_request, Attached, ClientError,
     CoreClient, Reply,
 };
-use sikemux_core::protocol::frozen::{FrozenReply, FrozenRequest};
+use sikemux_core::protocol::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
 use sikemux_core::protocol::{BuildIdentity, Request, SessionId, SessionInfo, SessionKind};
 use tauri::{AppHandle, Manager};
 
@@ -563,6 +563,29 @@ async fn upgrade_core(
         upgraded.build.version, upgraded.build.commit
     );
     Ok(Upgrade::Done)
+}
+
+impl PtyManager {
+    /// The chats at work that an update now would stop and start again
+    /// rather than carry over. A core that cannot say is taken to have none.
+    pub(crate) async fn update_blockers(&self) -> Vec<UpdateBlocker> {
+        let Some(settings) = self.settings.get() else {
+            return Vec::new();
+        };
+        let socket = settings.socket.clone();
+        let asked = tauri::async_runtime::spawn_blocking(move || {
+            frozen_request(
+                &socket,
+                &FrozenRequest::UpdateBlockers,
+                UPGRADE_ANSWER_TIMEOUT,
+            )
+        })
+        .await;
+        match asked {
+            Ok(Ok(FrozenReply::UpdateBlockers { chats })) => chats,
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Ends a core this app cannot talk to, with everything running in it.

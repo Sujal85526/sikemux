@@ -346,6 +346,7 @@ pub fn run() {
             observability::observability_ui_activity,
             updates::update_check,
             updates::update_install,
+            pty::commands::update_blockers,
             usage::usage_report_active,
             release_credits::release_avatars,
             release_credits::release_notes,
