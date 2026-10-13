@@ -38,7 +38,7 @@ export function AgentRailStats({ scope, provider }: { scope: AgentRailScope; pro
     return (
         <div className="agent-stats">
             <span className="agent-stat agent-stat-all" title="Agents and their subagents">
-                <IconAgents size={12} />
+                <IconAgents size={14} />
                 <b>{stats.agents + stats.subagents}</b>
                 <span>all</span>
             </span>
@@ -56,12 +56,12 @@ export function AgentRailStats({ scope, provider }: { scope: AgentRailScope; pro
                 <span>agents</span>
             </span>
             <span className="agent-stat agent-stat-subagents" title="Subagents running">
-                <IconAgent size={10} />
+                <IconAgent size={14} />
                 <b>{stats.subagents}</b>
                 <span>subagents</span>
             </span>
             <span className="agent-stat agent-stat-shells" title="Shells and monitors running">
-                <IconCommand size={11} />
+                <IconCommand size={14} />
                 <b>{stats.shells}</b>
                 <span>shells</span>
             </span>
