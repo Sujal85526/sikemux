@@ -40,6 +40,7 @@ mod release_credits;
 mod remote;
 mod search;
 mod settings;
+mod share;
 mod sim;
 mod simulator;
 mod ssh;
@@ -312,6 +313,8 @@ pub fn run() {
             account::account_cancel_sign_in,
             account::account_phones,
             account::account_sign_out,
+            share::share_access,
+            share::share_call,
             remote::remote_answer_pairing,
             remote::remote_allow_devices,
             remote::remote_publish_workspace,
@@ -346,6 +349,7 @@ pub fn run() {
             observability::observability_ui_activity,
             updates::update_check,
             updates::update_install,
+            pty::commands::update_blockers,
             usage::usage_report_active,
             release_credits::release_avatars,
             release_credits::release_notes,
