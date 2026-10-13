@@ -35,6 +35,9 @@ pub(crate) struct Rpc {
     writer: Writer,
     next_id: Arc<AtomicI64>,
     waiting: Arc<Mutex<HashMap<i64, Answer>>>,
+    /// Whether every message names its JSON-RPC version. Codex leaves it out;
+    /// Muse refuses a message without it.
+    versioned: bool,
 }
 
 impl Rpc {
@@ -43,7 +46,22 @@ impl Rpc {
             writer,
             next_id: Arc::new(AtomicI64::new(1)),
             waiting: Arc::new(Mutex::new(HashMap::new())),
+            versioned: false,
         }
+    }
+
+    pub fn versioned(writer: Writer) -> Self {
+        Self {
+            versioned: true,
+            ..Self::new(writer)
+        }
+    }
+
+    fn send(&self, mut message: Value) -> Result<(), String> {
+        if self.versioned {
+            message["jsonrpc"] = json!("2.0");
+        }
+        self.writer.send(&message)
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value, String> {
@@ -52,10 +70,7 @@ impl Rpc {
         if let Ok(mut waiting) = self.waiting.lock() {
             waiting.insert(id, answer);
         }
-        if let Err(error) = self
-            .writer
-            .send(&json!({ "id": id, "method": method, "params": params }))
-        {
+        if let Err(error) = self.send(json!({ "id": id, "method": method, "params": params })) {
             self.forget(id);
             return Err(error);
         }
@@ -70,16 +85,19 @@ impl Rpc {
     }
 
     pub fn notify(&self, method: &str, params: Value) -> Result<(), String> {
-        self.writer
-            .send(&json!({ "method": method, "params": params }))
+        let mut message = json!({ "method": method });
+        if !(self.versioned && params.is_null()) {
+            message["params"] = params;
+        }
+        self.send(message)
     }
 
     pub fn respond(&self, id: Value, result: Value) {
-        let _ = self.writer.send(&json!({ "id": id, "result": result }));
+        let _ = self.send(json!({ "id": id, "result": result }));
     }
 
     pub fn refuse(&self, id: Value, message: &str) {
-        let _ = self.writer.send(&json!({
+        let _ = self.send(json!({
             "id": id,
             "error": { "code": -32601, "message": message },
         }));

@@ -54,7 +54,7 @@ tauri-utils = { version = "2", default-features = false, features = ["compressio
 time = { version = "0.3", features = ["formatting", "macros", "parsing", "serde"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
 url = { version = "2", features = ["serde"] }
-uuid = { version = "1", features = ["serde", "v4"] }
+uuid = { version = "1", features = ["serde", "v4", "v7"] }
 
 [build-dependencies]
 aho-corasick = { version = "1", default-features = false, features = ["perf-literal", "std"] }

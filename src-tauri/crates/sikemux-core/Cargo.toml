@@ -16,7 +16,7 @@ sikemux-pty = { path = "../sikemux-pty" }
 sikemux-wire = { path = "../sikemux-wire" }
 thiserror = "1"
 url = "2"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v7"] }
 
 [target.'cfg(unix)'.dependencies]
 base64 = "0.22"

@@ -1,11 +1,14 @@
 //! Agents the core speaks to in their own protocol rather than ACP: Claude
-//! Code over its stream-json control protocol and Codex over its app server.
-//! Both tell the chat the same ACP-shaped session updates every other agent
-//! does, so the app reads them alike.
+//! Code over its stream-json control protocol, Codex over its app server and
+//! Muse Code over its session protocol. Each tells the chat the same
+//! ACP-shaped session updates every other agent does, so the app reads them
+//! alike.
 
 mod claude;
 mod codex;
 mod json;
+mod muse;
+mod patch;
 mod process;
 mod rpc;
 mod session;
@@ -62,6 +65,7 @@ fn file_link(name: Option<&str>, uri: &str) -> String {
 pub(super) enum Kind {
     Claude,
     Codex,
+    Muse,
 }
 
 impl Kind {
@@ -69,6 +73,7 @@ impl Kind {
         match provider {
             "claude" => Some(Self::Claude),
             "codex" => Some(Self::Codex),
+            "muse" => Some(Self::Muse),
             _ => None,
         }
     }
@@ -84,5 +89,6 @@ pub(super) async fn run(
     match kind {
         Kind::Claude => session::run::<claude::Claude>(chat, launch, commands, rebind).await,
         Kind::Codex => session::run::<codex::Codex>(chat, launch, commands, rebind).await,
+        Kind::Muse => session::run::<muse::Muse>(chat, launch, commands, rebind).await,
     }
 }

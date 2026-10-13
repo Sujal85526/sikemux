@@ -7,7 +7,6 @@ mod commands;
 mod config;
 mod history;
 mod items;
-mod patch;
 mod state;
 mod subagents;
 
@@ -630,7 +629,7 @@ impl Backend for Codex {
         Err("Codex has no background tasks to stop".into())
     }
 
-    async fn rewind(&mut self, message_id: &str) -> Result<(), String> {
+    async fn rewind(&mut self, message_id: &str) -> Result<Option<String>, String> {
         let turn_id = self
             .driver
             .lock()
@@ -646,7 +645,7 @@ impl Backend for Codex {
             )
             .await?;
         self.driver.lock().rewound(&turn_id);
-        Ok(())
+        Ok(None)
     }
 
     async fn closed(&self) -> String {

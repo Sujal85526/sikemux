@@ -1,4 +1,4 @@
-//! Codex reports an edit as a diff's hunks without file headers. The chat
+//! Codex and Muse report an edit as a diff's hunks. The chat
 //! shows an edit as the file before and after, so these rebuild one side from
 //! the file on disk.
 
@@ -109,12 +109,12 @@ fn clean(diff: &str) -> &str {
 }
 
 /// `text` with the edit made.
-pub(super) fn apply(text: &str, diff: &str) -> Option<String> {
+pub(crate) fn apply(text: &str, diff: &str) -> Option<String> {
     apply_hunks(text, &parse(clean(diff))?, false)
 }
 
 /// `text` as it was before the edit, when it already has it.
-pub(super) fn revert(text: &str, diff: &str) -> Option<String> {
+pub(crate) fn revert(text: &str, diff: &str) -> Option<String> {
     apply_hunks(text, &parse(clean(diff))?, true)
 }
 

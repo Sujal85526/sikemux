@@ -248,11 +248,12 @@ pub(crate) trait Backend: Sized + Send {
         task_id: &str,
     ) -> impl std::future::Future<Output = Result<(), String>> + Send;
 
-    /// Takes the conversation back to before the person's message `message_id`.
+    /// Takes the conversation back to before the person's message `message_id`,
+    /// answering with the session it goes on in when that is a new one.
     fn rewind(
         &mut self,
         message_id: &str,
-    ) -> impl std::future::Future<Output = Result<(), String>> + Send;
+    ) -> impl std::future::Future<Output = Result<Option<String>, String>> + Send;
 
     /// Resolves once the agent is gone, with why.
     fn closed(&self) -> impl std::future::Future<Output = String> + Send;
@@ -287,11 +288,12 @@ pub(crate) async fn run<B: Backend>(
     let (mut backend, opened) = B::start(&launch, sink.clone()).await?;
     quiet.store(false, Ordering::Release);
 
-    let session_id = opened.session_id.clone();
+    let mut session_id = opened.session_id.clone();
     let mut setup = opened.setup;
+    let capabilities = opened.capabilities;
     let start = ChatStart {
         session_id: session_id.clone(),
-        capabilities: opened.capabilities,
+        capabilities: capabilities.clone(),
         setup: setup.clone(),
     };
     chat.mark_ready(start.clone());
@@ -462,11 +464,27 @@ pub(crate) async fn run<B: Backend>(
                         reply.send(Err("Stop the current turn before editing a message".into()));
                     continue;
                 }
-                if let Err(error) = backend.rewind(&message_id).await {
-                    let _ = reply.send(Err(error));
-                    continue;
-                }
+                let moved = match backend.rewind(&message_id).await {
+                    Ok(moved) => moved,
+                    Err(error) => {
+                        let _ = reply.send(Err(error));
+                        continue;
+                    }
+                };
                 chat.feed.rewound(from, &session_id, &message_id);
+                if let Some(moved) = moved {
+                    session_id = moved;
+                    let start = ChatStart {
+                        session_id: session_id.clone(),
+                        capabilities: capabilities.clone(),
+                        setup: setup.clone(),
+                    };
+                    chat.mark_ready(start.clone());
+                    chat.emit(
+                        ChatEventKind::Ready,
+                        serde_json::to_value(&start).unwrap_or_else(|_| json!({})),
+                    );
+                }
                 let _ = reply.send(Ok(()));
                 exhausted.clear();
                 signed_in_again = false;

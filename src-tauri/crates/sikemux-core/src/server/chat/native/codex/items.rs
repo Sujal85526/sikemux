@@ -7,7 +7,7 @@ use serde_json::{json, Map, Value};
 
 use super::super::file_link;
 use super::super::json::text_or_empty as text;
-use super::patch;
+use super::super::patch;
 
 fn status(item: &Value) -> &'static str {
     match text(item, "status") {

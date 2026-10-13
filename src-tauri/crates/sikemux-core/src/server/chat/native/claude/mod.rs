@@ -562,7 +562,7 @@ impl Backend for Claude {
         Ok(())
     }
 
-    async fn rewind(&mut self, message_id: &str) -> Result<(), String> {
+    async fn rewind(&mut self, message_id: &str) -> Result<Option<String>, String> {
         let uuid = self
             .aliases
             .get(message_id)
@@ -591,7 +591,7 @@ impl Backend for Claude {
         }
         let rewound = self.running.control.request(request).await?;
         if rewound.get("rewound").and_then(Value::as_bool) == Some(true) {
-            return Ok(());
+            return Ok(None);
         }
         Err(match rewound.get("reason").and_then(Value::as_str) {
             Some("target_not_found") => "That message is no longer part of this chat".into(),
