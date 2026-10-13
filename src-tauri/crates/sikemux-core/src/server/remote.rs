@@ -72,6 +72,20 @@ struct Stored {
     /// epoch, by device id. A join ticket issued before then is refused.
     #[serde(default)]
     revoked: BTreeMap<String, u64>,
+    /// The chats this host shares, so they carry on when the core restarts.
+    #[serde(default)]
+    shares: Vec<StoredShare>,
+}
+
+/// A chat this host shares, and the key its link holds.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoredShare {
+    pub id: String,
+    pub key: String,
+    pub agent_id: String,
+    /// Milliseconds since the Unix epoch.
+    pub expires_at: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -413,6 +427,34 @@ impl Remote {
         Some((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
     }
 
+    /// The core's key and its signature over the share text for `nonce`.
+    pub(super) fn sign_share(&self, nonce: &str) -> Option<(String, String)> {
+        crate::accounts::check_live(nonce).ok()?;
+        let inner = self.lock();
+        let secret = inner.secret.as_ref()?;
+        let key = secret.public().to_string();
+        let message = crate::accounts::share_message(nonce, &key);
+        Some((key, hex::encode(secret.sign(message.as_bytes()).to_bytes())))
+    }
+
+    /// The accounts API, while the host is signed in to an account there.
+    pub(super) fn signed_in_api(&self) -> Option<String> {
+        let inner = self.lock();
+        inner.stored.owner.as_ref()?;
+        inner.accounts_api.clone()
+    }
+
+    pub(super) fn shares(&self) -> Vec<StoredShare> {
+        self.lock().stored.shares.clone()
+    }
+
+    pub(super) fn keep_shares(&self, shares: Vec<StoredShare>) -> CoreResult<()> {
+        self.change(|stored| {
+            stored.shares = shares;
+            Ok(())
+        })
+    }
+
     pub(super) fn core_id(&self) -> Option<String> {
         self.lock()
             .secret
@@ -691,6 +733,7 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
         inner.accounts_api = config.accounts_api.clone();
     }
     ensure_live(core);
+    super::share::restore(core);
     if enabled {
         if let Err(error) = listen(core).await {
             eprintln!("sikemux core: remote access did not start: {error}");
@@ -1298,6 +1341,7 @@ mod tests {
             network: None,
             notifications: BTreeMap::new(),
             revoked: BTreeMap::new(),
+            shares: Vec::new(),
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),

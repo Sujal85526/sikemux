@@ -16,6 +16,7 @@ mod prepare;
 mod remote;
 mod seen;
 mod session;
+mod share;
 mod tools;
 mod upgrade;
 mod window;
@@ -277,6 +278,7 @@ pub(crate) struct Core {
     pub(crate) tools: Mutex<Option<tools::ToolEndpoint>>,
     pub(crate) chats: chat::Chats,
     pub(crate) remote: remote::Remote,
+    pub(crate) shares: share::Shares,
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
     pub(crate) notify: notify::Notifier,
@@ -321,6 +323,7 @@ impl Core {
             tools: Mutex::new(None),
             chats: chat::Chats::new(data_dir.map(|dir| dir.join("chat-history"))),
             remote: remote::Remote::default(),
+            shares: share::Shares::default(),
             workspaces: workspace::Workspaces::default(),
             seen: seen::Seen::default(),
             notify: notify::Notifier::default(),
@@ -655,7 +658,7 @@ impl Core {
 
     pub(crate) fn permit(&self, peer: &access::Peer, needs: access::Needs) -> CoreResult<()> {
         let device_access = match peer {
-            access::Peer::Local => None,
+            access::Peer::Local | access::Peer::Share { .. } => None,
             access::Peer::Device { id } => self.remote.access_of(id),
         };
         access::permit(peer, device_access, needs)

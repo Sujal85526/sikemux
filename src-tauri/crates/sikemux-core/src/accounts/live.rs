@@ -259,6 +259,11 @@ pub fn parse_rfc3339(text: &str) -> Option<u64> {
 
 /// `base` is the accounts API, `http(s)://host`.
 pub fn url(base: &str) -> String {
+    socket_url(base, "/v1/live")
+}
+
+/// The WebSocket at `path` on the accounts API at `base`.
+pub fn socket_url(base: &str, path: &str) -> String {
     let base = base.trim_end_matches('/');
     let base = if let Some(rest) = base.strip_prefix("https://") {
         format!("wss://{rest}")
@@ -267,7 +272,7 @@ pub fn url(base: &str) -> String {
     } else {
         base.to_owned()
     };
-    format!("{base}/v1/live")
+    format!("{base}{path}")
 }
 
 /// Keeps the connection while [`Account::want`] asks for one. `changed`
@@ -310,7 +315,7 @@ pub async fn run<A: Account>(
 }
 
 /// Full jitter: anywhere from nothing to the doubled delay, capped.
-fn backoff(failures: u32) -> Duration {
+pub(crate) fn backoff(failures: u32) -> Duration {
     let ceiling = BACKOFF_BASE
         .saturating_mul(1u32 << failures.saturating_sub(1).min(16))
         .min(BACKOFF_CAP);
@@ -326,7 +331,7 @@ enum Ended {
     },
 }
 
-type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+pub(crate) type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 fn connector() -> &'static Connector {
     static CONNECTOR: OnceLock<Connector> = OnceLock::new();
@@ -336,7 +341,7 @@ fn connector() -> &'static Connector {
     })
 }
 
-async fn connect(url: &str) -> Option<Socket> {
+pub(crate) async fn connect(url: &str) -> Option<Socket> {
     let builder = ClientBuilder::new().uri(url).ok()?.connector(connector());
     match tokio::time::timeout(CONNECT_TIMEOUT, builder.connect()).await {
         Ok(Ok((socket, _))) => Some(socket),

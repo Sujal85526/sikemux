@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::access::{Needs, Peer};
 use super::attachments;
 use super::connection::blocking;
-use super::{Core, CoreError, CoreResult};
+use super::{share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
@@ -28,6 +28,19 @@ pub(crate) async fn call(
 ) -> CoreResult<Value> {
     match method {
         "chatFile" => answer(chat_file(&core, peer, parse(params)?).await?),
+        "shareChat" => {
+            let params: ShareChatParams = parse(params)?;
+            answer(share::share_chat(
+                &core,
+                &params.agent_id,
+                params.lifetime_ms,
+            )?)
+        }
+        "stopShare" => {
+            let params: StopShareParams = parse(params)?;
+            answer(share::stop(&core, &params.id)?)
+        }
+        "shares" => answer(share::list(&core)),
         _ => Err(format!("this host does not know {method}").into()),
     }
 }
@@ -39,6 +52,18 @@ fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> CoreResult<T> {
 
 fn answer(result: impl Serialize) -> CoreResult<Value> {
     Ok(serde_json::to_value(result)?)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShareChatParams {
+    agent_id: String,
+    lifetime_ms: u64,
+}
+
+#[derive(Deserialize)]
+struct StopShareParams {
+    id: String,
 }
 
 #[derive(Deserialize)]

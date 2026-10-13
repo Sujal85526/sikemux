@@ -13,6 +13,11 @@ pub(crate) enum Peer {
     Device {
         id: String,
     },
+    /// A shared chat's link to its viewers, inside the core. It only reads
+    /// the chat it shares, and is refused every request.
+    Share {
+        id: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,7 +108,7 @@ impl Peer {
 
     pub(crate) fn device_id(&self) -> Option<String> {
         match self {
-            Peer::Local => None,
+            Peer::Local | Peer::Share { .. } => None,
             Peer::Device { id } => Some(id.clone()),
         }
     }

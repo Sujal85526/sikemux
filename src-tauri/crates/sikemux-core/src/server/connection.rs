@@ -61,6 +61,33 @@ impl ClientConn {
         self.foreground.store(foreground, Ordering::Release);
     }
 
+    /// A client inside the core, such as a shared chat's link, that reads the
+    /// frames sent to it from `frames` itself. The core does not list it, so
+    /// it hears only what it attaches to.
+    pub(crate) fn inside(
+        core: &Core,
+        peer: Peer,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<Arc<[u8]>>) {
+        let (frames, queue) = mpsc::unbounded_channel();
+        let client = Arc::new(Self {
+            id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
+            peer,
+            frames,
+            queued: AtomicUsize::new(0),
+            closed: AtomicBool::new(false),
+            kick: Notify::new(),
+            subscriptions: Mutex::new(HashSet::new()),
+            watches_view: AtomicBool::new(false),
+            foreground: AtomicBool::new(true),
+        });
+        (client, queue)
+    }
+
+    /// The reader of a client [`inside`](Self::inside) the core took a frame.
+    pub(crate) fn took(&self, bytes: usize) {
+        self.queued.fetch_sub(bytes, Ordering::AcqRel);
+    }
+
     /// A client with nobody on the other end, registered with the core.
     #[cfg(test)]
     pub(crate) fn stand_in(core: &Core, peer: Peer) -> Arc<Self> {
@@ -843,7 +870,9 @@ async fn run_requests(
             Request::SetNotifications { key_id, key, prefs } => {
                 let result = match &client.peer {
                     Peer::Device { id } => core.remote.set_notifications(id, key_id, &key, prefs),
-                    Peer::Local => Err("only a paired phone can ask for notifications".into()),
+                    Peer::Local | Peer::Share { .. } => {
+                        Err("only a paired phone can ask for notifications".into())
+                    }
                 };
                 if result.is_ok() {
                     remote::announce(&core);
@@ -853,7 +882,9 @@ async fn run_requests(
             Request::ClearNotifications => {
                 let result = match &client.peer {
                     Peer::Device { id } => core.remote.clear_notifications(id),
-                    Peer::Local => Err("only a paired phone has notifications to stop".into()),
+                    Peer::Local | Peer::Share { .. } => {
+                        Err("only a paired phone has notifications to stop".into())
+                    }
                 };
                 if result.is_ok() {
                     remote::announce(&core);
