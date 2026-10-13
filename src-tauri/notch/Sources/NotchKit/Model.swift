@@ -59,6 +59,8 @@ struct ChatInfo: Decodable, Equatable {
     let pendingPermissions: [String]
     let subagents: Int
     let tasks: Int
+    /// The attempt the agent is retrying a failed request on, 0 when it did not say.
+    let reconnecting: Int?
     let permissionMode: String
     let asleep: Bool
     let unread: Bool
@@ -169,6 +171,8 @@ struct AgentItem: Identifiable, Equatable {
     let ask: Ask?
     /// What it asked the person and waits on.
     var question: AgentQuestion? = nil
+    /// The attempt its agent is retrying a failed request on, 0 when it did not say.
+    var reconnecting: Int? = nil
 
     /// Subagents, shells or monitors still going once its turn is over.
     var background: Bool { subagents > 0 || tasks > 0 }
@@ -203,7 +207,8 @@ extension DeviceView {
                 subagents: chat.subagents,
                 tasks: chat.tasks,
                 isChat: true,
-                ask: attentions.first { $0.agentId == chat.agentId }.map(Self.ask)
+                ask: attentions.first { $0.agentId == chat.agentId }.map(Self.ask),
+                reconnecting: chat.reconnecting
             ), chat.attentionRank))
         }
         for session in sessions {

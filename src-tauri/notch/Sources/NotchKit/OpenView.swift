@@ -196,7 +196,13 @@ struct RowLine: View {
             if agent.tasks > 0 { ShellCount(count: agent.tasks) }
             ProjectLabel(project: agent.project).frame(maxWidth: 150, alignment: .trailing).fixedSize()
             if agent.state != .idle {
-                SinceText(state: agent.state, since: store.since[agent.id]).frame(minWidth: 44, alignment: .trailing)
+                if let attempt = agent.reconnecting {
+                    Text(attempt > 0 ? "Reconnecting… \(attempt)" : "Reconnecting…")
+                        .font(Theme.ui(11.5))
+                        .foregroundStyle(Theme.inkFaint)
+                } else {
+                    SinceText(state: agent.state, since: store.since[agent.id]).frame(minWidth: 44, alignment: .trailing)
+                }
                 StateMark(state: agent.state)
             } else if let word = agent.status.word {
                 Text(word).font(Theme.ui(11.5)).foregroundStyle(Theme.inkFaint)

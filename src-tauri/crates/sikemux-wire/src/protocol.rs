@@ -624,6 +624,10 @@ pub struct ChatInfo {
     /// Background shells and monitors still running for it.
     #[serde(default)]
     pub tasks: u32,
+    /// The agent is retrying a request the network or its service failed:
+    /// the attempt it is on, or 0 when it did not say.
+    #[serde(default)]
+    pub reconnecting: Option<u32>,
     /// The paired device that started it. The app started the rest.
     pub started_by: Option<String>,
     /// The app's launcher a device started it with.

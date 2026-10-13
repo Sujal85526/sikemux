@@ -652,6 +652,7 @@ impl Chat {
             pending_permissions: self.pending_permissions(),
             subagents: self.feed.running_subagents(),
             tasks: self.feed.running_tasks(),
+            reconnecting: self.feed.reconnecting(),
             started_by: self.origin.started_by.clone(),
             launcher: self.origin.launcher.clone(),
             permission_mode: self.feed.permission_mode(),

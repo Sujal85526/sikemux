@@ -46,7 +46,7 @@ let fixture = #"""
      "running": true, "pendingPermissions": [], "subagents": 3, "tasks": 0, "permissionMode": "bypass", "asleep": false, "unread": false,
      "group": "working", "status": "working", "attentionRank": 1},
     {"agentId": "a3", "name": "Wren", "provider": "opencode", "title": "Draft the notch spec", "cwd": "/Users/me/sikemux", "sessionId": "s3", "state": "ready",
-     "running": true, "pendingPermissions": [], "subagents": 0, "tasks": 0, "permissionMode": "bypass", "asleep": false, "unread": false,
+     "running": true, "pendingPermissions": [], "subagents": 0, "tasks": 0, "reconnecting": 3, "permissionMode": "bypass", "asleep": false, "unread": false,
      "group": "working", "status": "working", "attentionRank": 2},
     {"agentId": "a5", "name": "Cedar", "provider": "codex", "title": "Read the release notes", "cwd": "/Users/me/sikemux", "sessionId": "s5", "state": "ready",
      "running": false, "pendingPermissions": [], "subagents": 0, "tasks": 2, "permissionMode": "bypass", "asleep": false, "unread": false,

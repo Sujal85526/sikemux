@@ -536,7 +536,7 @@ function freshAgents() {
           question: { name: "Maple", via: "Otter", text: "Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.",
                       choices: ["Cents", "Decimals"] } },
         { id: "a2", name: "Flint", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12", subagents: 3 },
-        { id: "a3", name: "Wren", type: "opencode", title: "Draft the notch spec", project: "sikemux", state: "working", time: "0:48" },
+        { id: "a3", name: "Wren", type: "opencode", title: "Draft the notch spec", project: "sikemux", state: "working", time: "0:48", reconnecting: 3 },
         { id: "a4", name: "Birch", type: "grok", title: "Bump Astro to 6", project: "sikemux-front", state: "done", unread: true, time: "1m ago" },
         { id: "a5", name: "Cedar", type: "codex", title: "Read the release notes", project: "sikemux", state: "idle", tasks: 2 },
         { id: "a7", name: "Moss", type: "claude", title: "Tidy the changelog", project: "sikemux", state: "idle" },
@@ -835,7 +835,7 @@ class Island {
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
                             <span class="title">${named(a)}</span>${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}${a.tasks ? `<span class="shells">${GLYPH.command}${a.tasks}</span>` : ""}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
-                            ${a.state === "idle" ? (a.word ? `<span class="word">${a.word}</span>` : "") : `<span class="time">${a.time}</span>${stateMark(a.state)}`}
+                            ${a.state === "idle" ? (a.word ? `<span class="word">${a.word}</span>` : "") : `${a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : `<span class="time">${a.time}</span>`}${stateMark(a.state)}`}
                         </div>`).join("")}`).join("");
             }
         } else {
