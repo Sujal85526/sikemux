@@ -14,6 +14,7 @@ mod discard;
 mod documents;
 mod downloads;
 mod favicon;
+mod handover;
 mod history;
 #[cfg(target_os = "macos")]
 mod input;
@@ -39,6 +40,7 @@ use tauri::{
 };
 
 use crate::error::{AppError, AppResult};
+pub use handover::SavedStrip;
 
 pub const BROWSER_TABS_EVENT: &str = "browser-tabs-changed";
 pub const BROWSER_SHORTCUT_EVENT: &str = "browser-shortcut";
@@ -464,9 +466,7 @@ impl BrowserManager {
         url: Url,
         user_agent: &str,
     ) -> AppResult<Webview> {
-        if self.app.set(app.clone()).is_ok() {
-            discard::watch_pressure(app.clone());
-        }
+        self.adopt_app(app);
         let window = app
             .get_window("main")
             .ok_or_else(|| AppError::Window("main window is not open".into()))?;
@@ -550,6 +550,12 @@ impl BrowserManager {
         }
         self.install_shortcuts(app);
         Ok(webview)
+    }
+
+    fn adopt_app(&self, app: &AppHandle) {
+        if self.app.set(app.clone()).is_ok() {
+            discard::watch_pressure(app.clone());
+        }
     }
 
     /// Builds an unloaded tab's view again at the address it was on. The

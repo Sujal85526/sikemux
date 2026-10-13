@@ -35,6 +35,7 @@ mod plugins;
 mod ports;
 mod preview;
 mod pty;
+mod relaunch;
 mod release_credits;
 mod remote;
 mod search;
@@ -225,6 +226,7 @@ pub fn run() {
             let sim = SimManager::default();
             _app.manage(sim.clone());
             _app.manage(SimulatorManager::for_app(_app.handle().clone(), sim));
+            relaunch::restore(_app.handle());
             tauri::async_runtime::spawn_blocking(simulator::offered);
             wheel::watch(_app.handle());
             _app.state::<PtyManager>().start(_app.handle());
@@ -529,6 +531,9 @@ pub fn run() {
             if let tauri::RunEvent::Opened { urls } = &event {
                 deep_link::receive(app_handle, urls);
             }
+            if let tauri::RunEvent::ExitRequested { code, .. } = &event {
+                relaunch::note_exit_requested(*code);
+            }
             // RunEvent::Exit fires on every teardown route: quit, `exit()`,
             // and the restart after an in-app update, which raises no window
             // CloseRequested. Terminals and chat agents stay in the core on
@@ -536,6 +541,10 @@ pub fn run() {
             // it exits.
             if let tauri::RunEvent::Exit = event {
                 use tauri::Manager;
+                let updating = relaunch::for_update();
+                if updating {
+                    relaunch::save(app_handle);
+                }
                 if let Some(watchdog) = app_handle.try_state::<UiWatchdogState>() {
                     watchdog.suspend();
                 }
@@ -558,7 +567,11 @@ pub fn run() {
                     voice.drain();
                 }
                 if let Some(simulators) = app_handle.try_state::<SimulatorManager>() {
-                    simulators.drain();
+                    if updating {
+                        simulators.step_aside();
+                    } else {
+                        simulators.drain();
+                    }
                 }
                 if let Some(sim) = app_handle.try_state::<SimManager>() {
                     sim.drain();

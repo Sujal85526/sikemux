@@ -258,6 +258,7 @@ async fn update_install_inner(
         .install(&bytes)
         .map_err(|error| AppError::Other(format!("update install: {error}")))?;
     observer.record_event("update.install.finished", Some(context), Metadata::new());
+    crate::relaunch::note_update_installed();
     let _ = on_progress.send(progress.snapshot(UpdateInstallPhase::Installed));
     Ok(installed)
 }

@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -50,6 +50,28 @@ pub struct AttachmentInfo {
     pub udid: String,
     pub name: String,
     pub project: String,
+}
+
+/// Which agent held which device, carried across an update's restart.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedSimulators {
+    attachments: Vec<SavedAttachment>,
+    desk: HashMap<String, String>,
+    projects: HashMap<String, String>,
+    booted: Vec<String>,
+    offered: HashMap<String, bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedAttachment {
+    agent_id: String,
+    project: String,
+    udid: String,
+    name: String,
+    os: String,
+    screen: Option<(f64, f64)>,
 }
 
 /// Where the helper comes from: the app's own, downloaded if it must be, or a given one in tests.
@@ -360,12 +382,8 @@ impl SimulatorManager {
     /// Lets go of everything as Sikemux quits, and shuts down the devices it
     /// booted that no other copy of Sikemux holds.
     pub fn drain(&self) {
-        let udids: Vec<String> = {
-            let mut shared = self.shared();
-            shared.attachments.clear();
-            shared.booted.iter().cloned().collect()
-        };
-        self.claims.release_all();
+        let udids: Vec<String> = self.shared().booted.iter().cloned().collect();
+        self.step_aside();
         let unheld: Vec<String> = udids
             .into_iter()
             .filter(|udid| self.claims.holder(udid).is_none())
@@ -383,6 +401,111 @@ impl SimulatorManager {
                 .stderr(std::process::Stdio::null())
                 .spawn();
         }
+    }
+
+    /// Lets go of every device but leaves them running, for an update's
+    /// restart to take them up again.
+    pub fn step_aside(&self) {
+        self.shared().attachments.clear();
+        self.claims.release_all();
+    }
+
+    pub fn saved(&self) -> SavedSimulators {
+        let shared = self.shared();
+        SavedSimulators {
+            attachments: shared
+                .attachments
+                .iter()
+                .map(|(agent_id, attachment)| SavedAttachment {
+                    agent_id: agent_id.clone(),
+                    project: attachment.project.clone(),
+                    udid: attachment.device.udid.clone(),
+                    name: attachment.device.name.clone(),
+                    os: attachment.device.os.clone(),
+                    screen: attachment.device.screen,
+                })
+                .collect(),
+            desk: shared.desk.clone(),
+            projects: shared.projects.clone(),
+            booted: shared.booted.iter().cloned().collect(),
+            offered: shared.offered.clone(),
+        }
+    }
+
+    /// Gives each agent back the device it held before an update's restart.
+    /// Devices Sikemux booted that nobody holds now shut down after the usual wait.
+    pub fn restore(&self, saved: SavedSimulators) {
+        let mut taken = Vec::new();
+        for held in saved.attachments {
+            if self
+                .claims
+                .claim(&held.udid, &held.agent_id, &held.project)
+                .is_err()
+            {
+                continue;
+            }
+            let device = Device {
+                udid: held.udid,
+                name: held.name,
+                os: held.os,
+                booted: true,
+                screen: held.screen,
+            };
+            taken.push(device.udid.clone());
+            self.shared().attachments.insert(
+                held.agent_id,
+                Attachment {
+                    device,
+                    project: held.project,
+                    numbers: Numbering::default(),
+                    read: None,
+                    launches: HashMap::new(),
+                    log_generations: HashMap::new(),
+                },
+            );
+        }
+        let idle: Vec<String> = {
+            let mut shared = self.shared();
+            shared.desk = saved.desk;
+            shared.projects = saved.projects;
+            shared.offered = saved.offered;
+            shared.booted = saved.booted.into_iter().collect();
+            shared
+                .booted
+                .iter()
+                .filter(|udid| !taken.contains(udid))
+                .cloned()
+                .collect()
+        };
+        for udid in idle {
+            self.let_go(Device {
+                udid,
+                name: String::new(),
+                os: String::new(),
+                booted: true,
+                screen: None,
+            });
+        }
+        self.follow_logs(taken);
+    }
+
+    /// Starts reading the devices' logs again, as attaching does.
+    fn follow_logs(&self, udids: Vec<String>) {
+        let Helper::App(app) = &self.helper else {
+            return;
+        };
+        if udids.is_empty() {
+            return;
+        }
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let manager = app.state::<SimulatorManager>();
+            for udid in udids {
+                let _ = manager
+                    .request("logs", json!({ "udid": udid, "limit": 1 }))
+                    .await;
+            }
+        });
     }
 
     pub fn attachments(&self) -> Vec<AttachmentInfo> {
