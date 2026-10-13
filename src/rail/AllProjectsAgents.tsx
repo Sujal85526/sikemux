@@ -56,8 +56,12 @@ export function AllProjectsAgents() {
                                     <span className={`agent-glyph ${agent.type}`}>
                                         <AgentIcon type={agent.type} size={20} />
                                     </span>
-                                    <AgentRowText title={agent.title} project={sessionName} worktree={agent.worktree} />
-                                    <BackgroundCounts display={display} />
+                                    <AgentRowText
+                                        title={agent.title}
+                                        trailing={<BackgroundCounts display={display} />}
+                                        project={sessionName}
+                                        worktree={agent.worktree}
+                                    />
                                 </button>
                                 {showsAgentState(display) && (
                                     <span className="row-status">

@@ -1,13 +1,36 @@
+import type { ReactNode } from "react";
 import { PULL_STATE_LABEL, pullState, useBranchPull, useHostRepo } from "../codehost/project";
 import type { AgentWorktree } from "../state/types";
 import { IconFolder, IconGit, IconPullRequest } from "../ui/Icons";
 
-/** An agent row's title, with the project and worktree it runs in on a line beneath when there is one to name. */
-export function AgentRowText({ title, project, worktree }: { title: string; project?: string; worktree?: AgentWorktree }) {
-    if (!project && !worktree) return <span className="agent-title">{title}</span>;
+/**
+ * An agent row's title and what trails it, with the project and worktree it
+ * runs in on a line beneath when there is one to name.
+ */
+export function AgentRowText({
+    title,
+    trailing,
+    project,
+    worktree,
+}: {
+    title: string;
+    trailing?: ReactNode;
+    project?: string;
+    worktree?: AgentWorktree;
+}) {
+    if (!project && !worktree)
+        return (
+            <>
+                <span className="agent-title">{title}</span>
+                {trailing}
+            </>
+        );
     return (
         <span className="agent-text">
-            <span className="agent-title">{title}</span>
+            <span className="agent-line">
+                <span className="agent-title">{title}</span>
+                {trailing}
+            </span>
             <span className="agent-meta">
                 {project && (
                     <span className="agent-meta-project">

@@ -905,8 +905,9 @@
     margin-top: var(--space-1h);
 }
 
-/* A row naming its project or worktree grows a second line for them. */
-.agent-row:has(> .agent-text) {
+/* A row naming its project or worktree grows a second line for them. Each line
+   keeps its own trailing marks, and the status sits level with the title. */
+.workspace-rail .agent-row:has(> .agent-text) {
     height: auto;
     min-height: 40px;
     padding-block: 5px;
@@ -918,8 +919,23 @@
     flex-direction: column;
     gap: 1px;
 }
-.agent-text > .agent-title {
-    flex: none;
+.agent-line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    height: 18px;
+}
+.agent-line > .agent-title {
+    line-height: 18px;
+}
+.agent-row-wrap:has(.agent-text) > .row-status,
+.agent-row-wrap:has(.agent-text) > .row-x {
+    top: 14px;
+}
+/* The project line runs under the status slot too, so its last mark lines up with the status. */
+.agent-row-wrap:has(> .row-status) .agent-meta {
+    margin-right: calc(-1 * (var(--row-slot) + var(--space-1)));
 }
 .agent-meta {
     display: flex;

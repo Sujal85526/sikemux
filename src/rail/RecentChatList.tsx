@@ -106,8 +106,11 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
                             setMenu({ chat, x: event.clientX, y: event.clientY });
                         }}>
                         {glyph}
-                        <AgentRowText title={chat.title} project={allProjects ? (project?.name ?? basename(chat.project)) : undefined} />
-                        <span className="agent-ago">{formatAge(chat.mtime * 1000)}</span>
+                        <AgentRowText
+                            title={chat.title}
+                            trailing={<span className="agent-ago">{formatAge(chat.mtime * 1000)}</span>}
+                            project={allProjects ? (project?.name ?? basename(chat.project)) : undefined}
+                        />
                     </button>
                 );
             })}

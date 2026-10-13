@@ -431,8 +431,7 @@ export function AgentRailBody() {
                                                 setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
                                             }}>
                                             {glyph}
-                                            <AgentRowText title={a.title} worktree={a.worktree} />
-                                            <BackgroundCounts display={display} />
+                                            <AgentRowText title={a.title} trailing={<BackgroundCounts display={display} />} worktree={a.worktree} />
                                         </button>
                                     )}
                                     {showsAgentState(display) && (
