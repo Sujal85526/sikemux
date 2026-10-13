@@ -23,6 +23,7 @@ import { leavingRail } from "./railMotion";
 import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
 import { planLabel, usagePeak } from "./usageFormat";
+import { AgentRowText } from "./AgentRowText";
 import { AllProjectsAgents } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTrack } from "./ScopeTrack";
@@ -430,7 +431,7 @@ export function AgentRailBody() {
                                                 setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
                                             }}>
                                             {glyph}
-                                            <span className="agent-title">{a.title}</span>
+                                            <AgentRowText title={a.title} worktree={a.worktree} />
                                             <BackgroundCounts display={display} />
                                         </button>
                                     )}

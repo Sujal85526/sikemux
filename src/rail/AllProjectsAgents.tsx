@@ -8,6 +8,7 @@ import type { Agent } from "../state/types";
 import { AgentIcon, IconClose } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
+import { AgentRowText } from "./AgentRowText";
 
 interface OpenAgentRow {
     agent: Agent;
@@ -55,7 +56,7 @@ export function AllProjectsAgents() {
                                     <span className={`agent-glyph ${agent.type}`}>
                                         <AgentIcon type={agent.type} size={20} />
                                     </span>
-                                    <span className="agent-title">{agent.title}</span>
+                                    <AgentRowText title={agent.title} project={sessionName} worktree={agent.worktree} />
                                     <BackgroundCounts display={display} />
                                 </button>
                                 {showsAgentState(display) && (

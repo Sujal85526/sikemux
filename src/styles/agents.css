@@ -904,3 +904,75 @@
 .workspace-rail.agent-rail .agent-actions + * {
     margin-top: var(--space-1h);
 }
+
+/* A row naming its project or worktree grows a second line for them. */
+.agent-row:has(> .agent-text) {
+    height: auto;
+    min-height: 40px;
+    padding-block: 5px;
+}
+.agent-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.agent-text > .agent-title {
+    flex: none;
+}
+.agent-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    font-size: var(--text-2xs);
+    line-height: 14px;
+    color: var(--text-tertiary);
+}
+.agent-meta > span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    white-space: nowrap;
+}
+.agent-meta > span > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.agent-meta svg {
+    flex: none;
+}
+/* The project keeps its name whole up to a cap; the branch takes whatever room is left. */
+.agent-meta-project {
+    flex: none;
+}
+.agent-meta-project > span {
+    max-width: 16ch;
+}
+.agent-meta-project svg {
+    color: var(--live);
+}
+.agent-meta-branch {
+    flex: 0 1 auto;
+    font-family: var(--mono);
+}
+.agent-meta-pr {
+    flex: none;
+    margin-left: auto;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+}
+.agent-meta-pr[data-state="open"] svg {
+    color: var(--live);
+}
+.agent-meta-pr[data-state="merged"] svg {
+    color: var(--acc);
+}
+.agent-meta-pr[data-state="closed"] svg {
+    color: var(--danger);
+}
+.agent-row.active .agent-meta {
+    color: var(--ink-dim);
+}
