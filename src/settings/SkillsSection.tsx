@@ -20,7 +20,8 @@ export function SkillsSection() {
     const [source, setSource] = useState("");
     const [subfolder, setSubfolder] = useState("");
     const [busy, setBusy] = useState(false);
-    const [failure, setFailure] = useState<string | null>(null);
+    /* What failed, and on which row: an open form, or one skill's Remove or Move. */
+    const [failure, setFailure] = useState<{ at: string; message: string } | null>(null);
     const [moving, setMoving] = useState<string | null>(null);
 
     const refresh = useCallback(() => skillsApi.overview().then(setOverview).catch(reportError("Skills")), []);
@@ -38,7 +39,7 @@ export function SkillsSection() {
         setSubfolder("");
     };
 
-    const run = async (work: () => Promise<unknown>, after: () => void = () => show(null)) => {
+    const run = async (at: string, work: () => Promise<unknown>, after: () => void = () => show(null)) => {
         setBusy(true);
         setFailure(null);
         try {
@@ -46,11 +47,12 @@ export function SkillsSection() {
             after();
             await refresh();
         } catch (error) {
-            setFailure(errorText(error));
+            setFailure({ at, message: errorText(error) });
         } finally {
             setBusy(false);
         }
     };
+    const failed = (at: string) => (failure?.at === at ? <span className="skills-failure">{failure.message}</span> : null);
 
     const chooseFolder = async () => {
         const picked = await open({ directory: true, multiple: false });
@@ -73,13 +75,14 @@ export function SkillsSection() {
                             key={skill.name}
                             label={skill.name}
                             desc={
-                                clashes.has(skill.name) ? (
+                                failed(`remove:${skill.name}`) ??
+                                (clashes.has(skill.name) ? (
                                     <>
                                         {skill.description} <span className="skills-clash">One of your own skills has this name too.</span>
                                     </>
                                 ) : (
                                     skill.description
-                                )
+                                ))
                             }>
                             <button className="settings-btn" type="button" onClick={() => reveal(skill)}>
                                 Show in Finder
@@ -91,6 +94,7 @@ export function SkillsSection() {
                                 aria-label={`Remove ${skill.name}`}
                                 onClick={() =>
                                     void run(
+                                        `remove:${skill.name}`,
                                         () => skillsApi.remove(skill.name),
                                         () => undefined,
                                     )
@@ -100,12 +104,12 @@ export function SkillsSection() {
                         </SettingsRow>
                     ))}
                     {form === "create" ? (
-                        <SettingsRow label="New skill" wide desc={failure && <span className="skills-failure">{failure}</span>}>
+                        <SettingsRow label="New skill" wide desc={failed("form")}>
                             <form
                                 className="skills-form"
                                 onSubmit={(event) => {
                                     event.preventDefault();
-                                    void run(() => skillsApi.create(name.trim(), description, body));
+                                    void run("form", () => skillsApi.create(name.trim(), description, body));
                                 }}>
                                 <input
                                     className="settings-input mono"
@@ -141,12 +145,12 @@ export function SkillsSection() {
                             </form>
                         </SettingsRow>
                     ) : form === "install" ? (
-                        <SettingsRow label="Install a skill" wide desc={failure && <span className="skills-failure">{failure}</span>}>
+                        <SettingsRow label="Install a skill" wide desc={failed("form")}>
                             <form
                                 className="skills-form"
                                 onSubmit={(event) => {
                                     event.preventDefault();
-                                    void run(() => skillsApi.install(source.trim(), subfolder.trim()));
+                                    void run("form", () => skillsApi.install(source.trim(), subfolder.trim()));
                                 }}>
                                 <span className="skills-actions">
                                     <input
@@ -211,9 +215,10 @@ export function SkillsSection() {
                                     key={skill.path}
                                     label={skill.name}
                                     desc={
-                                        moving === skill.path
+                                        failed(`move:${skill.path}`) ??
+                                        (moving === skill.path
                                             ? `Moves it out of ${own.folder}, so ${own.agent} outside Sikemux no longer has it.`
-                                            : `${own.agent} · ${skill.description}`
+                                            : `${own.agent} · ${skill.description}`)
                                     }>
                                     {moving === skill.path ? (
                                         <>
@@ -226,6 +231,7 @@ export function SkillsSection() {
                                                 disabled={busy}
                                                 onClick={() =>
                                                     void run(
+                                                        `move:${skill.path}`,
                                                         () => skillsApi.adopt(skill.path),
                                                         () => setMoving(null),
                                                     )

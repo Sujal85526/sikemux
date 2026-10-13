@@ -89,6 +89,24 @@ describe("SkillsSection", () => {
         expect(adopt).toHaveBeenCalledWith({ path: "/home/.claude/skills/notes" }, expect.anything());
     });
 
+    it("says on its row why a Remove or a Move failed", async () => {
+        const user = userEvent.setup();
+        transport.register("skills_remove", () => {
+            throw new Error("deploy is in use");
+        });
+        transport.register("skills_adopt", () => {
+            throw new Error("A skill named notes already exists; remove it first");
+        });
+        render(<SkillsSection />);
+        await user.click(await screen.findByRole("button", { name: "Remove deploy" }));
+        expect(await screen.findByText("deploy is in use")).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Move notes into Sikemux" }));
+        await user.click(screen.getByRole("button", { name: "Move" }));
+        expect(await screen.findByText("A skill named notes already exists; remove it first")).toBeInTheDocument();
+        expect(screen.queryByText("deploy is in use")).not.toBeInTheDocument();
+    });
+
     it("removes a Sikemux skill", async () => {
         const user = userEvent.setup();
         const remove = vi.fn(() => {
