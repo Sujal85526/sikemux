@@ -277,8 +277,7 @@ impl Host {
         let mut bare = launch.clone();
         let mut args = mode.serve_args();
         args.splice(1..1, std::mem::take(&mut bare.args));
-        let (process, writer, lines) =
-            Process::spawn(&bare, args, Vec::<(String, String)>::new())?;
+        let (process, writer, lines) = Process::spawn(&bare, args, Vec::<(String, String)>::new())?;
         let rpc = Rpc::versioned(writer);
         let driver = Driver { rpc, sink, session };
         driver.clone().read(lines);
