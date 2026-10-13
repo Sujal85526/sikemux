@@ -123,12 +123,16 @@ export function LiveSeconds({ since, spent = 0, style }: { since?: number; spent
   return <Text style={style}>{secondsSince(started, now, spent)}</Text>;
 }
 
+/* While a view around a scroller holds the touch, iOS won't let the scroller pan, so the
+   scroller's own content takes it before the message's press handler can. */
+const keepTouch = () => true;
+
 /** Scrolls sideways inside the transcript, so long lines keep to the width of the screen. */
 function Sideways({ children }: { children: ReactNode }) {
   const styles = useStyles(makeStyles);
   return (
     <ScrollView horizontal contentContainerStyle={styles.pad} showsHorizontalScrollIndicator={false}>
-      {children}
+      <View onStartShouldSetResponder={keepTouch}>{children}</View>
     </ScrollView>
   );
 }

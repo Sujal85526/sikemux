@@ -74,6 +74,10 @@ const CELL_MAX = 240;
 
 const COPY_ROOM = 28;
 
+/* While a view around a scroller holds the touch, iOS won't let the scroller pan, so the
+   scroller's own content takes it before the message's press handler can. */
+const keepTouch = () => true;
+
 function columnWidths(block: Extract<Block, { kind: 'table' }>): number[] {
   return block.head.map((head, column) => {
     let chars = head.length;
@@ -118,7 +122,7 @@ function Table({ block, style, styles }: { block: Extract<Block, { kind: 'table'
   return (
     <View style={styles.table}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View>
+        <View onStartShouldSetResponder={keepTouch}>
           <View style={[styles.row, styles.headRow]}>{block.head.map((text, column) => cell(text, column, true))}</View>
           {block.rows.map((row, index) => (
             <View key={index} style={[styles.row, index === block.rows.length - 1 && styles.lastRow]}>
@@ -161,9 +165,11 @@ const BlockView = memo(
         return (
           <View style={styles.code}>
             <ScrollView horizontal contentContainerStyle={styles.codePad} showsHorizontalScrollIndicator={false}>
-              <Text style={styles.codeText} selectable>
-                {block.text}
-              </Text>
+              <View onStartShouldSetResponder={keepTouch}>
+                <Text style={styles.codeText} selectable>
+                  {block.text}
+                </Text>
+              </View>
             </ScrollView>
             <CopyButton value={block.text} label="code" size={12} style={styles.codeCopy} />
           </View>
