@@ -399,6 +399,7 @@ describe("DeskHost", () => {
        the pane, so nothing opens until it is on screen. */
     it("opens the tabs it was restored with, once, and shows the one that was in front", async () => {
         setState({ deskRestores: { "pane-desk": restored } } as never);
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         vi.mocked(browserApi.newTab).mockImplementation(async (_agentId, url) => `tab-${url}`);
         const view = renderPane(false);
 
@@ -756,11 +757,12 @@ describe("DeskHost", () => {
 
     it("brings no restored tab to the front when the saved front tab did not open", async () => {
         setState({ deskRestores: { "pane-desk": { ...restored, activeIndex: 5 } } } as never);
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         vi.mocked(browserApi.newTab).mockImplementation(async (_agentId, url) => `tab-${url}`);
         renderPane();
 
         await waitFor(() => expect(browserApi.newTab).toHaveBeenCalledTimes(2));
-        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledTimes(3));
         expect(browserApi.switchTab).not.toHaveBeenCalled();
     });
 

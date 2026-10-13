@@ -285,8 +285,10 @@ function DeskSession({
         const saved = takeDeskRestore(paneId);
         if (!saved || saved.tabs.length === 0) return;
         void (async () => {
+            // After an update the app reopens the agent's tabs itself, so those are not opened twice.
+            const held = (await browserApi.snapshot(agentId)).tabs;
             const opened: string[] = [];
-            for (const tab of saved.tabs) opened.push(await browserApi.newTab(agentId, tab.url));
+            for (const tab of saved.tabs) opened.push(held.find((kept) => kept.url === tab.url)?.id ?? (await browserApi.newTab(agentId, tab.url)));
             const active = opened[saved.activeIndex];
             if (active) await browserApi.switchTab(agentId, active);
             await refresh();
