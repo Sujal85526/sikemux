@@ -18,6 +18,7 @@ import {
   DELETE_ACCOUNT,
   isSharePath,
   takeReturn,
+  takeShareReturn,
   usePath,
 } from "./navigation.ts";
 import { SignIn } from "./SignIn.tsx";
@@ -64,6 +65,12 @@ export function App() {
               ? "Your devices · Sikemux"
               : "Sign in · Sikemux";
   }, [path, signedIn, showDeleted]);
+
+  useEffect(() => {
+    if (!signedIn || path === "/sso-callback") return;
+    const share = takeShareReturn();
+    if (share) location.replace(share);
+  }, [signedIn, path]);
 
   const afterSignIn = () => {
     const to = takeReturn();
