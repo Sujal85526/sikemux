@@ -964,6 +964,7 @@
 /* What is running in the rail's scope, one line under the scope switch. Each
    stat keeps the mark its rows use, so the line reads as their sum. */
 .agent-stats {
+    container-type: inline-size;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
@@ -977,8 +978,21 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
+    min-width: 0;
+    overflow: hidden;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+}
+.agent-stat > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* A narrow rail drops the words; each mark already says what its number counts. */
+@container (max-width: 279px) {
+    .agent-stat > span:last-child {
+        display: none;
+    }
 }
 .agent-stat svg,
 .agent-stat img {
