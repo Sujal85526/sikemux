@@ -106,7 +106,7 @@ async function setWhatToTest(buildId, notes) {
   });
 }
 
-const DEVELOPMENT_TYPES = ['DEVELOPMENT', 'IOS_DEVELOPMENT', 'APPLE_DEVELOPMENT'];
+const DEVELOPMENT_TYPES = ['DEVELOPMENT', 'IOS_DEVELOPMENT'];
 
 /** A certificate Xcode made through the API key, whose private key went with its runner. */
 export function madeByCi(certificate) {
@@ -117,8 +117,10 @@ export function madeByCi(certificate) {
 async function pruneCertificates() {
   const found = await call(`/v1/certificates?filter[certificateType]=${DEVELOPMENT_TYPES.join(',')}&limit=200`);
   const stale = found.data.filter(madeByCi);
-  for (const certificate of stale) {
-    await call(`/v1/certificates/${certificate.id}`, { method: 'DELETE' });
+  for (const certificate of found.data) {
+    const { name, displayName, expirationDate } = certificate.attributes;
+    console.log(`TestFlight: ${stale.includes(certificate) ? 'revoking' : 'keeping'} ${name} (${displayName}), expires ${expirationDate}`);
+    if (stale.includes(certificate)) await call(`/v1/certificates/${certificate.id}`, { method: 'DELETE' });
   }
   console.log(`TestFlight: revoked ${stale.length} development certificates earlier CI runs made`);
 }

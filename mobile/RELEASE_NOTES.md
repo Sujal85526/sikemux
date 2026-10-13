@@ -1,4 +1,4 @@
-# 0.1.0-nightly.17
+# 0.1.0-nightly.18
 
 • Watch a chat someone shared with you, live and encrypted end to end.
 • Muse Code shows among your agents.
