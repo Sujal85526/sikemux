@@ -11,7 +11,7 @@ import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { activeAgentId, agentDisplayOf, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconClose, IconInbox, IconPlus, IconSearch } from "../ui/Icons";
+import { AgentIcon, IconClose, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
@@ -367,6 +367,18 @@ export function AgentRailBody() {
                         <span className="agent-title">New chat</span>
                     </button>
                 )}
+                <button type="button" className="agent-row agent-new" onClick={cmd.newTerminal}>
+                    <span className="agent-glyph">
+                        <IconTerminal size={15} />
+                    </span>
+                    <span className="agent-title">New terminal</span>
+                </button>
+                <button type="button" className="agent-row agent-new" onClick={cmd.newDeskBrowserTab}>
+                    <span className="agent-glyph">
+                        <IconGlobe size={15} />
+                    </span>
+                    <span className="agent-title">New browser tab</span>
+                </button>
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
