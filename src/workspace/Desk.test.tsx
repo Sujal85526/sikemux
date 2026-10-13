@@ -745,11 +745,15 @@ describe("DeskHost", () => {
         expect(browserApi.newTab).not.toHaveBeenCalled();
     });
 
-    it("keeps the pane when restored pages fail to open but it already holds a page", async () => {
-        setState({ deskRestores: { "pane-desk": { ...restored, activeIndex: 5 } } } as never);
+    it("keeps the pane when restored pages fail to open but it already holds a file", async () => {
+        setState({
+            deskRestores: { "pane-desk": { ...restored, activeIndex: 5 } },
+            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], simulators: [], reveal: null } },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts" } },
+        } as never);
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         vi.mocked(browserApi.newTab).mockRejectedValue(new Error("no window"));
         renderPane();
-        await announceStrip(snapshot);
 
         await waitFor(() => expect(useToasts.getState().toasts.length).toBeGreaterThan(0));
         expect(onEmpty).not.toHaveBeenCalled();
