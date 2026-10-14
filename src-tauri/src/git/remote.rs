@@ -129,39 +129,24 @@ pub struct GitRemote {
     pub url: String,
 }
 
-/// `git remote -v` shape: `<name>\t<url> (fetch|push)` per line. We keep
-/// only the fetch URL since that's authoritative for branch listing.
+/// Each remote with its fetch URL, by name.
 #[tauri::command]
 pub async fn git_remotes(repo: String) -> Result<Vec<GitRemote>, String> {
     run_blocking(move || -> Result<Vec<GitRemote>, String> {
-        let out = git_ok(&repo, &["remote", "-v"])?;
-        let mut seen: std::collections::HashMap<String, String> = Default::default();
-        for line in out.lines() {
-            // Format: "origin\tgit@github.com:foo/bar.git (fetch)"
-            let mut parts = line.split('\t');
-            let name = parts.next().unwrap_or("").trim().to_string();
-            let rest = parts.next().unwrap_or("");
-            if name.is_empty() || rest.is_empty() {
-                continue;
-            }
-            // Only keep fetch URLs.
-            let is_fetch = rest.trim_end().ends_with("(fetch)");
-            if !is_fetch {
-                continue;
-            }
-            let url = rest
-                .rsplit_once(' ')
-                .map(|(url, _)| url)
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            if !url.is_empty() {
-                seen.insert(name, url);
-            }
-        }
-        let mut list: Vec<GitRemote> = seen
-            .into_iter()
-            .map(|(name, url)| GitRemote { name, url })
+        let repo = open_repo(&repo)?;
+        let names = repo.remotes().map_err(|e| e.message().to_string())?;
+        let mut list: Vec<GitRemote> = names
+            .iter()
+            .flatten()
+            .flatten()
+            .filter_map(|name| {
+                let remote = repo.find_remote(name).ok()?;
+                let url = remote.url().ok()?.trim();
+                (!url.is_empty()).then(|| GitRemote {
+                    name: name.to_string(),
+                    url: url.to_string(),
+                })
+            })
             .collect();
         list.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(list)
