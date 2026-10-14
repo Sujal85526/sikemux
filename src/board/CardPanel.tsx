@@ -7,6 +7,7 @@ import {
     type NewCard,
     type ProjectBoard,
     type RunStage,
+    shortTitle,
 } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
 import { openInBrowser } from "../api/releases";
@@ -15,7 +16,7 @@ import { confirmDialog } from "../state/dialog";
 import { reportError } from "../state/toast";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
 import { IconClose, IconExternal } from "../ui/Icons";
-import { Owner, shortTitle } from "./cardParts";
+import { Owner } from "./cardParts";
 
 const STATUS_OPTIONS: DropdownOption[] = [
     { value: "open", label: "Open" },

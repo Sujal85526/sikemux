@@ -16,6 +16,7 @@ import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agent
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { assumedQuestion, blockingQuestion } from "../agents/agentQuestions";
 import { AgentLabel } from "../agents/AgentLabel";
+import { inTeams } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { AGENT_LABELS, agentDisplay, sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
@@ -31,7 +32,7 @@ import { AgentRowTree } from "./AgentRowTree";
 import { AllProjectsAgents } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTrack } from "./ScopeTrack";
-import { drawTeamLines, inTeams } from "./teams";
+import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 

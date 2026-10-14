@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { blockingQuestion } from "../agents/agentQuestions";
-import { RUN_WAITS_ON_PERSON, type BoardCard, type CardStatus } from "../agents/agentBoard";
+import {
+    cardColumn,
+    cardQuestion,
+    RUN_WAITS_ON_PERSON,
+    shortTitle,
+    ticketAbove,
+    type BoardCard,
+    type BoardColumn,
+    type CardStatus,
+} from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
 import * as cmd from "../state/commands";
 import { reportError } from "../state/toast";
@@ -12,12 +20,10 @@ import { useCardDrag } from "../ui/kanbanDrag";
 import { Switch } from "../ui/Controls";
 import { AutoPanel } from "./AutoPanel";
 import { CardPanel } from "./CardPanel";
-import { AgentMark, Owner, shortTitle, ticketAbove } from "./cardParts";
+import { AgentMark, Owner } from "./cardParts";
 import "../styles/board.css";
 
-type Column = CardStatus | "needs";
-
-const COLUMNS: readonly [Column, string][] = [
+const COLUMNS: readonly [BoardColumn, string][] = [
     ["open", "Open"],
     ["progress", "In progress"],
     ["needs", "Needs you"],
@@ -50,13 +56,8 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     }, [visible, folder]);
 
     const byId = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
-    const asking = (card: BoardCard) => (card.owner && card.status === "progress" ? blockingQuestion(questions, card.owner) : undefined);
-    const columnOf = (card: BoardCard): Column => {
-        const status = moving[card.id] ?? card.status;
-        if (status === "done") return status;
-        if (card.auto && RUN_WAITS_ON_PERSON.has(card.auto.stage)) return "needs";
-        return status === "progress" && asking(card) ? "needs" : status;
-    };
+    const asking = (card: BoardCard) => cardQuestion(card, questions);
+    const columnOf = (card: BoardCard): BoardColumn => cardColumn(card, questions, moving[card.id]);
 
     const move = async (id: number, to: CardStatus) => {
         const card = byId.get(id);

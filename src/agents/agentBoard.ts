@@ -1,3 +1,5 @@
+import { blockingQuestion, type AgentQuestion } from "./agentQuestions";
+
 /** A card's place on the board, as the core keeps it. "Needs you" is not one: it is an owner waiting on the person. */
 export type CardStatus = "open" | "progress" | "done";
 
@@ -89,6 +91,36 @@ export interface ProjectBoard extends BoardAuto {
     /** The project's folder as the core names it. */
     readonly project: string;
     readonly cards: BoardCard[];
+}
+
+/** Where a board shows a card: "needs" holds the cards waiting on the person. */
+export type BoardColumn = CardStatus | "needs";
+
+/** The question the card's owner waits on the person to answer, while it works the card. */
+export const cardQuestion = (card: BoardCard, questions: readonly AgentQuestion[]): AgentQuestion | undefined =>
+    card.owner && card.status === "progress" ? blockingQuestion(questions, card.owner) : undefined;
+
+/** The column a card shows in, at `status` while a move to it is on its way. */
+export function cardColumn(card: BoardCard, questions: readonly AgentQuestion[], status: CardStatus = card.status): BoardColumn {
+    if (status === "done") return status;
+    if (card.auto && RUN_WAITS_ON_PERSON.has(card.auto.stage)) return "needs";
+    return status === "progress" && cardQuestion(card, questions) ? "needs" : status;
+}
+
+/** The first words of a title, for a chip that points at the card. */
+export const shortTitle = (title: string): string => {
+    const words = title.split(/\s+/);
+    return words.length > 3 ? `${words.slice(0, 3).join(" ")}…` : title;
+};
+
+/** The ticket a card is filed under: its own, or the nearest card above it that has one. */
+export function ticketAbove(card: BoardCard, byId: ReadonlyMap<number, BoardCard>): string | null {
+    let current = card.parent === null ? undefined : byId.get(card.parent);
+    for (let steps = 0; current && steps < byId.size; steps += 1) {
+        if (current.ticket) return current.ticket.key;
+        current = current.parent === null ? undefined : byId.get(current.parent);
+    }
+    return null;
 }
 
 /** The card whose Auto run `agentId` is, on any board. */
