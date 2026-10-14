@@ -754,14 +754,23 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         core.harness.session_exited(session.id, code, signal);
     }
     if let Some(agent) = session.agent.as_ref() {
+        let mid_turn = agent.busy();
         agent::note_exit(core, agent, status);
-        if let Some(reason) = failed.filter(|_| !session.is_killed()) {
-            core.note_activity(
-                agent.agent_id(),
-                super::activity::Activity::Problem(&reason),
-            );
+        let failed = failed.filter(|_| !session.is_killed());
+        if let Some(reason) = &failed {
+            core.note_activity(agent.agent_id(), super::activity::Activity::Problem(reason));
         }
         core.note_agent_gone(agent.agent_id());
+        if mid_turn || !session.is_killed() {
+            super::spawn::terminal_turn_ended(
+                core,
+                agent.agent_id(),
+                super::spawn::Ending::Gone {
+                    reason: failed,
+                    mid_turn,
+                },
+            );
+        }
     }
     if let Some(exited_at) = exited_at {
         core.reclaim_exited_sessions(exited_at);

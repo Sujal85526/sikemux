@@ -13,6 +13,7 @@ use crate::protocol::Event;
 
 use super::chat;
 use super::connection::blocking;
+use super::follow::{self, TerminalAnswer};
 use super::messages;
 use super::names::Worker;
 use super::workspace::{own_launch, Lead};
@@ -236,19 +237,54 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: Ending) {
     if ignored && matches!(ending, Ending::Finished) {
         return;
     }
-    let answer = core
+    let chat_answer = core
         .chats
         .get(agent_id)
-        .and_then(|chat| chat.feed.last_answer())
-        .map(|answer| cut(&answer));
+        .map(|chat| chat.feed.last_answer().map(TerminalAnswer::Said));
+    let (core, worker) = (core.clone(), agent_id.to_owned());
+    tokio::spawn(async move {
+        let answer = match chat_answer {
+            Some(answer) => answer,
+            None => {
+                let (core, worker) = (core.clone(), worker.clone());
+                blocking(move || Ok(follow::terminal_answer(&core, &worker)))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+        };
+        let text = report(&core, &worker, ending, answer);
+        messages::report(&core, worker, lead, text).await;
+    });
+}
+
+/// [`turn_ended`] for an agent in a terminal.
+pub(crate) fn terminal_turn_ended(core: &Core, agent_id: &str, ending: Ending) {
+    if tokio::runtime::Handle::try_current().is_err() {
+        return;
+    }
+    if let Some(core) = core.arc() {
+        turn_ended(&core, agent_id, ending);
+    }
+}
+
+/// What the lead is told about the worker's turn.
+fn report(core: &Core, worker: &str, ending: Ending, answer: Option<TerminalAnswer>) -> String {
     let because = |reason: Option<String>| match reason.filter(|reason| !reason.trim().is_empty()) {
         Some(reason) => format!(": {reason}"),
         None => ".".to_owned(),
     };
+    let wrote = |answer: TerminalAnswer, heading: &str| match answer {
+        TerminalAnswer::Said(said) => format!("{heading}\n\n{}", cut(&said)),
+        TerminalAnswer::Screen(screen) => format!(
+            "Sikemux cannot read its session, so this is the end of its screen:\n\n{}",
+            cut(&screen)
+        ),
+    };
     let (what, last) = match ending {
         Ending::Finished => match answer {
             Some(answer) => (
-                format!("Finished its turn. Its final answer:\n\n{answer}"),
+                format!("Finished its turn. {}", wrote(answer, "Its final answer:")),
                 None,
             ),
             None => (
@@ -277,14 +313,13 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: Ending) {
         } => (format!("Stopped running{}", because(reason)), None),
     };
     let mut text = match last {
-        Some(last) => format!("{what}\n\nWhat it wrote last:\n\n{last}"),
+        Some(last) => format!("{what}\n\n{}", wrote(last, "What it wrote last:")),
         None => what,
     };
-    if let Some(card) = super::board::card_line(core, agent_id) {
+    if let Some(card) = super::board::card_line(core, worker) {
         text.push_str(&format!("\n\n{card}"));
     }
-    let (core, worker) = (core.clone(), agent_id.to_owned());
-    tokio::spawn(async move { messages::report(&core, worker, lead, text).await });
+    text
 }
 
 fn cut(answer: &str) -> String {

@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
 use sikemux_pty::launch::{
-    apply_agent_profile, configure_interactive_command, configure_pty_environment,
-    validate_direct_command, PtyContext,
+    account_dir, account_variable, apply_agent_profile, configure_interactive_command,
+    configure_pty_environment, validate_direct_command, PtyContext,
 };
 use sikemux_pty::shell::{
     configure_shell_integration, configure_task_command, inherited_ssh_environment,
@@ -30,6 +31,10 @@ pub(crate) struct Owner {
     /// The paired device that started the session, which the app leaves
     /// running although nothing in its layout names it.
     pub started_by: Option<String>,
+    /// The folder an agent keeps its account and sessions in, when the
+    /// launch named one rather than leaving it to the CLI's default.
+    #[serde(default)]
+    pub account_home: Option<PathBuf>,
 }
 
 impl Owner {
@@ -46,6 +51,7 @@ impl Owner {
             task_execution_id: None,
             task: None,
             started_by: None,
+            account_home: None,
         }
     }
 }
@@ -105,6 +111,16 @@ pub(crate) fn prepare_terminal(
         &HashMap::new(),
     );
     apply_agent_profile(&mut cmd, context.as_ref(), direct_profile.as_ref());
+    let mut owner = Owner::from_context(context.as_ref());
+    let variable = owner.agent_type.as_deref().and_then(account_variable);
+    owner.account_home = variable
+        .and_then(|variable| env.get(variable))
+        .map(|home| account_dir(home))
+        .or_else(|| {
+            variable?;
+            let path = direct_profile.as_ref()?.config_path.as_deref()?;
+            (!path.trim().is_empty()).then(|| account_dir(path))
+        });
     for (key, value) in env {
         cmd.env(key, value);
     }
@@ -138,7 +154,7 @@ pub(crate) fn prepare_terminal(
         rows,
         command: cmd,
         kind: SessionKind::Terminal,
-        owner: Owner::from_context(context.as_ref()),
+        owner,
         shell_integration,
         initial_prompt_submitted: context
             .as_ref()

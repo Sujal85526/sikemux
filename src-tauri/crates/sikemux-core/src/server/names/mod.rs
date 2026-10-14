@@ -260,6 +260,15 @@ impl Names {
         self.save(&book);
     }
 
+    /// The provider session the agent runs, once it is known.
+    pub(crate) fn session_of(&self, agent_id: &str) -> Option<String> {
+        self.lock()
+            .agents
+            .iter()
+            .find(|entry| entry.agent_id == agent_id)
+            .and_then(|entry| entry.session_id.clone())
+    }
+
     pub(crate) fn note_session(&self, agent_id: &str, session_id: &str) {
         let mut book = self.lock();
         let Some(entry) = book.entry_mut(agent_id) else {

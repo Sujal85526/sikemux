@@ -811,12 +811,16 @@ fn ready_terminal(core: &Core, agent_id: &str) -> Result<Arc<Session>, &'static 
     let terminal = core
         .agent_session(agent_id)
         .ok_or("no longer has a terminal")?;
-    let idle = terminal
-        .agent
-        .as_ref()
-        .is_some_and(agent::AgentActivity::idle);
-    if !idle {
-        return Err("is working in its terminal");
+    if !agent::takes_prompt(core, &terminal) {
+        let idle = terminal
+            .agent
+            .as_ref()
+            .is_some_and(agent::AgentActivity::idle);
+        return Err(if idle {
+            "is still starting in its terminal"
+        } else {
+            "is working in its terminal"
+        });
     }
     if !rested(core, agent_id) {
         return Err("has just finished a turn");

@@ -14,6 +14,7 @@ use crate::protocol::{AgentStateEvent, Event};
 
 use super::activity::Activity;
 use super::session::Session;
+use super::spawn::{self, Ending};
 use super::{now_ms, Core, CoreResult};
 
 const ACTIVITY_SETTLE: Duration = Duration::from_secs(2);
@@ -153,6 +154,11 @@ impl AgentActivity {
             .map(|_| state_label(self.state.load(Ordering::Acquire)))
     }
 
+    /// It is at work on a turn, or waits on the person in the middle of one.
+    pub(crate) fn busy(&self) -> bool {
+        matches!(self.state.load(Ordering::Acquire), WORKING | BLOCKED)
+    }
+
     /// Its screen shows it waiting for a prompt.
     pub(crate) fn idle(&self) -> bool {
         self.kind.is_some() && self.state.load(Ordering::Acquire) == IDLE
@@ -207,6 +213,9 @@ impl AgentActivity {
         };
         if let Some(activity) = activity {
             core.note_activity(&self.agent_id, activity);
+        }
+        if next == IDLE && busy {
+            spawn::terminal_turn_ended(core, &self.agent_id, Ending::Finished);
         }
         core.broadcast_event(&Event::AgentState(AgentStateEvent {
             agent_id: self.agent_id.clone(),
@@ -304,6 +313,30 @@ fn detection_input<'a>(recent: &'a str, title: &'a str) -> DetectionInput<'a> {
             osc_progress: "",
         }
     }
+}
+
+/// Whether the agent in `session` takes a prompt typed in now: its screen
+/// shows it waiting for one. One that has had no prompt yet must also have
+/// gone quiet with its prompt box in sight, as it may still be starting or
+/// asking the person something first.
+pub(crate) fn takes_prompt(core: &Core, session: &Session) -> bool {
+    let Some(agent) = session.agent.as_ref().filter(|agent| agent.idle()) else {
+        return false;
+    };
+    if agent.armed.load(Ordering::Acquire) {
+        return true;
+    }
+    let quiet = now_ms().saturating_sub(session.last_activity_ms.load(Ordering::Relaxed))
+        >= ACTIVITY_SETTLE.as_millis() as u64;
+    let (Some(kind), Some((recent, title))) = (agent.kind, screen_text(session)) else {
+        return false;
+    };
+    quiet
+        && core.detection.read().is_ok_and(|registry| {
+            let detection = registry.detect(kind, detection_input(&recent, &title));
+            matches!(detection.state, AgentDetectionState::Idle)
+                && detection.fallback_reason.is_none()
+        })
 }
 
 pub(crate) fn screen_text(session: &Session) -> Option<(String, String)> {

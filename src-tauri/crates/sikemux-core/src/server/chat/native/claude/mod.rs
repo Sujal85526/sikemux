@@ -24,6 +24,7 @@ use super::process::{Lines, Process, Reading, Released, Writer};
 use super::session::{Backend, Opened, Prompt, Sink};
 use control::Control;
 use reader::{Asking, Reader, ReaderState, Shared, Turn};
+pub(crate) use replay::transcript_path;
 
 /// Where a session starts: a new one under a chosen id, or a saved one.
 enum Start<'a> {

@@ -13,9 +13,10 @@ use tokio::time::Instant;
 use crate::cli::protocol::HarnessRequest;
 use crate::protocol::AgentStatus;
 
-use super::chat::feed::{Excerpt, Said};
+use super::chat::feed::Said;
 use super::connection::blocking;
 use super::messages::{self, Listed, Reach};
+use super::transcript::{self, Cli};
 use super::Core;
 
 const MAX_WAIT_MS: u64 = 30_000;
@@ -30,6 +31,7 @@ const MAX_ANSWER_BYTES: usize = 8 * 1024;
 const TOOL_TITLES: usize = 6;
 const MAX_TITLE_CHARS: usize = 80;
 const SCREEN_LINES: usize = 40;
+const REPORT_SCREEN_LINES: usize = 30;
 
 /// Something that happened to an agent.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -178,27 +180,35 @@ fn cut_chars(text: &str, max: usize) -> String {
     format!("{}…", kept.trim_end())
 }
 
+fn without_tag(text: &str, tag: &str) -> String {
+    let open = format!("<{tag} ");
+    let mut text = text.to_owned();
+    while let Some(start) = text.find(&open) {
+        let Some(length) = text[start..].find('>') else {
+            break;
+        };
+        text.replace_range(start..=start + length, "");
+    }
+    text.replace(&format!("</{tag}>"), "")
+}
+
 /// Who sent a prompt and what it said, without the labels Sikemux wraps
 /// messages from agents and the person's answers in.
 fn asked(text: &str) -> Value {
-    let from = text
-        .trim_start()
+    let start = text.trim_start();
+    let from = start
         .strip_prefix("<agent-message from=\"")
         .and_then(|rest| rest.split_once('"'))
-        .map(|(name, _)| name.replace("&quot;", "\"").replace("&amp;", "&"));
-    let body: Vec<&str> = text
-        .lines()
-        .filter(|line| {
-            let line = line.trim();
-            !(line.starts_with("<agent-message ")
-                || line.starts_with("</agent-message>")
-                || line.starts_with("<question-answer ")
-                || line.starts_with("</question-answer>"))
-        })
-        .collect();
+        .map(|(name, _)| name.replace("&quot;", "\"").replace("&amp;", "&"))
+        .or_else(|| {
+            start
+                .starts_with("<task-notification>")
+                .then(|| "a background task".to_owned())
+        });
+    let body = without_tag(&without_tag(text, "agent-message"), "question-answer");
     json!({
         "from": from.unwrap_or_else(|| "the person".to_owned()),
-        "text": cut_chars(&body.join("\n"), MAX_ASKED_CHARS),
+        "text": cut_chars(&body, MAX_ASKED_CHARS),
     })
 }
 
@@ -289,11 +299,9 @@ impl Turn {
     }
 }
 
-/// The excerpt as turns, as many as fit, and where the first that did not
-/// fit starts.
-fn turns(excerpt: Excerpt) -> (Vec<Value>, Option<u64>) {
+fn build(said: Vec<(u64, bool, Said)>) -> Vec<Turn> {
     let mut turns: Vec<Turn> = Vec::new();
-    for (index, starts, said) in excerpt.said {
+    for (index, starts, said) in said {
         let ended = turns.last().is_none_or(|turn| turn.ended.is_some());
         if starts || ended {
             turns.push(Turn::new(index));
@@ -332,9 +340,15 @@ fn turns(excerpt: Excerpt) -> (Vec<Value>, Option<u64>) {
             }
         }
     }
+    turns
+}
+
+/// What was said, as turns, as many as fit, and where the first that did
+/// not fit starts.
+fn turns(said: Vec<(u64, bool, Said)>) -> (Vec<Value>, Option<u64>) {
     let mut views = Vec::new();
     let mut bytes = 0;
-    for turn in turns {
+    for turn in build(said) {
         if bytes >= MAX_READ_BYTES && !views.is_empty() {
             return (views, Some(turn.start));
         }
@@ -383,9 +397,7 @@ fn read_chat(core: &Core, target: &Listed, cursor: Option<&str>) -> Result<Value
     if excerpt.skipped {
         notes.push("Some of what it said after your cursor is no longer kept.".to_owned());
     }
-    let feed = excerpt.feed.clone();
-    let next = excerpt.next;
-    let (turns, rest) = turns(excerpt);
+    let (turns, rest) = turns(excerpt.said);
     if turns.is_empty() {
         notes.push(format!("{name} has said nothing since your cursor."));
     }
@@ -394,7 +406,7 @@ fn read_chat(core: &Core, target: &Listed, cursor: Option<&str>) -> Result<Value
     }
     let mut answer = json!({
         "turns": turns,
-        "cursor": read_cursor(&feed, rest.unwrap_or(next)),
+        "cursor": read_cursor(&excerpt.feed, rest.unwrap_or(excerpt.next)),
         "more": rest.is_some(),
     });
     if !notes.is_empty() {
@@ -404,26 +416,141 @@ fn read_chat(core: &Core, target: &Listed, cursor: Option<&str>) -> Result<Value
 }
 
 /// The last lines of a terminal agent's screen.
-fn read_terminal(core: &Core, target: &Listed) -> Result<Value, String> {
-    let session = core
-        .agent_session(&target.agent_id)
-        .ok_or("that agent no longer has a terminal")?;
-    let (screen, _) = super::agent::screen_text(&session).unwrap_or_default();
-    let lines: Vec<&str> = screen
+fn screen_tail(core: &Core, agent_id: &str, lines: usize) -> Option<String> {
+    let session = core.agent_session(agent_id)?;
+    let (screen, _) = super::agent::screen_text(&session)?;
+    let mut tail: Vec<&str> = screen
         .lines()
         .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .into_iter()
         .rev()
         .skip_while(|line| line.is_empty())
-        .take(SCREEN_LINES)
+        .take(lines)
         .collect();
-    let screen: Vec<&str> = lines.into_iter().rev().collect();
+    tail.reverse();
+    (!tail.is_empty()).then(|| tail.join("\n"))
+}
+
+/// The session file a terminal agent's CLI writes, once the app has said
+/// which session it runs.
+fn session_file(core: &Core, agent_id: &str) -> Option<(Cli, String, std::path::PathBuf)> {
+    let terminal = core.agent_session(agent_id)?;
+    let owner = terminal.owner();
+    let cli = Cli::of(owner.agent_type.as_deref()?)?;
+    let session = core.names.session_of(agent_id)?;
+    let path = transcript::locate(cli, owner.account_home.as_deref(), &session)?;
+    Some((cli, session, path))
+}
+
+/// Whether an agent standing at `status` has ended the turn it was on.
+fn at_rest(status: AgentStatus) -> bool {
+    !matches!(
+        status,
+        AgentStatus::Working | AgentStatus::Starting | AgentStatus::Blocked
+    )
+}
+
+/// What `said` holds with its last turn ended, as Claude never writes where
+/// a turn ends.
+fn ended(mut said: Vec<(u64, bool, Said)>, at: u64) -> Vec<(u64, bool, Said)> {
+    let open = said
+        .last()
+        .is_some_and(|(_, _, last)| !matches!(last, Said::TurnEnded { .. } | Said::Failed(_)));
+    if open {
+        said.push((at, false, Said::TurnEnded { cancelled: false }));
+    }
+    said
+}
+
+/// A terminal agent's last turns, or what it said since `cursor`, from its
+/// session file, with its screen when there is none or it waits on the
+/// person.
+fn read_terminal(core: &Core, target: &Listed, cursor: Option<&str>) -> Result<Value, String> {
     let name = target.name.as_deref().unwrap_or(&target.agent_id);
-    Ok(json!({
-        "screen": screen.join("\n"),
-        "note": format!("{name} runs in a terminal, so this is what its screen shows now, not a record of what it said, and there is no cursor."),
-    }))
+    let mut notes = Vec::new();
+    let mut answer = match session_file(core, &target.agent_id) {
+        Some((cli, session, path)) => {
+            let from = match cursor.map(|cursor| {
+                cursor
+                    .rsplit_once('@')
+                    .and_then(|(session, at)| Some((session, at.parse::<u64>().ok()?)))
+                    .ok_or("cursor must be one agent_read gave you")
+            }) {
+                Some(Ok((from, at))) if from == session => Some(at),
+                Some(Ok(_)) => {
+                    notes.push(format!(
+                        "{name} started a new session since that cursor, so this begins at its last turns."
+                    ));
+                    None
+                }
+                Some(Err(error)) => return Err(error.into()),
+                None => None,
+            };
+            let excerpt = transcript::read(cli, &path, from, RECENT_TURNS)
+                .map_err(|error| format!("Sikemux could not read {name}'s session: {error}"))?;
+            if excerpt.restarted {
+                notes.push(format!(
+                    "{name}'s session is not where your cursor was, so this begins at its last turns."
+                ));
+            }
+            let said = if excerpt.whole && at_rest(target.status) {
+                ended(excerpt.said, excerpt.next)
+            } else {
+                excerpt.said
+            };
+            let (turns, rest) = turns(said);
+            if turns.is_empty() {
+                notes.push(format!("{name} has said nothing since your cursor."));
+            }
+            if rest.is_some() || !excerpt.whole {
+                notes.push("There is more: read again with this cursor.".to_owned());
+            }
+            json!({
+                "turns": turns,
+                "cursor": format!("{session}@{}", rest.unwrap_or(excerpt.next)),
+                "more": rest.is_some() || !excerpt.whole,
+            })
+        }
+        None => {
+            notes.push(format!(
+                "{name} runs in a terminal and Sikemux cannot read its session, so this is what its screen shows now, and there is no cursor."
+            ));
+            json!({ "turns": [] })
+        }
+    };
+    let file = answer.get("cursor").is_some();
+    if !file || target.status == AgentStatus::Blocked {
+        if let Some(screen) = screen_tail(core, &target.agent_id, SCREEN_LINES) {
+            answer["screen"] = screen.into();
+        }
+        if file {
+            notes.push(format!(
+                "{name} waits on the person; screen is what it shows them."
+            ));
+        }
+    }
+    if !notes.is_empty() {
+        answer["note"] = notes.join(" ").into();
+    }
+    Ok(answer)
+}
+
+/// What a terminal agent wrote last, if its last turn ended on words, from
+/// its session file, or else the end of its screen.
+pub(crate) fn terminal_answer(core: &Core, agent_id: &str) -> Option<TerminalAnswer> {
+    let Some((cli, _, path)) = session_file(core, agent_id) else {
+        return screen_tail(core, agent_id, REPORT_SCREEN_LINES).map(TerminalAnswer::Screen);
+    };
+    let excerpt = transcript::read(cli, &path, None, 1).ok()?;
+    let turn = build(excerpt.said).pop()?;
+    (turn.last == Last::Message)
+        .then(|| turn.said.last().cloned())
+        .flatten()
+        .map(TerminalAnswer::Said)
+}
+
+pub(crate) enum TerminalAnswer {
+    Said(String),
+    Screen(String),
 }
 
 pub(crate) async fn read(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
@@ -445,7 +572,7 @@ pub(crate) async fn read(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             read_chat(&core, &target, cursor.as_deref())?
         } else {
             match target.reach {
-                Reach::Terminal => read_terminal(&core, &target)?,
+                Reach::Terminal => read_terminal(&core, &target, cursor.as_deref())?,
                 Reach::Asleep => json!({
                     "turns": [],
                     "note": format!("{name} is asleep, so Sikemux has nothing of it to read until it runs again. A message with agent_send wakes it."),

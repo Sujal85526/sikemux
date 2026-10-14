@@ -25,6 +25,7 @@ mod session;
 mod share;
 mod spawn;
 mod tools;
+mod transcript;
 mod upgrade;
 mod window;
 mod workspace;
@@ -37,7 +38,7 @@ use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sikemux_pty::agent_detection::{ManifestRegistry, ManifestReloadReport};
@@ -262,6 +263,7 @@ pub(crate) struct Listening {
 }
 
 pub(crate) struct Core {
+    me: Weak<Core>,
     sessions: Mutex<HashMap<SessionId, Arc<Session>>>,
     next_session_id: AtomicU64,
     capacity: Arc<Capacity>,
@@ -310,7 +312,8 @@ impl Core {
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
         let detection = ManifestRegistry::bundled()
             .map_err(|error| ServerError::Manifests(error.to_string()))?;
-        Ok(Arc::new(Self {
+        Ok(Arc::new_cyclic(|me| Self {
+            me: me.clone(),
             sessions: Mutex::new(HashMap::new()),
             next_session_id: AtomicU64::new(first_session_id()),
             capacity: Arc::new(Capacity {
@@ -342,6 +345,11 @@ impl Core {
             notify: notify::Notifier::default(),
             device_view: Mutex::new(Vec::new()),
         }))
+    }
+
+    /// This core, for work that outlives the call it starts in.
+    pub(crate) fn arc(&self) -> Option<Arc<Core>> {
+        self.me.upgrade()
     }
 
     pub(crate) fn is_frozen(&self) -> bool {
