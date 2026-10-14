@@ -2,10 +2,12 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use futures::StreamExt;
-use reqwest::{Client, Method, Response};
+use reqwest::{Client, Method, Response, StatusCode};
 use serde_json::Value;
 
+use crate::config::Site;
 use crate::error::{JiraError, JiraResult};
+use crate::oauth;
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -17,8 +19,16 @@ pub struct Credentials {
 }
 
 pub enum Auth {
-    Basic { email: String, token: String },
+    Basic {
+        email: String,
+        token: String,
+    },
     Bearer(String),
+    /// A kept browser sign-in, whose access token is renewed once if Jira stops taking it.
+    Atlassian {
+        site: Site,
+        token: String,
+    },
 }
 
 pub fn http() -> JiraResult<&'static Client> {
@@ -89,19 +99,14 @@ pub async fn send(
     query: &[(&str, String)],
     body: Option<&Value>,
 ) -> JiraResult<Value> {
-    let request = http()?.request(method, format!("{}{path}", credentials.url));
-    let mut request = match &credentials.auth {
-        Auth::Basic { email, token } => request.basic_auth(email, Some(token)),
-        Auth::Bearer(token) => request.bearer_auth(token),
+    let (mut status, mut bytes) = send_once(credentials, None, &method, path, query, body).await?;
+    if status == StatusCode::UNAUTHORIZED {
+        if let Auth::Atlassian { site, token } = &credentials.auth {
+            let renewed = oauth::renew(site, token).await?;
+            (status, bytes) =
+                send_once(credentials, Some(&renewed), &method, path, query, body).await?;
+        }
     }
-    .header("Accept", "application/json")
-    .query(query);
-    if let Some(body) = body {
-        request = request.json(body);
-    }
-    let response = request.send().await?;
-    let status = response.status();
-    let bytes = read_limited(response).await?;
     let parsed: Value = if bytes.is_empty() {
         Value::Null
     } else {
@@ -123,6 +128,31 @@ pub async fn send(
         status: status.as_u16(),
         message,
     })
+}
+
+/// `renewed` stands in for the access token the credentials were made with.
+async fn send_once(
+    credentials: &Credentials,
+    renewed: Option<&str>,
+    method: &Method,
+    path: &str,
+    query: &[(&str, String)],
+    body: Option<&Value>,
+) -> JiraResult<(StatusCode, Vec<u8>)> {
+    let request = http()?.request(method.clone(), format!("{}{path}", credentials.url));
+    let mut request = match (&credentials.auth, renewed) {
+        (_, Some(token)) => request.bearer_auth(token),
+        (Auth::Bearer(token) | Auth::Atlassian { token, .. }, None) => request.bearer_auth(token),
+        (Auth::Basic { email, token }, None) => request.basic_auth(email, Some(token)),
+    }
+    .header("Accept", "application/json")
+    .query(query);
+    if let Some(body) = body {
+        request = request.json(body);
+    }
+    let response = request.send().await?;
+    let status = response.status();
+    Ok((status, read_limited(response).await?))
 }
 
 #[cfg(test)]

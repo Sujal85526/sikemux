@@ -209,6 +209,21 @@ pub async fn access_token(site: &Site) -> JiraResult<String> {
     Ok(token)
 }
 
+/// Jira refused `rejected`, so it is dropped and a fresh one fetched. A request that
+/// already renewed it in the meantime is answered with that one rather than refreshing again.
+pub async fn renew(site: &Site, rejected: &str) -> JiraResult<String> {
+    {
+        let mut held = ACCESS.lock().await;
+        if held
+            .get(&site.account_id)
+            .is_some_and(|access| access.token == rejected)
+        {
+            held.remove(&site.account_id);
+        }
+    }
+    access_token(site).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
