@@ -18,6 +18,9 @@ use crate::server::{messages, Core};
 const CI_START_WAIT_MS: u64 = 3 * 60 * 1000;
 const CHECKS_EVERY_MS: u64 = 20_000;
 const REVIEW_EVERY_MS: u64 = 60_000;
+/// How long a run's agent may be missing before Auto takes it that the agent
+/// is gone, such as after Sikemux's background process restarted without it.
+const GONE_AFTER_MS: u64 = 60_000;
 const MAX_TITLE_CHARS: usize = 120;
 
 /// Changes the card's run, if it is still `agent`'s. False when it is not.
@@ -402,9 +405,12 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
 /// the person, and takes up steps a restart cut short.
 pub(super) fn tick(core: &Arc<Core>) {
     let now = unix_ms();
+    let running = core.running_agents();
     let due: Vec<(String, u64, Stage)> = {
         let mut state = core.boards.lock();
         let mut due = Vec::new();
+        let mut present = Vec::new();
+        let mut missing = Vec::new();
         for (project, board) in &state.boards {
             for card in &board.cards {
                 let Some(run) = &card.auto else { continue };
@@ -415,6 +421,15 @@ pub(super) fn tick(core: &Arc<Core>) {
                     Stage::Checking => CHECKS_EVERY_MS,
                     Stage::Review => REVIEW_EVERY_MS,
                     Stage::Shipping | Stage::Merging | Stage::Starting => 0,
+                    Stage::Working | Stage::Fixing => {
+                        let key = (project.clone(), card.id, "gone");
+                        if running.contains(&run.agent) {
+                            present.push(key);
+                        } else {
+                            missing.push((key, run.stage));
+                        }
+                        continue;
+                    }
                     _ => continue,
                 };
                 let last = state
@@ -430,6 +445,16 @@ pub(super) fn tick(core: &Arc<Core>) {
         }
         for (project, id, _) in &due {
             state.polled.insert((project.clone(), *id, "pull"), now);
+        }
+        for key in present {
+            state.polled.remove(&key);
+        }
+        for (key, stage) in missing {
+            let since = *state.polled.entry(key.clone()).or_insert(now);
+            if now.saturating_sub(since) >= GONE_AFTER_MS {
+                state.polled.remove(&key);
+                due.push((key.0, key.1, stage));
+            }
         }
         due
     };
@@ -450,6 +475,20 @@ pub(super) fn tick(core: &Arc<Core>) {
                     "Sikemux's background process restarted while Auto was starting it".to_owned(),
                 );
             }),
+            Stage::Working | Stage::Fixing => {
+                step(core, project, id, None, |core, step| async move {
+                    if core.running_agents().contains(step.agent()) {
+                        return;
+                    }
+                    step.hold(
+                        &core,
+                        format!(
+                            "{} is no longer running, so it did not finish; Ship it again sends what it committed",
+                            step.name(&core)
+                        ),
+                    );
+                })
+            }
             _ => {}
         }
     }
