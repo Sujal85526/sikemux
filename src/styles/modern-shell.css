@@ -485,12 +485,10 @@ textarea:focus,
 
 .status-dot.ok {
     background: var(--live);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--live) 22%, transparent);
 }
 
 .status-dot.pending {
     background: var(--warn);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 22%, transparent);
     animation: statusDotPulse 1.2s ease-in-out infinite alternate;
 }
 
