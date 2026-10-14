@@ -215,8 +215,23 @@ fn texts(content: &Value) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
+/// `text` without the tags Claude Code wraps a long paste in.
+fn unpasted(text: &str) -> String {
+    let mut text = text.to_owned();
+    for tag in ["<pasted_content", "</pasted_content"] {
+        while let Some(start) = text.find(tag) {
+            let Some(length) = text[start..].find('>') else {
+                break;
+            };
+            text.replace_range(start..=start + length, "");
+        }
+    }
+    text.trim().to_owned()
+}
+
 fn prompt(text: String, items: &mut Vec<(bool, Said)>) {
-    let start = text.trim_start();
+    let text = unpasted(&text);
+    let start = text.as_str();
     if start.starts_with("[Request interrupted") {
         items.push((false, Said::TurnEnded { cancelled: true }));
     } else if !start.starts_with("<command-") && !start.starts_with("<local-command") {
