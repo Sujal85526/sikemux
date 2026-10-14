@@ -12,13 +12,14 @@ use serde_json::Value;
 use super::access::{Needs, Peer};
 use super::attachments;
 use super::connection::{blocking, ClientConn};
-use super::names::AgentName;
+use super::edits::{Edit, Filter};
+use super::names::{project_of, AgentName};
 use super::workspace::AgentRun;
 use super::{board, questions, share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
-        "chatFile" | "questions" | "boards" | "board" | "agentNames" => Needs::Watch,
+        "chatFile" | "questions" | "boards" | "board" | "agentNames" | "edits" => Needs::Watch,
         "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
         | "boardRetry" => Needs::Full,
         _ => Needs::Local,
@@ -61,6 +62,7 @@ pub(crate) async fn call(
         "boardRemove" => answer(board::person_remove(&core, params).await?),
         "boardSettings" => answer(board::person_settings(&core, params).await?),
         "boardRetry" => answer(board::person_retry(&core, params).await?),
+        "edits" => answer(edits(&core, parse(params)?).await?),
         _ => Err(format!("this host does not know {method}").into()),
     }
 }
@@ -241,6 +243,17 @@ async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResul
         core.names
             .set_in_app(params.agent_ids, core.running_agents());
         Ok(())
+    })
+    .await
+}
+
+/// The files agents changed in a project and the lines they changed, by
+/// agent, chat run, turn or path, oldest first.
+async fn edits(core: &Arc<Core>, filter: Filter) -> CoreResult<Vec<Edit>> {
+    let core = core.clone();
+    blocking(move || {
+        let project = project_of(&filter.project, &core.workspaces.project_paths());
+        Ok(core.edits.read(&project, &filter))
     })
     .await
 }

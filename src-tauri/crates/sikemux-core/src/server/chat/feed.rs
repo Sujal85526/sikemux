@@ -825,6 +825,14 @@ impl Replay {
         self.bytes -= freed;
     }
 
+    fn turn_start(&self) -> Option<u64> {
+        self.entries
+            .iter()
+            .rev()
+            .find(|entry| entry.starts_turn)
+            .map(|entry| entry.index)
+    }
+
     pub(crate) fn is_trimmed(&self) -> bool {
         self.trimmed
     }
@@ -1319,6 +1327,11 @@ impl Feed {
             skipped,
             next,
         }
+    }
+
+    /// Where the turn in progress, or the last one, starts in the history.
+    pub(crate) fn turn_start(&self) -> Option<u64> {
+        self.inner.lock().ok()?.replay.turn_start()
     }
 
     /// What the agent wrote last in its latest turn.

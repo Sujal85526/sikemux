@@ -8,6 +8,7 @@ mod calls;
 mod chat;
 mod connection;
 mod display;
+mod edits;
 mod entry;
 mod follow;
 mod handover;
@@ -32,6 +33,7 @@ mod window;
 mod workspace;
 
 pub use entry::main;
+pub use host::PLATFORM as HOST_PLATFORM;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{DirBuilder, File, OpenOptions};
@@ -294,6 +296,7 @@ pub(crate) struct Core {
     pub(crate) seen: seen::Seen,
     pub(crate) names: names::Names,
     pub(crate) boards: board::Boards,
+    pub(crate) edits: edits::Edits,
     pub(crate) notify: notify::Notifier,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
@@ -343,6 +346,7 @@ impl Core {
             seen: seen::Seen::default(),
             names: names::Names::new(data_dir),
             boards: board::Boards::new(data_dir),
+            edits: edits::Edits::new(data_dir, me.clone()),
             notify: notify::Notifier::default(),
             device_view: Mutex::new(Vec::new()),
         }))

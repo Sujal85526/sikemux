@@ -190,6 +190,7 @@ pub(crate) struct Chat {
     unreported: AtomicBool,
     /// Why the turn in progress failed, said before the turn or the chat ends.
     failure: Mutex<Option<String>>,
+    edits: super::edits::Open,
 }
 
 impl Chat {
@@ -398,6 +399,21 @@ impl Chat {
     pub(crate) fn letter_unread(&self, text: String) {
         if let Some(core) = self.core.upgrade() {
             core.harness.mailbox.returned(self.agent_id(), text);
+        }
+    }
+
+    /// Records the files a tool call changed once `update` says it is done.
+    /// Only while the agent works, so a session's history read back again
+    /// is not counted twice.
+    pub(crate) fn note_edits(&self, update: &Value) {
+        if !self.turn_running() && !self.held.load(Ordering::Acquire) {
+            return;
+        }
+        let Some((tool_call_id, changes)) = self.edits.note(update) else {
+            return;
+        };
+        if let Some(core) = self.core.upgrade() {
+            core.edits.record(self, tool_call_id, changes);
         }
     }
 
@@ -1107,6 +1123,7 @@ impl Chats {
             releasing: AtomicBool::new(false),
             unreported: AtomicBool::new(flags.running || flags.unprompted || flags.held),
             failure: Mutex::new(None),
+            edits: Default::default(),
             current: Mutex::new(launch.clone()),
             launch,
             origin,

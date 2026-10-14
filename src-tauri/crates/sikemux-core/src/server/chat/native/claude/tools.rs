@@ -2,6 +2,8 @@ use std::path::{Component, Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
+use crate::server::edits;
+
 use super::super::json::{
     is_js_whitespace, js_join_item, js_number, js_str, non_nullish, texts, truthy,
 };
@@ -348,7 +350,8 @@ fn result_fields(
             });
             content_update(cleaned.as_ref(), is_error)
         }
-        "Skill" | "Edit" | "Write" => Vec::new(),
+        "Edit" | "Write" => edited(structured),
+        "Skill" => Vec::new(),
         "ExitPlanMode" => vec![("title".to_string(), "Exited Plan Mode".into())],
         "WebSearch" => {
             if let Some(results) = structured
@@ -364,6 +367,36 @@ fn result_fields(
         }
         _ => content_update(content, is_error),
     }
+}
+
+/// The lines an edit changed, from the patch Claude Code reports, for the
+/// core's record of who edited what.
+fn edited(structured: Option<&Value>) -> Fields {
+    let Some(structured) = structured else {
+        return Vec::new();
+    };
+    let hunks = structured
+        .get("structuredPatch")
+        .and_then(Value::as_array)
+        .filter(|hunks| !hunks.is_empty());
+    let (Some(path), Some(hunks)) = (structured.get("filePath"), hunks) else {
+        return Vec::new();
+    };
+    let lines: edits::Lines = hunks
+        .iter()
+        .flat_map(|hunk| {
+            let new_start = hunk.get("newStart").and_then(Value::as_u64).unwrap_or(0);
+            let lines = hunk.get("lines").and_then(Value::as_array);
+            edits::hunk(
+                new_start,
+                lines.into_iter().flatten().filter_map(Value::as_str),
+            )
+        })
+        .collect();
+    vec![(
+        "_meta".to_string(),
+        json!({ "sikemux": { "edited": [{ "path": path, "lines": lines }] } }),
+    )]
 }
 
 fn web_search_lines(results: &[Value]) -> Vec<String> {

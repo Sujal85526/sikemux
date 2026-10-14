@@ -129,6 +129,7 @@ impl Sink {
         if self.quiet.load(Ordering::Acquire) {
             return;
         }
+        self.chat.note_edits(&update);
         slim(&mut update);
         self.chat.emit(
             ChatEventKind::SessionUpdate,
