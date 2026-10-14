@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { blockingQuestion } from "../agents/agentQuestions";
-import type { BoardCard, CardStatus } from "../agents/agentBoard";
+import { RUN_WAITS_ON_PERSON, type BoardCard, type CardStatus } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
 import * as cmd from "../state/commands";
 import { reportError } from "../state/toast";
@@ -9,6 +9,8 @@ import { basename } from "../lib/paths";
 import { IconLink, IconRefresh } from "../ui/Icons";
 import { EmptyState } from "../ui/Panel";
 import { useCardDrag } from "../ui/kanbanDrag";
+import { Switch } from "../ui/Controls";
+import { AutoPanel } from "./AutoPanel";
 import { CardPanel } from "./CardPanel";
 import { AgentMark, Owner, shortTitle, ticketAbove } from "./cardParts";
 import "../styles/board.css";
@@ -34,11 +36,12 @@ function readBoard(folder: string): void {
 export function BoardPane({ folder, visible }: { folder: string; visible: boolean }) {
     const project = useStore((s) => s.boardProjects[folder] ?? folder);
     const cards = useStore((s) => s.agentBoards[project] ?? EMPTY);
+    const auto = useStore((s) => s.agentBoardAuto[project]);
     const questions = useStore((s) => s.agentQuestions);
     const [words, setWords] = useState("");
     const [fromJira, setFromJira] = useState(false);
     const [onlyNeeds, setOnlyNeeds] = useState(false);
-    const [selected, setSelected] = useState<number | "new" | null>(null);
+    const [selected, setSelected] = useState<number | "new" | "auto" | null>(null);
     const [moving, setMoving] = useState<Record<number, CardStatus>>({});
 
     const refresh = () => readBoard(folder);
@@ -50,6 +53,8 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     const asking = (card: BoardCard) => (card.owner && card.status === "progress" ? blockingQuestion(questions, card.owner) : undefined);
     const columnOf = (card: BoardCard): Column => {
         const status = moving[card.id] ?? card.status;
+        if (status === "done") return status;
+        if (card.auto && RUN_WAITS_ON_PERSON.has(card.auto.stage)) return "needs";
         return status === "progress" && asking(card) ? "needs" : status;
     };
 
@@ -91,7 +96,13 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     }
     const bands = [...teams.entries()].sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : 0));
     const current = typeof selected === "number" ? byId.get(selected) : undefined;
-    const panel = selected === "new" || current;
+    const panel = selected === "new" || selected === "auto" || current;
+    const autoOn = auto?.settings.auto ?? false;
+    const setAuto = (on: boolean) =>
+        agentBoardApi
+            .settings(folder, { auto: on })
+            .then((board) => cmd.setAgentBoard(folder, board))
+            .catch(reportError(on ? "turn Auto on" : "turn Auto off"));
 
     const card = (each: BoardCard) => {
         const question = columnOf(each) === "needs" ? asking(each) : undefined;
@@ -112,10 +123,15 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                     if (!drag.wasDragged()) setSelected(each.id);
                 }}>
                 <span className="kanban-card-summary">{each.title}</span>
-                {question && (
+                {question ? (
                     <span className="board-ask">
                         <b>{question.name}</b> asks: {question.text}
                     </span>
+                ) : (
+                    each.auto?.note &&
+                    each.status !== "done" && (
+                        <span className={`board-ask${RUN_WAITS_ON_PERSON.has(each.auto.stage) ? "" : " board-run"}`}>{each.auto.note}</span>
+                    )
                 )}
                 {(under.length > 0 || after) && (
                     <span className="board-row">
@@ -177,7 +193,13 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     );
 
     const bandHead = (team: string | null, list: BoardCard[]): ReactNode => {
-        if (team === null) return <b>Nobody yet</b>;
+        if (team === null)
+            return (
+                <>
+                    <b>Nobody yet</b>
+                    {autoOn && <span className="kanban-meta">Auto picks these up</span>}
+                </>
+            );
         const keys = [...new Set(list.flatMap((each) => (each.ticket ? [each.ticket.key] : [])))];
         const workers = [...new Set(list.flatMap((each) => (each.owner && each.owner !== team && each.ownerName ? [each.ownerName] : [])))];
         return (
@@ -203,6 +225,12 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                             {fromTickets > 0 && ` · ${fromTickets} from Jira`}
                         </span>
                         <span className="kanban-grow" />
+                        <span className="board-auto" title={auto?.autoNote ?? undefined}>
+                            <Switch checked={autoOn} onChange={(on) => void setAuto(on)} label="Auto" />
+                            <button type="button" className="board-auto-label" aria-pressed={selected === "auto"} onClick={() => setSelected("auto")}>
+                                {autoOn && auto ? `Auto · ${auto.running} of ${auto.settings.slots} running` : "Auto"}
+                            </button>
+                        </span>
                         <button type="button" className="kanban-button" onClick={() => setSelected("new")}>
                             Add card
                         </button>
@@ -257,15 +285,19 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                     </div>
                 )}
             </section>
-            {panel && (
-                <CardPanel
-                    key={selected ?? "none"}
-                    folder={folder}
-                    card={current ?? null}
-                    cards={cards}
-                    onSelect={setSelected}
-                    onClose={() => setSelected(null)}
-                />
+            {selected === "auto" ? (
+                <AutoPanel folder={folder} auto={auto ?? null} onClose={() => setSelected(null)} />
+            ) : (
+                panel && (
+                    <CardPanel
+                        key={selected ?? "none"}
+                        folder={folder}
+                        card={current ?? null}
+                        cards={cards}
+                        onSelect={setSelected}
+                        onClose={() => setSelected(null)}
+                    />
+                )
             )}
         </div>
     );

@@ -1,4 +1,8 @@
-import type { BoardCard, ProjectBoard } from "../../src/agents/agentBoard";
+import type {
+  BoardCard,
+  CardRun,
+  ProjectBoard,
+} from "../../src/agents/agentBoard";
 import { SIKEMUX } from "./projects";
 import { AGENTS } from "./workspace";
 
@@ -23,6 +27,7 @@ const card = (
   createdByName: OTTER.name,
   result: null,
   ticket: null,
+  auto: null,
   at: now - 3 * HOUR,
   updatedAt: now - fields.id * 600_000,
   ...fields,
@@ -37,9 +42,36 @@ const person = {
   createdByName: "the person",
 };
 
-/** The sikemux project's board: Otter's team splitting a ticket, and tickets nobody has taken yet. */
+const run = (
+  agent: string,
+  slug: string,
+  fields: Partial<CardRun> & Pick<CardRun, "stage">,
+): CardRun => ({
+  agent,
+  repo: SIKEMUX,
+  worktree: `${SIKEMUX}.worktrees/${slug}`,
+  branch: `sikemux/${slug}`,
+  base: "main",
+  startSha: "4f1c2a9e0b7d3c5a8e6f1b2c3d4e5f6a7b8c9d0e",
+  note: null,
+  pull: null,
+  ...fields,
+});
+
+/** The sikemux project's board: Otter's team splitting a ticket, Auto landing tickets, and tickets nobody has taken yet. */
 export const DEMO_BOARD: ProjectBoard = {
   project: SIKEMUX,
+  settings: {
+    auto: true,
+    slots: 3,
+    launcher: null,
+    model: null,
+    finish: "merge",
+    check: "pnpm check",
+    statuses: { progress: "In Progress", done: "Done" },
+  },
+  running: 1,
+  autoNote: null,
   cards: [
     card({
       id: 1,
@@ -92,6 +124,48 @@ export const DEMO_BOARD: ProjectBoard = {
       dependsOn: [3],
       waitsOn: [3],
       ticket: { key: "PROJ-23", source: "Bug", provider: "jira" },
+    }),
+    card({
+      id: 7,
+      title: "Invoice PDFs show the customer's tax number",
+      status: "progress",
+      ...person,
+      team: "agent-wren",
+      teamName: "Wren",
+      owner: "agent-wren",
+      ownerName: "Wren",
+      ownerCli: "claude",
+      ticket: { key: "PROJ-27", source: "Story", provider: "jira" },
+      auto: run("agent-wren", "proj-27-invoice-pdfs-show-the-customer-s-tax", {
+        stage: "checking",
+        note: "Its checks are running",
+        pull: {
+          number: 41,
+          url: "https://github.com/nodelike/sikemux/pull/41",
+          host: "github",
+        },
+      }),
+    }),
+    card({
+      id: 8,
+      title: "Retry webhooks that timed out",
+      status: "progress",
+      ...person,
+      team: "agent-heron",
+      teamName: "Heron",
+      owner: "agent-heron",
+      ownerName: "Heron",
+      ownerCli: "codex",
+      ticket: { key: "PROJ-31", source: "Bug", provider: "jira" },
+      auto: run("agent-heron", "proj-31-retry-webhooks-that-timed-out", {
+        stage: "held",
+        note: "Its checks failed again after a fix:\ntest (ubuntu): failure",
+        pull: {
+          number: 39,
+          url: "https://github.com/nodelike/sikemux/pull/39",
+          host: "github",
+        },
+      }),
     }),
   ],
 };

@@ -1,5 +1,13 @@
 import { useState } from "react";
-import type { BoardCard, CardChanges, CardStatus, NewCard } from "../agents/agentBoard";
+import {
+    RUN_WAITS_ON_PERSON,
+    type BoardCard,
+    type CardChanges,
+    type CardStatus,
+    type NewCard,
+    type ProjectBoard,
+    type RunStage,
+} from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
 import { openInBrowser } from "../api/releases";
 import * as cmd from "../state/commands";
@@ -16,6 +24,19 @@ const STATUS_OPTIONS: DropdownOption[] = [
 ];
 
 const TOP = "0";
+
+const STAGE_LABELS: Record<RunStage, string> = {
+    starting: "Starting",
+    working: "Working",
+    shipping: "Shipping",
+    checking: "Checks running",
+    fixing: "Fixing",
+    merging: "Merging",
+    review: "Waits for you",
+    held: "Back with you",
+    merged: "Merged",
+    closed: "Closed",
+};
 
 /** The cards under `id`, and theirs, which it cannot be put under. */
 function below(cards: readonly BoardCard[], id: number): Set<number> {
@@ -57,7 +78,7 @@ export function CardPanel({
     const parent = card ? (card.parent ?? 0) : newParent;
     const dependsOn = card ? card.dependsOn : newDependsOn;
 
-    const run = async (label: string, work: () => Promise<{ project: string; cards: BoardCard[] }>) => {
+    const run = async (label: string, work: () => Promise<ProjectBoard>) => {
         setBusy(true);
         try {
             const board = await work();
@@ -239,6 +260,46 @@ export function CardPanel({
                     <p>{card.result}</p>
                 </section>
             )}
+            {card?.auto && (
+                <section className="board-result" aria-label="Auto">
+                    <span className="board-section-name">Auto · {STAGE_LABELS[card.auto.stage]}</span>
+                    {card.auto.note && <p>{card.auto.note}</p>}
+                    <div className="board-run-facts">
+                        {card.auto.branch && (
+                            <span className="board-run-fact" title={card.auto.worktree}>
+                                Branch <code>{card.auto.branch}</code>
+                            </span>
+                        )}
+                        {card.auto.pull && (
+                            <span className="board-run-fact">
+                                Pull request #{card.auto.pull.number}
+                                {card.auto.pull.url && (
+                                    <button
+                                        type="button"
+                                        className="kanban-icon-button"
+                                        title="Open in browser"
+                                        aria-label="Open the pull request in the browser"
+                                        onClick={() => void openInBrowser(card.auto!.pull!.url)}>
+                                        <IconExternal size={12} />
+                                    </button>
+                                )}
+                            </span>
+                        )}
+                    </div>
+                    {RUN_WAITS_ON_PERSON.has(card.auto.stage) && (
+                        <div className="board-run-actions">
+                            <button
+                                type="button"
+                                className="kanban-button"
+                                disabled={busy}
+                                onClick={() => void run("try the card again", () => agentBoardApi.retry(folder, card.id))}>
+                                {card.auto.worktree ? "Ship it again" : "Start it again"}
+                            </button>
+                        </div>
+                    )}
+                </section>
+            )}
+            {card?.ticket?.syncNote && <p className="board-auto-hint">{card.ticket.syncNote}</p>}
             {under.length > 0 && (
                 <section className="board-under" aria-label="Cards under it">
                     <span className="board-section-name">Cards under it</span>

@@ -479,6 +479,11 @@ export class ShowcaseBackend implements IpcTransport {
             card.id === id ? { ...card, ...changes } : card,
           ) as typeof board.cards,
         };
+      if (method === "boardSettings")
+        board = {
+          ...board,
+          settings: { ...board.settings, ...(params as object) },
+        };
       if (method === "boardRemove")
         board = {
           ...board,
