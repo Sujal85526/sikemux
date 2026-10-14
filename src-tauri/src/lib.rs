@@ -1,6 +1,7 @@
 mod account;
 mod acp;
 mod activity;
+mod agent_board;
 mod agent_names;
 mod agent_notification;
 mod agent_questions;
@@ -322,6 +323,7 @@ pub fn run() {
             share::share_call,
             agent_names::agent_name_call,
             agent_questions::agent_question_call,
+            agent_board::agent_board_call,
             remote::remote_answer_pairing,
             remote::remote_allow_devices,
             remote::remote_publish_workspace,

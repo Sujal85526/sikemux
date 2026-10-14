@@ -200,6 +200,10 @@ export interface ViewState {
     agentSubagents: Record<string, number>;
     /** Questions agents asked that wait on an answer, as the core last sent them. */
     agentQuestions: import("../agents/agentQuestions").AgentQuestion[];
+    /** Each project's board cards, by the project folder the core names, as the core last sent them. */
+    agentBoards: Record<string, import("../agents/agentBoard").BoardCard[]>;
+    /** The core's name for each project folder the app has opened a board for, when it differs. */
+    boardProjects: Record<string, string>;
 
     commandPaletteOpen: boolean;
     onboardingOpen: boolean;
@@ -330,6 +334,8 @@ export const useStore = create<StoreState>(() => {
         agentTasks: {},
         agentSubagents: {},
         agentQuestions: [],
+        agentBoards: {},
+        boardProjects: {},
         commandPaletteOpen: false,
         onboardingOpen: false,
         diagnosticsOpen: false,

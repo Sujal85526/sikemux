@@ -35,6 +35,7 @@ export function NewTabPalette() {
         file: useShortcutLabel("palette.files"),
         git: useShortcutLabel(PROJECT_SURFACES.git.shortcut),
         search: useShortcutLabel(PROJECT_SURFACES.search.shortcut),
+        board: useShortcutLabel(PROJECT_SURFACES.board.shortcut),
     };
     const [selected, setSelected] = useState(0);
     const selectedRef = useRef(0);
@@ -105,6 +106,15 @@ export function NewTabPalette() {
             icon: <WindowIcon role="search" size={14} />,
             shortcut: shortcuts.search,
             open: PROJECT_SURFACES.search.open,
+            disabled: !project,
+        },
+        {
+            id: "board",
+            label: PROJECT_SURFACES.board.label,
+            detail: project ? "The cards agents and you plan the work on" : "Open a project first",
+            icon: <WindowIcon role="board" size={14} />,
+            shortcut: shortcuts.board,
+            open: PROJECT_SURFACES.board.open,
             disabled: !project,
         },
     ];

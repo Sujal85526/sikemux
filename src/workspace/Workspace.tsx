@@ -62,6 +62,7 @@ const CORE_PANE_ROLE: Record<CorePaneKind, WindowRole> = {
     /* A desk is a pane beside its agent, not a window role of its own. */
     desk: "named",
     shared: "shared",
+    board: "board",
 };
 
 const paneRole = (kind: PaneKind): WindowRole => (isPluginKind(kind) ? kind : CORE_PANE_ROLE[kind]);
@@ -207,6 +208,7 @@ const CORE_ROLE_LABEL: Record<Exclude<WindowRole, PluginKind>, string> = {
     named: "Window",
     agent: "Agent",
     shared: "Shared chat",
+    board: PROJECT_SURFACES.board.label,
 };
 
 async function renameTerminalTab(win: WindowT, titles: Readonly<Record<string, string>>): Promise<void> {

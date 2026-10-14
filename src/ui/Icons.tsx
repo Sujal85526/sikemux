@@ -175,6 +175,13 @@ export const IconGit = makeSvgIcon(
         <path d="M4.6 5.3v5.4M4.6 6.6c0 3 6.8 1.2 6.8-1.3" />
     </>,
 );
+export const IconBoard = makeSvgIcon(
+    <>
+        <rect x="2" y="2.5" width="3.4" height="11" rx="1" />
+        <rect x="6.3" y="2.5" width="3.4" height="7" rx="1" />
+        <rect x="10.6" y="2.5" width="3.4" height="9" rx="1" />
+    </>,
+);
 export const IconUser = makeSvgIcon(
     <>
         <circle cx="8" cy="5.2" r="2.5" />
@@ -591,6 +598,7 @@ export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) 
     if (role === "search") return <IconSearch size={size} />;
     if (role === "agent") return <IconAgent size={size} />;
     if (role === "shared") return <IconEye size={size} />;
+    if (role === "board") return <IconBoard size={size} />;
     const surface = pluginSurface(role);
     if (surface) return surface.icon(size ?? 14);
     return <IconWindow size={size} />;

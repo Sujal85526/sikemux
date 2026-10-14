@@ -32,6 +32,7 @@ import { GlobalSkillsBridge } from "./shell/GlobalSkillsBridge";
 import { RemoteChatBridge } from "./shell/RemoteChatBridge";
 import { AgentNameBridge } from "./shell/AgentNameBridge";
 import { AgentQuestionBridge } from "./shell/AgentQuestionBridge";
+import { AgentBoardBridge } from "./shell/AgentBoardBridge";
 import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
 import { UpdateRequiredPrompt } from "./shell/UpdateRequiredPrompt";
 import { PairingPrompt } from "./shell/PairingPrompt";
@@ -990,6 +991,7 @@ export default function App() {
             <RemoteChatBridge />
             <AgentNameBridge />
             <AgentQuestionBridge />
+            <AgentBoardBridge />
             <GlobalSkillsBridge />
             <ProjectBridge />
             <AgentSessionSync />

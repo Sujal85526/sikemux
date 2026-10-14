@@ -47,6 +47,8 @@ export interface BuiltinWorkbenchItemState {
     desk: DeskView;
     /* The chat it shows is the share link in the pane's `startup`. */
     shared: null;
+    /* The project it shows the board of is the pane's folder. */
+    board: null;
 }
 
 /**
@@ -304,6 +306,7 @@ export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
     agent: builtinDefinition("agent", "agent", NULL_CODEC),
     desk: builtinDefinition("desk", "desk", DESK_CODEC),
     shared: builtinDefinition("shared", "shared chat", NULL_CODEC),
+    board: builtinDefinition("board", "Board", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
 
 export function defaultWorkbenchItemTitle(kind: PaneKind, startup?: string): string {

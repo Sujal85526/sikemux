@@ -295,6 +295,9 @@ export function runKeybindingAction(action: KeybindingActionId, event: KeyboardE
         case "window.search":
             cmd.focusGlobalSearch();
             return true;
+        case "window.board":
+            cmd.openBoard();
+            return true;
     }
     return false;
 }

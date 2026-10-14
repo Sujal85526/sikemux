@@ -39,6 +39,7 @@ export const IPC_COMMANDS = [
     "share_call",
     "agent_name_call",
     "agent_question_call",
+    "agent_board_call",
     "remote_answer_pairing",
     "remote_allow_devices",
     "remote_publish_workspace",

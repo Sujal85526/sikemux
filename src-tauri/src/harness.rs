@@ -132,6 +132,9 @@ fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
     if request.method == crate::agent_questions::CHANGED_METHOD {
         return crate::agent_questions::changed(app, &request.params);
     }
+    if request.method == crate::agent_board::CHANGED_METHOD {
+        return crate::agent_board::changed(app, &request.params);
+    }
     if is_browser_method(&request.method) {
         return crate::browser::tools::execute(app, &request);
     }

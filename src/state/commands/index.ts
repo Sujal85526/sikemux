@@ -3,6 +3,7 @@ export { agentDirectCommand, agentExecutablePath, agentStartup, profileOf, relau
 export { mergePinnedIntoRoots, normaliseProjectRoots } from "./settingsLogic";
 export * from "./agents";
 export * from "./appearance";
+export * from "./board";
 export * from "./cliOpen";
 export * from "./coreSessions";
 export * from "./customCommands";

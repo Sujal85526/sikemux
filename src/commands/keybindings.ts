@@ -353,6 +353,13 @@ const coreKeybindingActions = [
         defaultBinding: on("Meta+Alt+Digit5", "Ctrl+Alt+Digit5"),
     },
     {
+        id: "window.board",
+        label: "Focus board",
+        detail: "Jump to the project's board of cards",
+        category: "Navigation",
+        defaultBinding: on("Meta+Alt+Digit6", "Ctrl+Alt+Digit6"),
+    },
+    {
         id: "browser.tabNew",
         label: "New browser tab",
         detail: "Open a page on the desk of the agent in front, or the one that worked last",
