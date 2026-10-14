@@ -42,7 +42,7 @@ export const initialChatState: ChatState = {
     revision: 0,
     awaitingReplay: false,
     turnOpening: null,
-    reconnecting: null,
+    retrying: null,
 };
 
 /* The parent session and each subagent session own a transcript of the same
@@ -549,16 +549,19 @@ function contextUsage(update: Record<string, unknown>): ContextUsage | null {
         : { used, size };
 }
 
-/* A cancelled turn stops only the subagents it was waiting on, and the agent
-   says which. Background ones run on and report their own end. */
 /* An agent says it is retrying as a warning-level failure, in the same shape a
    failed turn uses. It is not a failure yet: the turn runs on. */
-function retryOf(update: Record<string, unknown>): ChatState["reconnecting"] {
+function retryOf(update: Record<string, unknown>): ChatState["retrying"] {
     const notice = recordOf(recordOf(recordOf(recordOf(update._meta)?.jetbrains)?.air)?.sessionFailure);
     if (notice?.severity !== "warning") return null;
-    return { attempt: typeof notice.attempt === "number" && notice.attempt > 0 ? notice.attempt : null };
+    return {
+        attempt: typeof notice.attempt === "number" && notice.attempt > 0 ? notice.attempt : null,
+        connection: notice.category === "connection",
+    };
 }
 
+/* A cancelled turn stops only the subagents it was waiting on, and the agent
+   says which. Background ones run on and report their own end. */
 function endTurn(state: ChatState, stopReason: string | null, at = Date.now()): ChatState {
     const settled = settleState(state, false);
     const last = settled.messages.at(-1);
@@ -569,7 +572,7 @@ function endTurn(state: ChatState, stopReason: string | null, at = Date.now()): 
         messages,
         running: false,
         turnOpening: null,
-        reconnecting: null,
+        retrying: null,
         suppressUserEcho: false,
         permissions: [],
         stopReason,
@@ -604,7 +607,7 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
             ...recordedTime(marked, update, state.running),
             turnOpening: opened ? null : opening,
             suppressUserEcho: false,
-            reconnecting: update.sessionUpdate === "user_message_chunk" ? state.reconnecting : null,
+            retrying: update.sessionUpdate === "user_message_chunk" ? state.retrying : null,
             revision: state.revision + 1,
         };
     }
@@ -671,7 +674,7 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
             return {
                 ...state,
                 title: typeof update.title === "string" ? update.title : state.title,
-                ...(retrying && { reconnecting: retrying }),
+                ...(retrying && { retrying }),
                 revision: state.revision + 1,
             };
         }
@@ -752,7 +755,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 ...state,
                 running: true,
                 turnOpening: { at: action.at ?? null },
-                reconnecting: null,
+                retrying: null,
                 stopReason: null,
                 error: null,
                 failure: null,
@@ -777,7 +780,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 ...state,
                 connection: state.connection === "ready" ? "ready" : "error",
                 running: false,
-                reconnecting: null,
+                retrying: null,
                 permissions: [],
                 error: action.message,
                 failure: action.failure ?? null,

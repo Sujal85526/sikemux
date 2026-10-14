@@ -53,8 +53,9 @@ describe("activityText", () => {
     });
 
     it("says the agent is reconnecting, with its attempt when known, ahead of the running tool", () => {
-        expect(activityText(state({ running: true, reconnecting: { attempt: 3 } }), "Reading…")).toBe("Reconnecting… (attempt 3)");
-        expect(activityText(state({ running: true, reconnecting: { attempt: null } }), null)).toBe("Reconnecting…");
+        expect(activityText(state({ running: true, retrying: { attempt: 3, connection: true } }), "Reading…")).toBe("Reconnecting… (attempt 3)");
+        expect(activityText(state({ running: true, retrying: { attempt: null, connection: true } }), null)).toBe("Reconnecting…");
+        expect(activityText(state({ running: true, retrying: { attempt: 2, connection: false } }), null)).toBe("Retrying… (attempt 2)");
     });
 
     it("shows the connection step under an existing transcript", () => {

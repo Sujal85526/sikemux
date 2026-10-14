@@ -42,19 +42,20 @@ describe("chat reducer", () => {
             _meta: { jetbrains: { air: { version: 1, sessionFailure: { id: "t:retry", category: "connection", title: "x", ...failure } } } },
         });
         const idle = update(initialChatState, retry({ severity: "warning", attempt: 1 }));
-        expect(idle.reconnecting).toBeNull();
+        expect(idle.retrying).toBeNull();
 
         const running = chatReducer(initialChatState, { type: "turn_started" });
         const retrying = update(running, retry({ severity: "warning", attempt: 2 }));
-        expect(retrying.reconnecting).toEqual({ attempt: 2 });
-        expect(update(running, retry({ severity: "warning" })).reconnecting).toEqual({ attempt: null });
-        expect(update(running, retry({ severity: "error", attempt: 2 })).reconnecting).toBeNull();
-        expect(update(retrying, { sessionUpdate: "session_info_update", title: "Fix login" }).reconnecting).toEqual({ attempt: 2 });
+        expect(retrying.retrying).toEqual({ attempt: 2, connection: true });
+        expect(update(running, retry({ severity: "warning" })).retrying).toEqual({ attempt: null, connection: true });
+        expect(update(running, retry({ severity: "error", attempt: 2 })).retrying).toBeNull();
+        expect(update(running, retry({ severity: "warning", attempt: 1, category: "service" })).retrying).toEqual({ attempt: 1, connection: false });
+        expect(update(retrying, { sessionUpdate: "session_info_update", title: "Fix login" }).retrying).toEqual({ attempt: 2, connection: true });
 
         const streaming = update(retrying, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Back" } });
-        expect(streaming.reconnecting).toBeNull();
-        expect(chatReducer(retrying, { type: "turn_completed" }).reconnecting).toBeNull();
-        expect(chatReducer(retrying, { type: "error", message: "Connection error" }).reconnecting).toBeNull();
+        expect(streaming.retrying).toBeNull();
+        expect(chatReducer(retrying, { type: "turn_completed" }).retrying).toBeNull();
+        expect(chatReducer(retrying, { type: "error", message: "Connection error" }).retrying).toBeNull();
     });
 
     it("rebuilds from a core's replay, with streamed text joined, the transcript a watching client built", () => {

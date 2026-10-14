@@ -624,7 +624,7 @@ pub struct ChatInfo {
     /// Background shells and monitors still running for it.
     #[serde(default)]
     pub tasks: u32,
-    /// The agent is retrying a request the network or its service failed:
+    /// The agent is retrying a request that got no answer over the network:
     /// the attempt it is on, or 0 when it did not say.
     #[serde(default)]
     pub reconnecting: Option<u32>,

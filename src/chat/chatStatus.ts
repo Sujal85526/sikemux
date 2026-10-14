@@ -33,17 +33,21 @@ export function connectingLabel(connection: ChatState["connection"]): string | n
     return null;
 }
 
+function retryingText({ attempt, connection }: NonNullable<ChatState["retrying"]>): string {
+    return `${connection ? "Reconnecting…" : "Retrying…"}${attempt ? ` (attempt ${attempt})` : ""}`;
+}
+
 /* A permission card already says what the turn is waiting on, so a spinner
    beside it would only compete with it. */
 export function activityText(
-    state: Pick<ChatState, "permissions" | "running" | "messages" | "connection" | "reconnecting">,
+    state: Pick<ChatState, "permissions" | "running" | "messages" | "connection" | "retrying">,
     activeTool: string | null,
 ): string | null {
     return state.permissions.length > 0
         ? null
         : state.running
-          ? state.reconnecting
-              ? `Reconnecting…${state.reconnecting.attempt ? ` (attempt ${state.reconnecting.attempt})` : ""}`
+          ? state.retrying
+              ? retryingText(state.retrying)
               : (activeTool ?? "Thinking…")
           : state.messages.length > 0
             ? connectingLabel(state.connection)

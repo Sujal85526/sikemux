@@ -815,13 +815,15 @@ impl Replay {
     }
 
     /// An agent retrying says so as a warning; its next output means it got through.
+    /// A service that answered with an error is not a lost connection.
     fn note_retry(&mut self, payload: &Value) {
         match session_update_kind(payload) {
             Some("session_info_update") if self.in_turn => {
                 let notice = payload.pointer("/update/_meta/jetbrains/air/sessionFailure");
                 if let Some(notice) = notice.filter(|notice| notice["severity"] == "warning") {
                     let attempt = notice["attempt"].as_u64().unwrap_or(0);
-                    self.reconnecting = Some(u32::try_from(attempt).unwrap_or(u32::MAX));
+                    self.reconnecting = (notice["category"] == "connection")
+                        .then(|| u32::try_from(attempt).unwrap_or(u32::MAX));
                 }
             }
             Some(
@@ -1832,6 +1834,10 @@ mod tests {
         assert_eq!(replay.reconnecting, Some(2));
         let chunk = json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "Back" } });
         replay.push(ChatEventKind::SessionUpdate, &update("s", chunk));
+        assert_eq!(replay.reconnecting, None);
+
+        let busy = crate::acp::account::retrying("t:retry", "service", 4, "Anthropic answered 529");
+        replay.push(ChatEventKind::SessionUpdate, &update("s", busy));
         assert_eq!(replay.reconnecting, None);
 
         replay.push(ChatEventKind::SessionUpdate, &retry(3));
