@@ -632,7 +632,7 @@ pub struct ChatInfo {
     /// Background shells and monitors still running for it.
     #[serde(default)]
     pub tasks: u32,
-    /// The paired device, or the agent, that started it. The app started the rest.
+    /// The paired device that started it. The app started the rest.
     pub started_by: Option<String>,
     /// The app's launcher a device started it with.
     pub launcher: Option<String>,
