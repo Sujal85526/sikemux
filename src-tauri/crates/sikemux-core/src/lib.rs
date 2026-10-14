@@ -22,6 +22,7 @@ pub use sikemux_client::remote;
 #[cfg(unix)]
 pub mod server;
 pub mod skills;
+pub mod trailers;
 
 use std::path::PathBuf;
 

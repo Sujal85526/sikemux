@@ -4,8 +4,9 @@
 //! lines only, never what the files hold.
 
 mod lines;
+mod owners;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -20,6 +21,7 @@ use super::names::project_of;
 use super::remote::unix_ms;
 use super::Core;
 pub(crate) use lines::{hunk, Lines};
+pub(crate) use owners::{commit_trailers, owners, Owners};
 
 const FOLDER: &str = "edits";
 const MAX_PER_PROJECT: usize = 5000;
@@ -48,6 +50,9 @@ pub(crate) struct Edit {
     pub path: String,
     /// Empty when the whole file changed or where is not known.
     pub lines: Lines,
+    /// How many lines the file had just after, when it could be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
 }
 
 /// What a tool call says it changed in one file: the lines, or the text
@@ -237,6 +242,23 @@ impl Edits {
 
     /// The edits in a project that `filter` matches, oldest first.
     pub(crate) fn read(&self, project: &str, filter: &Filter) -> Vec<Edit> {
+        self.matching(project, |edit| {
+            filter
+                .agent_id
+                .as_ref()
+                .is_none_or(|id| *id == edit.agent_id)
+                && filter.feed.as_ref().is_none_or(|feed| *feed == edit.feed)
+                && filter.turn.is_none_or(|turn| Some(turn) == edit.turn)
+                && filter.path.as_ref().is_none_or(|path| *path == edit.path)
+        })
+    }
+
+    /// The edits in a project to any of `paths`, oldest first.
+    fn touching(&self, project: &str, paths: &HashSet<String>) -> Vec<Edit> {
+        self.matching(project, |edit| paths.contains(&edit.path))
+    }
+
+    fn matching(&self, project: &str, keep: impl Fn(&Edit) -> bool) -> Vec<Edit> {
         let mut logs = self.store.lock();
         let kept = logs.contains_key(project)
             || self.store.file(project).is_some_and(|file| file.exists());
@@ -247,15 +269,7 @@ impl Edits {
             .log(&mut logs, project)
             .edits
             .iter()
-            .filter(|edit| {
-                filter
-                    .agent_id
-                    .as_ref()
-                    .is_none_or(|id| *id == edit.agent_id)
-                    && filter.feed.as_ref().is_none_or(|feed| *feed == edit.feed)
-                    && filter.turn.is_none_or(|turn| Some(turn) == edit.turn)
-                    && filter.path.as_ref().is_none_or(|path| *path == edit.path)
-            })
+            .filter(|edit| keep(edit))
             .cloned()
             .collect()
     }
@@ -366,9 +380,13 @@ fn edits(done: Done, name: Option<String>) -> impl Iterator<Item = Edit> {
     } = done;
     changes.into_iter().map(move |(path, change)| {
         let path = cwd.join(path);
+        let text = read_text(&path);
         let lines = match change {
             Change::Lines(lines) => lines,
-            Change::Text { old, new } => located(&path, old.as_deref(), &new),
+            Change::Text { old, new } => text
+                .as_deref()
+                .map(|text| located(text, old.as_deref(), &new))
+                .unwrap_or_default(),
         };
         Edit {
             at,
@@ -381,24 +399,30 @@ fn edits(done: Done, name: Option<String>) -> impl Iterator<Item = Edit> {
             tool_call_id: tool_call_id.clone(),
             path: path.to_string_lossy().into_owned(),
             lines,
+            total: text.as_deref().map(line_count),
         }
     })
 }
 
+fn read_text(path: &Path) -> Option<String> {
+    std::fs::metadata(path)
+        .ok()
+        .filter(|meta| meta.len() <= MAX_READ_BYTES)
+        .and_then(|_| std::fs::read_to_string(path).ok())
+}
+
+fn line_count(text: &str) -> u64 {
+    let breaks = text.matches('\n').count() as u64;
+    breaks + u64::from(!text.is_empty() && !text.ends_with('\n'))
+}
+
 /// The lines an edit from `old` to `new` changed, found in the file as it is
 /// now, since an agent may report only the part of the file it changed.
-fn located(path: &Path, old: Option<&str>, new: &str) -> Lines {
+fn located(file: &str, old: Option<&str>, new: &str) -> Lines {
     if new.is_empty() {
         return Vec::new();
     }
-    let file = std::fs::metadata(path)
-        .ok()
-        .filter(|meta| meta.len() <= MAX_READ_BYTES)
-        .and_then(|_| std::fs::read_to_string(path).ok());
-    let Some(before) = file
-        .as_deref()
-        .and_then(|file| file.find(new).map(|at| &file[..at]))
-    else {
+    let Some(before) = file.find(new).map(|at| &file[..at]) else {
         return Vec::new();
     };
     let first = before.matches('\n').count() as u64 + 1;

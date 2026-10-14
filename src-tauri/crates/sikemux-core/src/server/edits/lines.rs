@@ -1,8 +1,8 @@
-//! Which lines of a file an edit changed, as `[start, count]` pairs on the
-//! file after it: `count` lines from line `start`, counted from 1. A count of
-//! 0 means lines were taken out just before line `start`.
+//! Which lines of a file an edit changed, as `[start, count, removed]` on the
+//! file after it: `count` lines from line `start`, counted from 1, stand where
+//! `removed` lines stood before.
 
-pub(crate) type Lines = Vec<[u64; 2]>;
+pub(crate) type Lines = Vec<[u64; 3]>;
 
 /// The most changes a diff works out line by line before it calls everything
 /// between the first and last change one block.
@@ -17,7 +17,7 @@ enum Op {
 
 fn blocks(ops: impl IntoIterator<Item = Op>, first: u64) -> Lines {
     let mut out = Vec::new();
-    let mut open: Option<[u64; 2]> = None;
+    let mut open: Option<[u64; 3]> = None;
     let mut line = first;
     for op in ops {
         match op {
@@ -26,11 +26,11 @@ fn blocks(ops: impl IntoIterator<Item = Op>, first: u64) -> Lines {
                 line += 1;
             }
             Op::Added => {
-                open.get_or_insert([line, 0])[1] += 1;
+                open.get_or_insert([line, 0, 0])[1] += 1;
                 line += 1;
             }
             Op::Removed => {
-                open.get_or_insert([line, 0]);
+                open.get_or_insert([line, 0, 0])[2] += 1;
             }
         }
     }

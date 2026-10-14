@@ -12,7 +12,7 @@ use serde_json::Value;
 use super::access::{Needs, Peer};
 use super::attachments;
 use super::connection::{blocking, ClientConn};
-use super::edits::{Edit, Filter};
+use super::edits::{self, Edit, Filter, Owners};
 use super::names::{project_of, AgentName};
 use super::workspace::{self, AgentRun};
 use super::{board, inbox, plugins, questions, remote, share, Core, CoreError, CoreResult};
@@ -24,6 +24,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
         | "boardRetry" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" => Needs::Owner,
+        "changeOwners" => Needs::Watch,
         _ => Needs::Local,
     }
 }
@@ -69,6 +70,8 @@ pub(crate) async fn call(
         "boardSettings" => answer(board::person_settings(&core, params).await?),
         "boardRetry" => answer(board::person_retry(&core, params).await?),
         "edits" => answer(edits(&core, parse(params)?).await?),
+        "changeOwners" => answer(change_owners(&core, parse(params)?).await?),
+        "commitTrailers" => answer(commit_trailers(&core, parse(params)?).await?),
         "inbox" => answer(inbox(&core).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
         "plugin" => {
@@ -278,6 +281,36 @@ async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResul
         core.names
             .set_in_app(params.agent_ids, core.running_agents());
         Ok(())
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckoutParams {
+    dir: PathBuf,
+    #[serde(default)]
+    staged: bool,
+    /// Who to name when no agent wrote what is staged.
+    #[serde(default)]
+    agent_id: Option<String>,
+}
+
+/// Which agent wrote each uncommitted line of a checkout.
+async fn change_owners(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<Owners> {
+    let core = core.clone();
+    blocking(move || Ok(edits::owners(&core, &params.dir, params.staged)?)).await
+}
+
+/// The trailer lines naming the agents whose work a commit of what is staged holds.
+async fn commit_trailers(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<Vec<String>> {
+    let core = core.clone();
+    blocking(move || {
+        Ok(edits::commit_trailers(
+            &core,
+            &params.dir,
+            params.agent_id.as_deref(),
+        ))
     })
     .await
 }
