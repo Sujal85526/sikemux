@@ -12,7 +12,7 @@
       "name": "browser_navigate",
       "row": {"verb": "open", "kind": "fetch", "icon": "globe", "target": ["{url}", "{go}"]},
       "method": "browser.navigate",
-      "description": "Open a URL (newTab for a new tab), or go back, forward or reload, and wait for the page.",
+      "description": "Open a URL or go back, forward or reload, then wait for the page.",
       "properties": {
         "url": {
           "type": "string",
@@ -84,7 +84,7 @@
       "name": "browser_state",
       "row": {"verb": "read", "kind": "read", "icon": "eye", "target": ["{selector}"]},
       "method": "browser.state",
-      "description": "Read the tab: url, title, numbered elements, text, tabs and recent downloads.",
+      "description": "Read the tab: url, title, numbered elements, text, tabs and downloads.",
       "properties": {
         "fullText": {
           "type": "boolean"
@@ -1220,7 +1220,7 @@
       "name": "task_read",
       "row": {"verb": "read", "kind": "read", "icon": "log-lines", "target": ["{taskId}", "{executionId}"], "detail": ["“{search}”"]},
       "method": "task.read",
-      "description": "Read task status and output by byte cursor, tail, or search.",
+      "description": "Read a task's status and output by cursor, tail or search.",
       "properties": {
         "executionId": {
           "type": "string"
@@ -1438,6 +1438,57 @@
       "required": [
         "cli",
         "prompt"
+      ]
+    },
+    {
+      "name": "ask",
+      "row": {"verb": "ask", "kind": "think", "icon": "message", "target": ["the person for {for}", "{question}"]},
+      "method": "agent.ask",
+      "description": "Ask your lead or the person.",
+      "properties": {
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "choices": {
+          "type": "array",
+          "maxItems": 9,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 400
+              }
+            },
+            "required": [
+              "label"
+            ]
+          }
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "assumption": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "for": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "question"
       ]
     },
     {

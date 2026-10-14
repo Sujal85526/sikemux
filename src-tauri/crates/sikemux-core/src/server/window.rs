@@ -74,6 +74,14 @@ impl Window {
         })
     }
 
+    /// The connection the window speaks through, while one is open.
+    pub(crate) fn client_id(&self) -> Option<ClientId> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|inner| inner.client.as_ref().map(|client| client.id))
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.inner.lock().is_ok_and(|inner| inner.client.is_some())
     }

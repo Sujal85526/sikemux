@@ -831,9 +831,46 @@ closes a lead, Sikemux asks them whether to stop its agents or keep them.
 A prompt from your lead arrives as a message from it, and its note says it
 started you. Your final answer goes to your lead by itself each time your turn
 ends, so finish a turn with what your lead needs: what you did, what you
-found, and anything left open. Message your lead with `agent_send` only to ask
-it something mid-task. When the note says your answers do not go to your lead
-by themselves, send it what it needs with `agent_send` when you are done.
+found, and anything left open. To ask your lead something mid-task, use
+`ask`, below. When the note says your answers do not go to your lead by
+themselves, send it what it needs with `agent_send` when you are done.
+
+### Asking a question
+
+When you cannot go on without an answer, call `ask` with `question`, written
+so it stands on its own, and `choices` when the answer is one of a few:
+each a short `label`, with a `detail` saying what it means. The person can
+always answer something else. Ask every question you have at once rather than
+one per turn.
+
+- `blocked` is true unless you say otherwise: stop and end your turn without
+  guessing, and the answer comes to you as a message.
+- `blocked: false` with `assumption`, such as `dates are shown in UTC`, when
+  you can go on: carry on as if it were true, and a message tells you if it is
+  not.
+
+An agent another agent started asks its lead first, which answers or passes it
+to the person; an agent with no lead asks the person, in its chat, the rail,
+the notch and on their phone. The answer says `askedOf`. Do not ask the same
+question again, or ask it in your reply as well. Claude's own AskUserQuestion
+goes the same way.
+
+An answer from the person arrives like this:
+
+```
+<question-answer question="Should amounts be stored in cents?" note="…">
+Cents
+</question-answer>
+```
+
+### When an agent you started asks you
+
+Its question arrives as a message from it, with its choices and whether it
+waits for you. Answer it with `agent_send` to that agent. When you do not know
+the answer, pass it on with `ask`, setting `for` to the agent's name and
+`question` to what the person should be asked; that agent gets the person's
+answer and you get a copy, so carry on with your own work. If your turn ends
+with neither, Sikemux asks the person by itself.
 
 ### Messages you get
 

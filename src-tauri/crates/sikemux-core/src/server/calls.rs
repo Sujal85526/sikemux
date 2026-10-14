@@ -14,11 +14,12 @@ use super::attachments;
 use super::connection::{blocking, ClientConn};
 use super::names::AgentName;
 use super::workspace::AgentRun;
-use super::{share, Core, CoreError, CoreResult};
+use super::{questions, share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
-        "chatFile" => Needs::Watch,
+        "chatFile" | "questions" => Needs::Watch,
+        "answerQuestion" => Needs::Full,
         _ => Needs::Local,
     }
 }
@@ -49,6 +50,8 @@ pub(crate) async fn call(
             answer(share::stop(&core, &params.id)?)
         }
         "shares" => answer(share::list(&core)),
+        "questions" => answer(questions::views(&core)),
+        "answerQuestion" => answer(questions::answer(&core, parse(params)?).await?),
         _ => Err(format!("this host does not know {method}").into()),
     }
 }

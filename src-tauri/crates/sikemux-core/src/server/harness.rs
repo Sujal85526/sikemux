@@ -25,6 +25,7 @@ use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 
 use super::connection::blocking;
 use super::messages::{self, Mailbox, MailboxRecord};
+use super::questions::{self, Questions, QuestionsRecord};
 use super::spawn;
 use super::window::{self, Call};
 use super::{session, Core};
@@ -69,6 +70,7 @@ pub(crate) struct HarnessRecord {
     runs: RunsRecord,
     journals: Vec<JournalRecord>,
     mailbox: MailboxRecord,
+    questions: QuestionsRecord,
 }
 
 struct State {
@@ -143,6 +145,8 @@ pub(crate) struct Harness {
     plugin_waits: AtomicUsize,
     /// Messages between agents waiting for their turn to end.
     pub(crate) mailbox: Mailbox,
+    /// Questions agents asked that wait on an answer.
+    pub(crate) questions: Questions,
     pub(crate) spawning: spawn::Spawning,
 }
 
@@ -163,6 +167,7 @@ impl Harness {
             plugins: watch::channel(0).0,
             plugin_waits: AtomicUsize::new(0),
             mailbox: Mailbox::default(),
+            questions: Questions::default(),
             spawning: spawn::Spawning::default(),
         }
     }
@@ -228,6 +233,7 @@ impl Harness {
             runs: state.runs.record(),
             journals: state.journals.record(),
             mailbox: self.mailbox.record(),
+            questions: self.questions.record(),
         })
     }
 
@@ -235,6 +241,7 @@ impl Harness {
     /// window was in the middle of answered the earlier core, so it is over.
     pub(crate) fn restore(&self, record: HarnessRecord) {
         self.mailbox.restore(record.mailbox);
+        self.questions.restore(record.questions);
         self.change(|state| {
             state.runs = Runs::restored(record.runs);
             state.journals.restore(record.journals);
@@ -441,6 +448,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "agent.list" => messages::list(core, &request).await,
         "agent.send" => messages::send(core, &request).await,
         "agent.spawn" => spawn::spawn(core, &request).await,
+        "agent.ask" => questions::ask(core, &request).await,
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
         "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,

@@ -191,8 +191,6 @@ impl Claude {
             "--allow-dangerously-skip-permissions",
             "--thinking-display",
             "summarized",
-            "--disallowedTools",
-            "AskUserQuestion",
         ]
         .into_iter()
         .map(str::to_owned)

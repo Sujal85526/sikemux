@@ -46,6 +46,8 @@ struct Letter {
     at: u64,
     /// What the agent reading it is told about it, when not the usual.
     note: Option<String>,
+    /// The question this answers, when the person answered one.
+    answers: Option<String>,
 }
 
 /// The messages still waiting, as each agent reads them, for a core that
@@ -190,6 +192,16 @@ fn attribute(value: &str) -> String {
 /// A message as the agent reads it. The app reads the same form back out of
 /// a transcript to show who sent it.
 fn wrapped(letter: &Letter) -> String {
+    if let Some(question) = &letter.answers {
+        return format!(
+            "<question-answer question=\"{}\" note=\"{}\">\n{}\n</question-answer>",
+            attribute(question),
+            attribute(letter.note.as_deref().unwrap_or_default()),
+            letter
+                .text
+                .replace("</question-answer", "&lt;/question-answer"),
+        );
+    }
     let name = &letter.from_name;
     let note = letter.note.clone().unwrap_or_else(|| {
         format!("Sent by {name}, another agent in Sikemux, not by the person. Reply with agent_send to {name} if it needs an answer.")
@@ -223,6 +235,7 @@ pub(crate) fn task(
         cli: lead_cli.to_owned(),
         text,
         at: unix_ms(),
+        answers: None,
         note: Some(format!(
             "{lead_name}, another agent in Sikemux, started you to do this; it is your lead, not the person. {answer}"
         )),
@@ -508,7 +521,78 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         .await
         .map_err(|error| error.to_string())?
     };
+    let from = letter.from_id.clone();
+    let sent = deliver(core, &target, letter).await?;
+    core.harness.questions.lead_replied(&from, &target.agent_id);
+    Ok(sent)
+}
+
+/// Sends `text` from one agent to another with `note` in place of the usual
+/// one. Fails when the agent it is for has stopped or is gone.
+pub(crate) async fn tell(
+    core: &Arc<Core>,
+    from: String,
+    to: String,
+    text: String,
+    note: String,
+) -> Result<Value, String> {
+    let (target, letter) = {
+        let core = core.clone();
+        blocking(move || {
+            let agents = listed(&core);
+            let target = agents
+                .iter()
+                .find(|agent| agent.agent_id == to && agent.reach != Reach::Stopped)
+                .cloned()
+                .ok_or("that agent is not running")?;
+            Ok((target, letter_from(&agents, from, text, Some(note))))
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
     deliver(core, &target, letter).await
+}
+
+/// Hands an agent the person's answer to the question it asked.
+pub(crate) async fn answer(
+    core: &Arc<Core>,
+    to: String,
+    question: String,
+    text: String,
+    note: String,
+) -> Result<Value, String> {
+    let target = {
+        let core = core.clone();
+        let to = to.clone();
+        blocking(move || {
+            listed(&core)
+                .into_iter()
+                .find(|agent| agent.agent_id == to)
+                .ok_or_else(|| "that agent is gone".into())
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
+    let letter = Letter {
+        from_id: "person".to_owned(),
+        from_name: "the person".to_owned(),
+        cli: "person".to_owned(),
+        text,
+        at: unix_ms(),
+        note: Some(note),
+        answers: Some(question),
+    };
+    deliver(core, &target, letter).await
+}
+
+/// Whether a message holding `mark` still waits for the agent's turn to end.
+pub(crate) fn is_waiting(core: &Core, agent_id: &str, mark: &str) -> bool {
+    core.harness
+        .mailbox
+        .lock()
+        .waiting
+        .get(agent_id)
+        .is_some_and(|waiting| waiting.iter().any(|waiting| waiting.contains(mark)))
 }
 
 fn letter_from(agents: &[Listed], from: String, text: String, note: Option<String>) -> Letter {
@@ -522,6 +606,7 @@ fn letter_from(agents: &[Listed], from: String, text: String, note: Option<Strin
         text,
         at: unix_ms(),
         note,
+        answers: None,
     }
 }
 

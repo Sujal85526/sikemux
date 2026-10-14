@@ -392,6 +392,9 @@ async fn read_requests(
                     continue;
                 };
                 agent::note_input(core, &target, bytes);
+                if let Some(agent) = target.agent.as_ref().filter(|_| agent::submits_line(bytes)) {
+                    core.harness.questions.typed(agent.agent_id());
+                }
                 let reply_to = client.clone();
                 session::queue_input(
                     &target,

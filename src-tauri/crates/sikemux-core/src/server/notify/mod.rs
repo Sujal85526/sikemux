@@ -46,11 +46,45 @@ const NEEDS_INPUT: &str = "blocked";
 #[derive(Clone, Debug)]
 pub(crate) enum Signal {
     Attention(Box<Attention>),
-    Cleared { id: String, agent_id: String },
-    AgentState { agent_id: String, state: String },
-    TurnStarted { agent_id: String },
-    TurnCompleted { agent_id: String, cancelled: bool },
-    Problem { agent_id: String, message: String },
+    Cleared {
+        id: String,
+        agent_id: String,
+    },
+    AgentState {
+        agent_id: String,
+        state: String,
+    },
+    TurnStarted {
+        agent_id: String,
+    },
+    TurnCompleted {
+        agent_id: String,
+        cancelled: bool,
+    },
+    Problem {
+        agent_id: String,
+        message: String,
+    },
+    /// An agent's question now waits on the person.
+    Question {
+        id: String,
+        agent_id: String,
+        name: String,
+        text: String,
+        at: u64,
+    },
+    QuestionCleared {
+        id: String,
+        agent_id: String,
+    },
+}
+
+/// A question waiting on the person, as a phone is told of it.
+#[derive(Clone, Debug)]
+struct Asked {
+    name: String,
+    text: String,
+    at: u64,
 }
 
 #[derive(Default)]
@@ -72,6 +106,8 @@ struct State {
     waiting_for_input: HashSet<String>,
     /// Permission requests still waiting, by agent and request.
     pending: HashMap<(String, String), Attention>,
+    /// Agents' questions still waiting on the person, by agent and question.
+    questions: HashMap<(String, String), Asked>,
 }
 
 impl Notifier {
@@ -176,6 +212,18 @@ fn noted(core: &Core, away: bool, now: u64) {
             alert_all(core, &draft, now);
         }
     }
+    let questions: Vec<((String, String), Asked)> = core
+        .notify
+        .lock()
+        .questions
+        .iter()
+        .map(|(key, asked)| (key.clone(), asked.clone()))
+        .collect();
+    for ((agent_id, id), asked) in questions {
+        if let Some(draft) = question(core, &agent_id, &id, &asked) {
+            alert_all(core, &draft, now);
+        }
+    }
     let waiting: Vec<String> = core
         .notify
         .lock()
@@ -237,6 +285,29 @@ fn apply(core: &Core, signal: Signal, now: u64) {
                 clear_all(core, &agent_id, &input_card(&agent_id), None, now);
             }
         }
+        Signal::Question {
+            id,
+            agent_id,
+            name,
+            text,
+            at,
+        } => {
+            let asked = Asked { name, text, at };
+            core.notify
+                .lock()
+                .questions
+                .insert((agent_id.clone(), id.clone()), asked.clone());
+            if let Some(draft) = question(core, &agent_id, &id, &asked) {
+                alert_all(core, &draft, now);
+            }
+        }
+        Signal::QuestionCleared { id, agent_id } => {
+            core.notify
+                .lock()
+                .questions
+                .remove(&(agent_id.clone(), id.clone()));
+            clear_all(core, &agent_id, &question_card(&agent_id, &id), None, now);
+        }
         Signal::TurnStarted { agent_id } => {
             core.notify.lock().turns.insert(agent_id, now);
         }
@@ -268,6 +339,10 @@ fn permission_card(agent_id: &str, request_id: &str) -> String {
     format!("permission|{agent_id}|{request_id}")
 }
 
+fn question_card(agent_id: &str, id: &str) -> String {
+    format!("question|{agent_id}|{id}")
+}
+
 fn input_card(agent_id: &str) -> String {
     format!("input|{agent_id}")
 }
@@ -296,6 +371,7 @@ struct Draft {
 struct Named {
     chat: bool,
     provider: String,
+    /// Its name, or its CLI's for an agent without one.
     agent: String,
     title: Option<String>,
     project: Option<String>,
@@ -346,7 +422,10 @@ fn name(core: &Core, agent_id: &str) -> Option<Named> {
         return Some(Named {
             chat: true,
             provider: chat.provider().to_owned(),
-            agent: provider_name(core, chat.provider()),
+            agent: core
+                .names
+                .name(agent_id)
+                .unwrap_or_else(|| provider_name(core, chat.provider())),
             title,
             project: Some(project_name(core, &chat.launch.cwd.to_string_lossy())),
         });
@@ -356,7 +435,10 @@ fn name(core: &Core, agent_id: &str) -> Option<Named> {
     let provider = owner.agent_type.clone().unwrap_or_default();
     Some(Named {
         chat: false,
-        agent: provider_name(core, &provider),
+        agent: core
+            .names
+            .name(agent_id)
+            .unwrap_or_else(|| provider_name(core, &provider)),
         provider,
         title: core.workspaces.title(agent_id),
         project: owner
@@ -451,6 +533,21 @@ fn permission(core: &Core, attention: &Attention) -> Option<Draft> {
     draft.request_id = Some(attention.id.clone());
     draft.allow_option_id = option_id(&choices.allow_once);
     draft.reject_option_id = option_id(&choices.reject);
+    Some(draft)
+}
+
+fn question(core: &Core, agent_id: &str, id: &str, asked: &Asked) -> Option<Draft> {
+    let named = name(core, agent_id)?;
+    let mut draft = named.draft(
+        NotificationKind::Input,
+        question_card(agent_id, id),
+        agent_id,
+        asked.at,
+        PERMISSION_LIFE_MS,
+    );
+    draft.title = clip(&format!("{} asks you", asked.name), MAX_TITLE_CHARS);
+    draft.body = clip(&asked.text, MAX_BODY_CHARS);
+    draft.detail = Some(clip(&named.whereabouts(core, true), MAX_DETAIL_CHARS));
     Some(draft)
 }
 

@@ -80,6 +80,7 @@ export const TOOL_ROWS = {
     agent_list: { verb: "list", kind: "read", icon: "status", target: ["agents"] },
     agent_send: { verb: "message", kind: "edit", icon: "message", target: ["{to}"], detail: ["{text}"] },
     agent_spawn: { verb: "start", kind: "execute", icon: "square-plus", target: ["{cli} agent"], detail: ["{prompt}"] },
+    ask: { verb: "ask", kind: "think", icon: "message", target: ["the person for {for}", "{question}"] },
     skills: { verb: "skills", kind: "edit", icon: "book", target: ["{action} {name}", "{action} from {source}", "{action}"] },
     app_console: { verb: "read", kind: "read", icon: "terminal", target: ["the app console"] },
     bitbucket_pulls: {

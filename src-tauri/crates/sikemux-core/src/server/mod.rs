@@ -16,6 +16,7 @@ mod messages;
 mod names;
 mod notify;
 mod prepare;
+mod questions;
 mod remote;
 mod seen;
 mod session;
@@ -593,7 +594,11 @@ impl Core {
                 info.unread = self.seen.unread(agent_id);
                 info.active_at = self.seen.active_at(agent_id);
             }
-            display::show_session(info);
+            let asking = info
+                .agent_id
+                .as_deref()
+                .is_some_and(|agent_id| self.harness.questions.blocks_on_person(agent_id));
+            display::show_session(info, asking);
         }
         sessions
     }
@@ -607,7 +612,8 @@ impl Core {
             chat.pending_permissions.sort();
             chat.unread = self.seen.unread(&chat.agent_id);
             chat.active_at = self.seen.active_at(&chat.agent_id);
-            display::show_chat(chat);
+            let asking = self.harness.questions.blocks_on_person(&chat.agent_id);
+            display::show_chat(chat, asking);
         }
         chats.sort_by_key(|chat| std::cmp::Reverse(chat.active_at));
         chats
@@ -885,6 +891,7 @@ async fn device_views(core: Arc<Core>) {
             let event = Event::AgentsSeen { agent_ids: seen };
             core.broadcast_to(&event, |client| client.peer.is_local());
         }
+        questions::tick(&core);
         core.publish_device_view();
         messages::deliver_waiting(&core);
     }

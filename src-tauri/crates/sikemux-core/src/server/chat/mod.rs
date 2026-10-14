@@ -385,6 +385,15 @@ impl Chat {
         }
     }
 
+    /// Takes a question the agent asked with its CLI's own tool into
+    /// Sikemux's, and says what the agent is told in its place.
+    pub(crate) fn ask_question(&self, input: &Value) -> String {
+        match self.core.upgrade() {
+            Some(core) => super::questions::ask_claude(&core, self.agent_id(), input),
+            None => "Sikemux is shutting down; ask again later.".to_owned(),
+        }
+    }
+
     pub(crate) fn letter_unread(&self, text: String) {
         if let Some(core) = self.core.upgrade() {
             core.harness.mailbox.returned(self.agent_id(), text);

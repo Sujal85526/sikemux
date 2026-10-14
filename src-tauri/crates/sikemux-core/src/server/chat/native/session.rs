@@ -220,6 +220,12 @@ impl Sink {
         self.chat.letter_unread(text);
     }
 
+    /// The agent asked a question with its CLI's own tool. Answers what it
+    /// is told in place of the answer, which comes later as a message.
+    pub fn question(&self, input: &Value) -> String {
+        self.chat.ask_question(input)
+    }
+
     /// The person's message `text` went into the running turn.
     pub fn prompted(&self, text: &str, paths: &[String]) {
         self.chat.feed.prompted(NOBODY, None, text, paths);

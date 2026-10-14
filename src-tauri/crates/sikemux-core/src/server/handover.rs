@@ -481,6 +481,7 @@ fn migrate(mut state: Value) -> Result<Value, String> {
                 // Claude turns no record of which steered messages were one.
                 if let Some(harness) = state.get_mut("harness").and_then(Value::as_object_mut) {
                     harness.insert("mailbox".into(), json!({ "waiting": {} }));
+                    harness.insert("questions".into(), json!({ "open": [] }));
                 }
                 let chats = state.get_mut("liveChats").and_then(Value::as_array_mut);
                 for chat in chats.into_iter().flatten() {
@@ -1081,7 +1082,7 @@ mod tests {
             "format": 6,
             "chats": [{ "launch": {}, "startedBy": "phone", "launcher": "claude", "notice": null }],
             "liveChats": [],
-            "harness": { "mailbox": { "waiting": {} } },
+            "harness": { "mailbox": { "waiting": {} }, "questions": { "open": [] } },
         });
         assert_eq!(migrate(current.clone()).expect("migrate"), current);
         assert!(migrate(json!({ "format": 9 })).is_err());

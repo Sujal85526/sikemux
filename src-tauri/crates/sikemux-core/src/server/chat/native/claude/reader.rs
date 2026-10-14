@@ -502,6 +502,14 @@ impl Reader {
             .map(|tool| tool.session.clone())
             .filter(|session| *session != self.data.session_id);
         let session = parent.unwrap_or_else(|| self.data.session_id.clone());
+        if name == "AskUserQuestion" {
+            let told = self.sink.question(&input);
+            self.control.respond(
+                &request_id,
+                json!({ "behavior": "deny", "message": told, "toolUseID": tool_id }),
+            );
+            return;
+        }
         if !self.data.shown.contains(&tool_id) && !tools::is_plan_tool(&name) {
             self.data.shown.insert(tool_id.clone());
             self.data.tools.entry(tool_id.clone()).or_insert(Tool {
