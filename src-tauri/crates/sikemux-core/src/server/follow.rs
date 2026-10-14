@@ -611,6 +611,7 @@ pub(crate) async fn read(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
 }
 
 /// An agent a wait is on. `status` is `None` once it is gone.
+#[derive(Clone)]
 struct Waited {
     agent_id: String,
     name: String,
@@ -689,6 +690,28 @@ fn waited(
     Ok(found)
 }
 
+/// The agents a wait is on as they stand now, found again by id, as a name
+/// no longer finds an agent that has gone.
+fn refreshed(core: &Core, waited: &[Waited]) -> Vec<Waited> {
+    let agents = messages::listed(core);
+    waited
+        .iter()
+        .map(
+            |known| match agents.iter().find(|agent| agent.agent_id == known.agent_id) {
+                Some(agent) => Waited {
+                    name: agent.name.clone().unwrap_or_else(|| known.name.clone()),
+                    status: Some(agent.standing(core)),
+                    ..known.clone()
+                },
+                None => Waited {
+                    status: None,
+                    ..known.clone()
+                },
+            },
+        )
+        .collect()
+}
+
 fn standing(waited: &Waited) -> Value {
     json!({
         "name": waited.name,
@@ -724,13 +747,9 @@ pub(crate) async fn wait(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     let harness = &core.harness;
     let _slot = harness.wait_slot()?;
     let deadline = Instant::now() + Duration::from_millis(timeout);
-    let look = {
-        let (core, request, caller) = (core.clone(), request.clone(), caller.clone());
-        move || waited(&core, &request, &wanted, &caller)
-    };
     let first = {
-        let look = look.clone();
-        blocking(move || look().map_err(Into::into))
+        let (core, request) = (core.clone(), request.clone());
+        blocking(move || waited(&core, &request, &wanted, &caller).map_err(Into::into))
             .await
             .map_err(|error| error.to_string())?
     };
@@ -784,8 +803,8 @@ pub(crate) async fn wait(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         let timed_out = Instant::now() >= deadline;
         if !heard.is_empty() || page.truncated || timed_out {
             let now = {
-                let look = look.clone();
-                blocking(move || look().map_err(Into::into))
+                let (core, first) = (core.clone(), first.clone());
+                blocking(move || Ok(refreshed(&core, &first)))
                     .await
                     .map_err(|error| error.to_string())?
             };
