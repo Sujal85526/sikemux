@@ -101,14 +101,3 @@ export const isAgentBusy = (activity: AgentRuntimeState | undefined): boolean =>
     activity?.backendState === "working" || activity?.backendState === "blocked";
 
 export const lastWorkedAt = (activity: AgentRuntimeState | undefined): number => activity?.lastWorkedAt ?? 0;
-
-/**
- * Open agents in the order they want attention: waiting on you, running,
- * finished unseen, then the rest by how recently they last ran.
- */
-export function sortByAttention<T extends { id: string }>(agents: readonly T[], activityById: Record<string, AgentRuntimeState | undefined>): T[] {
-    return agents
-        .map((agent) => ({ agent, rank: agentDisplay(activityById[agent.id]?.state).rank, lastWorked: lastWorkedAt(activityById[agent.id]) }))
-        .sort((x, y) => y.rank - x.rank || (x.rank >= RANK.working ? 0 : y.lastWorked - x.lastWorked))
-        .map(({ agent }) => agent);
-}

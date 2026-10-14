@@ -44,15 +44,6 @@ export function agentDisplayOf(state: Pick<StoreState, "agentActivity" | "agentS
 }
 
 /**
- * Every agent across every project that stopped to ask the user something. The
- * rail lists these together because a blocked agent in a project you are not
- * looking at is exactly the one you cannot see.
- */
-export function agentsAwaitingInput(state: OpenAgentsState & Pick<StoreState, "agentActivity">): OpenAgent[] {
-    return [...openAgents(state)].filter(({ agentId }) => agentDisplay(state.agentActivity[agentId]?.state).group === "blocked");
-}
-
-/**
  * The agents a session holds, in strip order. An agent is a window whose one
  * pane carries its id, so this is a read over the windows, not a second list.
  */

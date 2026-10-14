@@ -10,16 +10,12 @@ import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { activeAgentId, agentDisplayOf, agentIdsOf, agentsAwaitingInput, openAgents } from "../state/selectors";
+import { activeAgentId, agentDisplayOf, agentIdsOf } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
-import { AgentIcon, IconClose, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
-import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
+import { AgentIcon, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
-import { assumedQuestion, blockingQuestion } from "../agents/agentQuestions";
-import { AgentLabel } from "../agents/AgentLabel";
 import { inTeams } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
-import { AGENT_LABELS, agentDisplay, sortByAttention } from "../state/agentStatus";
 import { Tooltip } from "../ui/Tooltip";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { animate, type Box, contentBox, EASE_LEAVE, glideSelection, leavingRef } from "../lib/motion";
@@ -28,13 +24,13 @@ import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
 import { planLabel, usagePeak } from "./usageFormat";
 import { AgentRailStats } from "./AgentRailStats";
-import { AgentAskingLabel } from "./AgentAskingLabel";
-import { AgentRowTree } from "./AgentRowTree";
-import { AllProjectsAgents } from "./AllProjectsAgents";
+import { InboxPanel, itemSessionId } from "./InboxPanel";
+import { AllProjectsAgents, OpenAgentRow } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTrack } from "./ScopeTrack";
 import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
+import { inInboxOrder, useInbox } from "./useInbox";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -124,7 +120,7 @@ export function AgentRailBody() {
     const scope = useStore((s) => s.agentRailScope);
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
-    const agentActivity = useStore((s) => s.agentActivity);
+    const { inbox } = useInbox();
     // Recent chats live here and nowhere else, so the search for them does too.
     const [query, setQuery] = useState("");
     const [searchOpen, setSearchOpen] = useState(false);
@@ -273,11 +269,11 @@ export function AgentRailBody() {
 
     if (!session) return null;
 
-    const opens = sortByAttention(
+    const opens = inInboxOrder(
         agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
             .map((id) => agentsById[id])
             .filter(Boolean) as Agent[],
-        activityById,
+        inbox.items,
     );
 
     const menuAgent = menu ? agentsById[menu.agentId] : undefined;
@@ -288,36 +284,37 @@ export function AgentRailBody() {
         if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 120) loadMoreRecents();
     };
 
-    const waitingElsewhere = agentsAwaitingInput({
-        sessionOrder,
-        sessions,
-        windows: windowsById,
-        windowsBySession,
-        agents: agentsById,
-        agentActivity,
-    }).filter((entry) => entry.session.id !== session.id).length;
+    const waitingElsewhere = inbox.items.filter(
+        (item) => item.tier === "needs" && itemSessionId({ sessionOrder, sessions, windows: windowsById, windowsBySession }, item) !== session.id,
+    ).length;
 
     const toggleSearch = () => {
         setQuery("");
         setSearchOpen((open) => !open);
     };
 
+    const header = (
+        <AgentHeader
+            agents={availableAgents}
+            type={selectedType}
+            setType={setType}
+            searchOpen={isProject && searchOpen}
+            onToggleSearch={toggleSearch}
+            usagePeaks={usagePeaks}
+            plan={selectedUsage?.data?.plan}
+            canOpenPalette={catalogAgents.length > 0}
+            allAgents={allAgents}
+        />
+    );
+    // The rail's footer: plan limits sit under the agents they apply to, out of the way of the list you came here to use.
+    const accounts = !allAgents && hasUsage(selectedType) && selectedUsage && <AgentAccountsPanel provider={selectedType} usage={selectedUsage} />;
+
     if (!isProject) {
         return (
             <>
-                <AgentHeader
-                    agents={availableAgents}
-                    type={selectedType}
-                    setType={setType}
-                    searchOpen={false}
-                    onToggleSearch={toggleSearch}
-                    usagePeaks={usagePeaks}
-                    plan={selectedUsage?.data?.plan}
-                    canOpenPalette={catalogAgents.length > 0}
-                    allAgents={allAgents}
-                />
+                {header}
                 <div className="agent-empty">agents are project-scoped</div>
-                {!allAgents && hasUsage(selectedType) && selectedUsage && <AgentAccountsPanel provider={selectedType} usage={selectedUsage} />}
+                {accounts}
             </>
         );
     }
@@ -326,17 +323,7 @@ export function AgentRailBody() {
 
     return (
         <>
-            <AgentHeader
-                agents={availableAgents}
-                type={selectedType}
-                setType={setType}
-                searchOpen={searchOpen}
-                onToggleSearch={toggleSearch}
-                usagePeaks={usagePeaks}
-                plan={selectedUsage?.data?.plan}
-                canOpenPalette={catalogAgents.length > 0}
-                allAgents={allAgents}
-            />
+            {header}
             <ScopeTrack scope={scope} waitingElsewhere={waitingElsewhere} onChange={cmd.setAgentRailScope} />
             {searchOpen && (
                 <div className="rail-search">
@@ -376,6 +363,7 @@ export function AgentRailBody() {
                     <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
                 </div>
                 <AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />
+                <InboxPanel />
                 {scope === "all" && <AllProjectsAgents />}
                 {scope === "project" && noContent && (
                     <div className="agent-empty">
@@ -392,64 +380,31 @@ export function AgentRailBody() {
                 {scope === "project" && opens.length > 0 && (
                     <Panel variant="group" className="agent-group">
                         <PanelHeader label="Open" rule />
-                        {inTeams(opens).map(({ agent: a, link }) => {
-                            const display = agentDisplayOf(
-                                { agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById },
-                                a.id,
-                            );
-                            const active = activeAgentId({ windows: windowsById }, session) === a.id;
-                            const glyph = (
-                                <span className={`agent-glyph ${a.type}`}>
-                                    <AgentIcon type={a.type} size={20} />
-                                </span>
-                            );
-                            return (
-                                <div
-                                    key={a.id}
-                                    className={`agent-row-wrap${link === "head" ? " chain-head" : link ? ` chain${link === "last" ? " chain-last" : ""}` : ""}`}
-                                    data-agent-id={a.id}
-                                    data-session={session.id}
-                                    ref={leaveRow}>
-                                    {renamingId === a.id ? (
-                                        <div className={`agent-row${active ? " active" : ""}`}>
-                                            {glyph}
-                                            <AgentTitleInput
-                                                title={a.title}
-                                                className="agent-title"
-                                                onSave={(title) => cmd.renameAgent(a.id, title)}
-                                                onDone={() => setRenamingId(null)}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <button
-                                            className={`agent-row${active ? " active" : ""}`}
-                                            onClick={() => cmd.selectAgent(a.id)}
-                                            onDoubleClick={() => setRenamingId(a.id)}
-                                            onContextMenu={(event) => {
-                                                event.preventDefault();
-                                                setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
-                                            }}>
-                                            {glyph}
-                                            <span className="agent-title">
-                                                <AgentLabel agent={a} />
-                                            </span>
-                                            <BackgroundCounts display={display} />
-                                        </button>
-                                    )}
-                                    {showsAgentState(display) && (
-                                        <span className="row-status">
-                                            <AgentStateIndicator display={display} />
-                                        </span>
-                                    )}
-                                    <Tooltip label={`Close ${a.title}`}>
-                                        <button type="button" className="row-x" aria-label={`Close ${a.title}`} onClick={() => cmd.closeAgent(a.id)}>
-                                            <IconClose size={11} />
-                                        </button>
-                                    </Tooltip>
-                                    <AgentRowTree agentId={a.id} worktree={a.worktree} runsOn={link === "head" || link === "member"} />
-                                </div>
-                            );
-                        })}
+                        {inTeams(opens).map(({ agent: a, link }) => (
+                            <OpenAgentRow
+                                key={a.id}
+                                agent={a}
+                                display={agentDisplayOf({ agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById }, a.id)}
+                                link={link}
+                                active={activeAgentId({ windows: windowsById }, session) === a.id}
+                                wrap={{ ref: leaveRow, "data-agent-id": a.id, "data-session": session.id }}
+                                title={
+                                    renamingId === a.id && (
+                                        <AgentTitleInput
+                                            title={a.title}
+                                            className="agent-title"
+                                            onSave={(title) => cmd.renameAgent(a.id, title)}
+                                            onDone={() => setRenamingId(null)}
+                                        />
+                                    )
+                                }
+                                onDoubleClick={() => setRenamingId(a.id)}
+                                onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
+                                }}
+                            />
+                        ))}
                     </Panel>
                 )}
 
@@ -464,65 +419,10 @@ export function AgentRailBody() {
                     />
                 )}
 
-                {scope === "project" && <AgentAttentionGroup />}
-
                 <RecentChatList recent={recent} providers={availableAgents} />
             </div>
-            {/* The rail's footer: plan limits sit under the agents they apply
-                to, out of the way of the list you came here to use. */}
-            {!allAgents && hasUsage(selectedType) && selectedUsage && <AgentAccountsPanel provider={selectedType} usage={selectedUsage} />}
+            {accounts}
         </>
-    );
-}
-
-/* Cross-project on purpose: an agent waiting on an answer is easy to miss in a
-   project you are not currently looking at, which is the case this list is for. */
-function AgentAttentionGroup() {
-    /* Each slice is read on its own and the list derived in a memo: returning a
-       fresh array straight from a store selector makes the snapshot differ on
-       every render, which zustand answers with an endless re-render. */
-    const sessionOrder = useStore((s) => s.sessionOrder);
-    const sessions = useStore((s) => s.sessions);
-    const windows = useStore((s) => s.windows);
-    const windowsBySession = useStore((s) => s.windowsBySession);
-    const agents = useStore((s) => s.agents);
-    const agentActivity = useStore((s) => s.agentActivity);
-    const activeSessionId = useStore((s) => s.activeSessionId);
-    const questions = useStore((s) => s.agentQuestions);
-    const waiting = useMemo(() => {
-        const open = { sessionOrder, sessions, windows, windowsBySession, agents, agentActivity };
-        const blocked = agentsAwaitingInput(open);
-        const assuming = [...openAgents(open)].filter(
-            ({ agentId }) => !blocked.some((row) => row.agentId === agentId) && assumedQuestion(questions, agentId),
-        );
-        return [...blocked, ...assuming];
-    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentActivity, questions]);
-    if (waiting.length === 0) return null;
-    return (
-        <Panel variant="group" className="agent-group agent-attention">
-            <PanelHeader label={`${AGENT_LABELS.blocked} ${waiting.length}`} rule />
-            {waiting.map(({ agentId, agent, session }) => {
-                const question = blockingQuestion(questions, agentId);
-                const assumed = question ? undefined : assumedQuestion(questions, agentId);
-                const line = question?.text ?? (assumed ? `Assumed ${assumed.assumption ?? ""}` : null);
-                const activity = agentActivity[agentId];
-                const seen = line !== null && activity?.unread === false;
-                return (
-                    <button
-                        key={agentId}
-                        className={`agent-row attention${line ? " asking" : ""}${seen ? " seen" : ""}`}
-                        title={`${session.name} — ${agent.title}: ${line ?? AGENT_LABELS.blocked}`}
-                        onClick={() => cmd.revealAgent(agentId)}>
-                        <span className={`agent-glyph ${agent.type}`}>
-                            <AgentIcon type={agent.type} size={20} />
-                        </span>
-                        <AgentAskingLabel agent={agent} line={line} />
-                        {session.id !== activeSessionId && <span className="agent-attention-project">{session.name}</span>}
-                        <AgentStateIndicator display={agentDisplay(assumed ? activity?.state : "blocked")} />
-                    </button>
-                );
-            })}
-        </Panel>
     );
 }
 

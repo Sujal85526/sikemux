@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
     signIn: vi.fn(),
     renameSession: vi.fn(() => Promise.resolve()),
     deleteSession: vi.fn(() => Promise.resolve()),
+    inbox: vi.fn(),
 }));
+
+vi.mock("./useInbox", async (original) => ({ ...(await original<typeof import("./useInbox")>()), useInbox: () => mocks.inbox() }));
 
 vi.mock("../api/agents", () => ({
     agentApi: {
@@ -124,6 +127,7 @@ beforeEach(() => {
         sessions: "/home/me/.codex/sessions",
     }));
     mocks.signIn.mockResolvedValue(undefined);
+    mocks.inbox.mockReturnValue({ inbox: { items: [], working: 0, away: false }, digest: null });
     invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions" || kind === "agents.usage" || kind === "agents.account");
 });
 
@@ -155,7 +159,7 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        await user.click(await screen.findByRole("button", { name: "New chat" }));
+        await user.click(await screen.findByRole("button", { name: /^New chat/ }));
         await waitFor(() => expect(agentIdsOf(getState(), "sess-project")).toHaveLength(1));
         const agent = getState().agents[agentIdsOf(getState(), "sess-project")[0]];
         expect(agent).toMatchObject({ type: "codex", cwd: "/code/sikemux" });
@@ -358,7 +362,7 @@ describe("agent rail", () => {
         await waitFor(() => expect(screen.queryByRole("button", { name: /Codex chat/ })).not.toBeInTheDocument());
     });
 
-    it("shows every project's open agents by what they need, and their chats, under all projects", async () => {
+    it("shows every project's open agents and their chats, and what waits elsewhere, under all projects", async () => {
         setState((state) => ({
             sessions: {
                 ...state.sessions,
@@ -378,21 +382,35 @@ describe("agent rail", () => {
                 { id: "agent-away", type: "codex", title: "Pricing copy", startup: "codex", cwd: "/code/website", launchState: "live" },
             ]),
         );
-        setState((state) => ({
-            agentActivity: {
-                ...state.agentActivity,
-                "agent-away": {
-                    state: "blocked",
-                    backendState: "blocked",
-                    unread: false,
-                    updatedAt: 0,
-                    sequence: 1,
-                    source: "acp",
-                    confidence: "high",
-                    reason: "",
-                },
+        mocks.inbox.mockReturnValue({
+            inbox: {
+                items: [
+                    {
+                        id: "question:q1",
+                        tier: "needs",
+                        kind: "question",
+                        agentId: "agent-away",
+                        name: null,
+                        cli: "codex",
+                        project: "/code/website",
+                        title: "Pricing copy",
+                        what: "Asks you",
+                        detail: "Which plan goes first?",
+                        at: 0,
+                        card: null,
+                        requestId: null,
+                        choices: null,
+                        questionId: "q1",
+                        url: null,
+                        handoff: null,
+                        recordings: [],
+                    },
+                ],
+                working: 0,
+                away: false,
             },
-        }));
+            digest: null,
+        });
         mocks.saved.mockReturnValue([
             { id: "here", title: "Fix terminal focus", mtime: 100 },
             { id: "there", title: "Hero image", mtime: 300, project: "/code/website" },
@@ -405,8 +423,8 @@ describe("agent rail", () => {
 
         await user.click(screen.getByRole("tab", { name: "All projects, 1 waiting" }));
         expect(await screen.findByRole("button", { name: /Hero image/ })).toBeInTheDocument();
-        expect(screen.getByText("Needs input 1")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+        expect(screen.getByText("Inbox 1")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /^New chat/ })).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: /Hero image/ }));
         await waitFor(() => expect(getState().activeSessionId).toBe("sess-other"));

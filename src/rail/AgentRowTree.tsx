@@ -52,7 +52,7 @@ export function AgentRowTree({
     );
 }
 
-function TreeItem({ icon, className, children }: { icon: ReactNode; className?: string; children: ReactNode }) {
+export function TreeItem({ icon, className, children }: { icon: ReactNode; className?: string; children: ReactNode }) {
     return (
         <div className={`proj-child${className ? ` ${className}` : ""}`}>
             <span className="proj-child-tick" />
