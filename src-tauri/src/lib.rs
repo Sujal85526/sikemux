@@ -35,6 +35,7 @@ mod notch;
 pub mod observability;
 mod pages;
 mod plugins;
+pub use plugins::provide_to_core;
 mod ports;
 mod preview;
 mod pty;

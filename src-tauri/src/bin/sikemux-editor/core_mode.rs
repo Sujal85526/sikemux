@@ -11,7 +11,15 @@ pub fn run() -> i32 {
     if args.peek().is_some_and(|arg| arg == "stop") {
         return stop(args.nth(1).map(PathBuf::from));
     }
-    sikemux_core::server::main(args, sikemux_lib::build_identity())
+    let args: Vec<String> = args.collect();
+    if let Some(data_dir) = args
+        .iter()
+        .position(|arg| arg == "--data-dir")
+        .and_then(|at| args.get(at + 1))
+    {
+        sikemux_lib::provide_to_core(Path::new(data_dir));
+    }
+    sikemux_core::server::main(args.into_iter(), sikemux_lib::build_identity())
 }
 
 /// Stops the core on `socket`, or this build's own, and everything it runs.

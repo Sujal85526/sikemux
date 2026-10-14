@@ -17,6 +17,7 @@ mod join;
 mod messages;
 mod names;
 mod notify;
+pub mod plugins;
 mod prepare;
 mod questions;
 mod remote;

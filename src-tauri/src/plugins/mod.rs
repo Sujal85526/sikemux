@@ -1,5 +1,8 @@
 pub mod agent;
 mod builtin;
+mod in_core;
+
+pub use in_core::provide_to_core;
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
