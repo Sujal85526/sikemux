@@ -28,24 +28,6 @@ type AgentView = "gui" | "tui";
 
 const WorktreeHeader = lazy(() => import("./WorktreeHeader"));
 
-/** The agent that started this one, which it works for; opening it moves there. */
-function LeadLink({ leadId }: { leadId: string }) {
-    const lead = useStore((state) => state.agents[leadId]);
-    if (!lead) return null;
-    const name = lead.name ?? lead.title;
-    return (
-        <button
-            type="button"
-            className="agent-surface-lead"
-            title={`Open ${name}, the agent this one works for`}
-            onClick={() => cmd.revealAgent(lead.id)}>
-            <span>for</span>
-            <AgentIcon type={lead.type} size={12} className={`agent-glyph ${lead.type}`} />
-            <span className="agent-surface-lead-name">{name}</span>
-        </button>
-    );
-}
-
 function DeskButton({ agent }: { agent: Agent }) {
     const open = useStore((state) => shownDeskPaneId(state, agent.id) !== null);
     const label = open ? "Hide desk" : "Show desk";
@@ -180,7 +162,6 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             <AgentLabel agent={agent} />
                         </span>
                     )}
-                    {agent.lead && <LeadLink leadId={agent.lead} />}
                     {supportsGui && <ShareButton agent={agent} />}
                     <AgentMenuButton agent={agent} session={session} onRetitle={() => setRenaming(true)} />
                 </div>
