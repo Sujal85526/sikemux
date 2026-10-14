@@ -99,6 +99,13 @@ fn reports_back(params: &Value) -> Result<bool, String> {
     }
 }
 
+/// What a spawn came to: a new agent, or the agent that already has the
+/// session it was asked to reopen.
+enum Opened {
+    New(Started),
+    AlreadyOpen(String, Option<String>),
+}
+
 struct Started {
     agent_id: String,
     name: String,
@@ -150,7 +157,7 @@ fn start(
     core: &Arc<Core>,
     request: &HarnessRequest,
     resume: Option<&Saved>,
-) -> Result<Started, String> {
+) -> Result<Opened, String> {
     let lead_id = request
         .agent_id
         .clone()
@@ -161,6 +168,11 @@ fn start(
     let named_provider = text_param(params, "provider", 64)?.map(|id| id.trim().to_owned());
     let reports = reports_back(params)?;
     let _one_at_a_time = core.harness.spawning.one_at_a_time();
+    if let Some((agent_id, name)) =
+        resume.and_then(|saved| saved::open_now(core, &saved.cli, &saved.session_id))
+    {
+        return Ok(Opened::AlreadyOpen(agent_id, name));
+    }
     let (lead, lead_cwd) = lead_of(core, &lead_id, &request.project)?;
     let cwd = resume.map_or(lead_cwd, |saved| saved.project.clone());
     let helper = core.workspaces.helper().filter(|helper| {
@@ -183,6 +195,9 @@ fn start(
     let (mut launch, launcher) = core
         .workspaces
         .worker_launch(&lead, &provider, &cwd, model, paid)?;
+    if let Some(saved) = resume {
+        saved::same_account(&provider, &launch, saved)?;
+    }
     launch.resume_id = resume.map(|saved| saved.session_id.clone());
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
     let project = names::project_of(&launch.cwd, &core.workspaces.project_paths());
@@ -192,6 +207,7 @@ fn start(
             lead: &lead_id,
             project: Some(project),
             provider: &provider,
+            session: resume.map(|saved| saved.session_id.as_str()),
             reports,
         },
         running(core),
@@ -206,7 +222,7 @@ fn start(
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
     core.publish_device_view();
     let lead_name = core.names.name(&lead_id).unwrap_or_else(|| lead_id.clone());
-    Ok(Started {
+    Ok(Opened::New(Started {
         agent_id,
         name: named.name,
         provider,
@@ -220,7 +236,7 @@ fn start(
         },
         reports,
         chat,
-    })
+    }))
 }
 
 pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
@@ -265,11 +281,18 @@ pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<
         }
         None => None,
     };
-    let started = {
+    let opened = {
         let (core, request, resumed) = (core.clone(), request.clone(), saved.clone());
         blocking(move || start(&core, &request, resumed.as_ref()).map_err(Into::into))
             .await
             .map_err(|error| error.to_string())?
+    };
+    let started = match (opened, &saved) {
+        (Opened::New(started), _) => started,
+        (Opened::AlreadyOpen(agent_id, name), Some(saved)) => {
+            return send_to_open(core, request, saved, &agent_id, name.as_deref(), prompt).await
+        }
+        (Opened::AlreadyOpen(..), None) => unreachable!("only a resumed session is already open"),
     };
     let reports = started.reports;
     let starting = match &saved {
@@ -410,6 +433,7 @@ fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, Strin
             lead: &lead_id,
             project: None,
             provider: &provider,
+            session: None,
             reports,
         },
         running(core),

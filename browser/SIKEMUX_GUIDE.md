@@ -892,8 +892,9 @@ such as "the one where we fixed the login flake", call `agent_sessions` with
 `query`, the words they used. It searches the sessions every agent CLI saved
 on this host, Claude, Codex, OpenCode, Hermes, Pi, OMP, Grok and Muse, by
 title and by what the person and the agent wrote, not by tool output. It
-searches your project's sessions; pass `project`, a folder, for another one,
-or `allProjects: true` for every project. Sessions whose title holds the
+searches your project's sessions, including those run in its subfolders and
+git worktrees; pass `project`, a folder, for another one, or
+`allProjects: true` for every project. Sessions whose title holds the
 words, that hold more of the words, and recent ones come first. Each comes
 with its `title`, `cli`, `project`, `date`, `sessionId`, a line or two of
 `snippets` where the words were found, and `openNow` with the agent's `name`
@@ -907,8 +908,10 @@ pick.
 To resume one, call `agent_spawn` with `resume` set to its `sessionId` and
 `prompt` set to what it should do now. It reopens on the same CLI in the
 session's own project, in its own tab with a fresh name, as any agent you start
-does: on your account and in your permission mode, under the same limits, and
-it reports back to you. Leave out `cli` and `model` unless you mean them; `cli`
+does: in your permission mode, under the same limits, and it reports back to
+you. It runs on your account when you run on the same CLI; a session saved on
+an account that keeps its sessions apart from that one is refused, and the
+person must open it from Recent. Leave out `cli` and `model` unless you mean them; `cli`
 must then be the session's. When an agent already has the session open,
 nothing is reopened: your prompt goes to that agent as a message, as
 `agent_send` sends one, and the answer says `alreadyOpen`.

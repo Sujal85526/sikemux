@@ -91,6 +91,8 @@ pub(crate) struct Worker<'a> {
     /// The project it opens in, when not its lead's.
     pub project: Option<String>,
     pub provider: &'a str,
+    /// The saved session it reopens.
+    pub session: Option<&'a str>,
     /// Its final answer goes to its lead each time its turn ends.
     pub reports: bool,
 }
@@ -223,7 +225,7 @@ impl Names {
             parent: Some(worker.lead.to_owned()),
             quiet: !worker.reports,
             provider: Some(worker.provider.to_owned()),
-            session_id: None,
+            session_id: worker.session.map(str::to_owned),
             at: unix_ms(),
             seen: false,
         };
