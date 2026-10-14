@@ -134,6 +134,12 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                         )}
                     </div>
                 )}
+                {boards.status === "error" && (
+                    <div className="jira-lists">
+                        <div className="jira-heading">Boards</div>
+                        <p className="jira-lists-error">{boards.error ?? "Jira would not list the boards."} Sign out and in again to retry.</p>
+                    </div>
+                )}
                 {(filters.data?.length ?? 0) > 0 && (
                     <div className="jira-lists">
                         <div className="jira-heading">Starred filters</div>
