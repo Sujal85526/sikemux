@@ -9,14 +9,17 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::acp::account::directory_variable;
+use crate::agent_accounts::folders::{sessions_root, sessions_shared};
 use crate::agent_catalog::AgentKind;
 use crate::cli::protocol::HarnessRequest;
+use crate::protocol::ChatLaunch;
 use crate::sessions::recent::RecentProvider;
-use crate::sessions::roots::agent_config_root;
-use crate::sessions::search::{self, SearchRequest, SearchResult, SessionMatch, MAX_LIMIT};
+use crate::sessions::search::{self, Scope, SearchRequest, SearchResult, SessionMatch, MAX_LIMIT};
 
 use super::connection::blocking;
 use super::messages::{self, Reach};
+use super::names::project_of;
 use super::{Core, CoreResult};
 
 const DEFAULT_LIMIT: usize = 8;
@@ -30,8 +33,7 @@ const MAX_CALL_BUDGET: Duration = Duration::from_millis(1_500);
 fn providers(core: &Core) -> Vec<RecentProvider> {
     let mut folders = HashSet::new();
     let mut kept = |agent: AgentKind, config_path: Option<String>| {
-        let folder = agent_config_root(agent.as_str(), config_path.as_deref())
-            .map(|root| std::fs::canonicalize(&root).unwrap_or(root));
+        let folder = sessions_root(agent.as_str(), config_path.as_deref());
         folders
             .insert((agent, folder))
             .then_some(RecentProvider { agent, config_path })
@@ -68,6 +70,31 @@ fn open_sessions(core: &Core) -> HashMap<(String, String), (String, Option<Strin
         .collect()
 }
 
+/// Sessions that ran in one of `projects`, in a folder inside one, or in a
+/// git worktree of one, as an agent working there is counted in its project.
+fn scope_of(core: &Core, projects: Vec<String>) -> Scope {
+    let wanted: Vec<PathBuf> = projects
+        .iter()
+        .map(|project| std::fs::canonicalize(project).unwrap_or_else(|_| project.into()))
+        .collect();
+    let mut known = core.workspaces.project_paths();
+    known.extend(wanted.iter().cloned());
+    let auto_worktrees: Vec<PathBuf> = wanted
+        .iter()
+        .filter_map(|project| {
+            let name = project.file_name()?.to_string_lossy();
+            Some(project.with_file_name(format!("{name}.worktrees")))
+        })
+        .collect();
+    Box::new(move |cwd: &str| {
+        let project = PathBuf::from(project_of(Path::new(cwd), &known));
+        wanted.contains(&project)
+            || auto_worktrees
+                .iter()
+                .any(|folder| project.starts_with(folder))
+    })
+}
+
 fn run_search(
     core: &Core,
     query: String,
@@ -78,7 +105,7 @@ fn run_search(
     search::search(SearchRequest {
         query,
         providers: providers(core),
-        projects,
+        scope: projects.map(|projects| scope_of(core, projects)),
         limit,
         budget,
     })
@@ -217,6 +244,35 @@ pub(crate) async fn call(core: &Arc<Core>, params: SearchParams) -> CoreResult<V
     .await
 }
 
+/// The agent that has the session `session_id` of `cli` open now, and its name.
+pub(crate) fn open_now(
+    core: &Core,
+    cli: &str,
+    session_id: &str,
+) -> Option<(String, Option<String>)> {
+    open_sessions(core).remove(&(cli.to_owned(), session_id.to_owned()))
+}
+
+/// Refuses to reopen a session on an account whose CLI cannot find it, which
+/// is one keeping its sessions apart from the account that saved it.
+pub(crate) fn same_account(
+    provider: &str,
+    launch: &ChatLaunch,
+    saved: &Saved,
+) -> Result<(), String> {
+    let Some(variable) = directory_variable(provider) else {
+        return Ok(());
+    };
+    let folder = launch.env.get(variable).map(String::as_str);
+    if sessions_shared(provider, folder, saved.config_path.as_deref()) {
+        return Ok(());
+    }
+    Err(format!(
+        "\"{}\" was saved on another {provider} account than the one you run on, which keeps its sessions apart, so it cannot be reopened from here; ask the person to open it from Recent",
+        saved.title
+    ))
+}
+
 /// A saved session `agent_spawn` resumes.
 #[derive(Clone)]
 pub(crate) struct Saved {
@@ -224,6 +280,8 @@ pub(crate) struct Saved {
     pub cli: String,
     pub project: PathBuf,
     pub title: String,
+    /// The account folder of the CLI that saved it, when not the default one.
+    pub config_path: Option<String>,
     /// The agent running it now, and its name.
     pub open: Option<(String, Option<String>)>,
 }
@@ -243,12 +301,13 @@ pub(crate) fn locate(core: &Core, session_id: &str, cli: Option<&str>) -> Result
     let found = search::locate(&providers, session_id).ok_or_else(|| {
         format!("no saved session has the id {session_id}; find it with agent_sessions first")
     })?;
-    let open = open_sessions(core).remove(&(found.cli.to_owned(), found.session_id.clone()));
+    let open = open_now(core, found.cli, &found.session_id);
     Ok(Saved {
         session_id: found.session_id,
         cli: found.cli.to_owned(),
         project: PathBuf::from(found.project),
         title: found.title,
+        config_path: found.config_path,
         open,
     })
 }

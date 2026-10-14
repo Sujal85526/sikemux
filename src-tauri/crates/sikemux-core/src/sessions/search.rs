@@ -45,11 +45,14 @@ const STOPWORDS: &[&str] = &[
     "we", "were", "what", "when", "where", "which", "while", "who", "why", "with", "you", "your",
 ];
 
+/// Whether a session that ran in a folder is one the search looks at.
+pub type Scope = Box<dyn Fn(&str) -> bool + Sync>;
+
 pub struct SearchRequest {
     pub query: String,
     pub providers: Vec<RecentProvider>,
     /// Every project when absent.
-    pub projects: Option<Vec<String>>,
+    pub scope: Option<Scope>,
     pub limit: usize,
     /// How long the search may read transcripts before it answers with what it has.
     pub budget: Duration,
@@ -68,6 +71,9 @@ pub struct SessionMatch {
     pub snippets: Vec<String>,
     #[serde(skip)]
     pub score: f32,
+    /// The account folder of the CLI that saved it, when not the default one.
+    #[serde(skip)]
+    pub config_path: Option<String>,
 }
 
 #[derive(Serialize, Debug, Default)]
@@ -88,21 +94,30 @@ pub fn search(request: SearchRequest) -> SearchResult {
         return SearchResult::default();
     }
     let limit = request.limit.clamp(1, MAX_LIMIT);
-    let projects: Option<HashSet<String>> = request.projects.map(|p| p.into_iter().collect());
     let exclude = HashSet::new();
     let mut seen = HashSet::new();
-    let mut hits: Vec<Hit> = request
+    let mut hits: Vec<(Hit, &RecentProvider)> = request
         .providers
         .par_iter()
         .flat_map_iter(|provider| {
-            let scan = PageScan::all(provider.agent, projects.as_ref(), MAX_CANDIDATES, &exclude);
+            let scan = PageScan::all(provider.agent, None, MAX_CANDIDATES, &exclude);
             provider_hits(provider, &scan)
+                .into_iter()
+                .map(move |hit| (hit, provider))
         })
         .collect::<Vec<_>>()
         .into_iter()
-        .filter(|hit| seen.insert((hit.agent, hit.found.session.id.clone())))
+        .filter(|(hit, _)| seen.insert((hit.agent, hit.found.session.id.clone())))
         .collect();
-    hits.sort_unstable_by_key(|hit| std::cmp::Reverse(hit.at_ms));
+    if let Some(scope) = &request.scope {
+        let mut in_scope: HashMap<String, bool> = HashMap::new();
+        hits.retain(|(hit, _)| {
+            *in_scope
+                .entry(hit.found.project.clone())
+                .or_insert_with(|| scope(&hit.found.project))
+        });
+    }
+    hits.sort_unstable_by_key(|(hit, _)| std::cmp::Reverse(hit.at_ms));
 
     let now_ms = unix_ms();
     let mut scored: Vec<(SessionMatch, Option<Arc<str>>)> = Vec::new();
@@ -114,11 +129,11 @@ pub fn search(request: SearchRequest) -> SearchResult {
         let batch = &hits[next..(next + BATCH).min(hits.len())];
         let found: Vec<Option<Arc<str>>> = batch
             .par_iter()
-            .map(|hit| (Instant::now() < deadline).then(|| prose_of(hit)).flatten())
+            .map(|(hit, _)| (Instant::now() < deadline).then(|| prose_of(hit)).flatten())
             .collect();
-        for (hit, prose) in batch.iter().zip(found) {
+        for ((hit, provider), prose) in batch.iter().zip(found) {
             read += usize::from(prose.is_some());
-            if let Some(scored_match) = terms.score(hit, prose.as_deref(), now_ms) {
+            if let Some(scored_match) = terms.score(hit, provider, prose.as_deref(), now_ms) {
                 strong += usize::from(scored_match.1);
                 scored.push((scored_match.0, prose));
             }
@@ -126,8 +141,8 @@ pub fn search(request: SearchRequest) -> SearchResult {
         next += batch.len();
     }
     let cut_short = next < hits.len() && strong < enough;
-    for hit in &hits[next..] {
-        if let Some((title_match, _)) = terms.score(hit, None, now_ms) {
+    for (hit, provider) in &hits[next..] {
+        if let Some((title_match, _)) = terms.score(hit, provider, None, now_ms) {
             scored.push((title_match, None));
         }
     }
@@ -176,6 +191,7 @@ pub fn locate(providers: &[RecentProvider], session_id: &str) -> Option<SessionM
                 active_at: hit.at_ms,
                 snippets: Vec::new(),
                 score: 0.0,
+                config_path: provider.config_path.clone(),
             })
     })
 }
@@ -253,7 +269,13 @@ impl Terms {
     /// The session ranked, and whether every word was found in it. Words in
     /// its title, more of the words, more mentions and a recent last write
     /// each count for more.
-    fn score(&self, hit: &Hit, prose: Option<&str>, now_ms: u64) -> Option<(SessionMatch, bool)> {
+    fn score(
+        &self,
+        hit: &Hit,
+        provider: &RecentProvider,
+        prose: Option<&str>,
+        now_ms: u64,
+    ) -> Option<(SessionMatch, bool)> {
         let title = hit.found.session.title.to_ascii_lowercase();
         let text = prose.map(str::to_ascii_lowercase).unwrap_or_default();
         let count = self.words.len();
@@ -290,6 +312,7 @@ impl Terms {
                 active_at: hit.at_ms,
                 snippets: Vec::new(),
                 score,
+                config_path: provider.config_path.clone(),
             },
             matched == count,
         ))
