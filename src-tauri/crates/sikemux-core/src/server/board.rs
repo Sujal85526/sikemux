@@ -266,6 +266,8 @@ struct State {
     jobs: HashSet<(String, u64)>,
     /// Cards whose work is to ship again once the step under way ends.
     reship: HashSet<(String, u64)>,
+    /// Runs Auto no longer holds, whose agents and worktrees are to go.
+    dropped: Vec<finish::Dropped>,
     /// Cards whose ticket is being updated.
     syncing: HashSet<(String, u64)>,
     /// When each card's pull request or ticket was last asked about.
@@ -891,6 +893,15 @@ fn change_card(
         board.check_parent(Some(id), parent)?;
     }
     let blocked_before = board.blocked();
+    let dropping = before
+        .auto
+        .clone()
+        .filter(|run| !run.stage.is_over())
+        .and_then(|run| match changes.status {
+            Some(Status::Open) => Some((run, true)),
+            Some(Status::Done) => Some((run, false)),
+            _ => None,
+        });
     let card = board.card_mut(id)?;
     if let Some(title) = changes.title {
         card.title = title;
@@ -940,8 +951,8 @@ fn change_card(
         }
         By::Agent(_) => None,
     };
-    if let (Some(changer), Some(owner), Status::Progress) =
-        (changer, before.owner.as_deref(), before.status)
+    if let (Some(changer), Some(owner), Status::Progress, None) =
+        (changer, before.owner.as_deref(), before.status, &dropping)
     {
         let text = if after.owner.is_none() {
             format!(
@@ -966,6 +977,14 @@ fn change_card(
         state
             .offered
             .retain(|(other, card, _)| !(other == project && *card == id));
+    }
+    if let Some((run, discard)) = dropping {
+        state.dropped.push(finish::Dropped {
+            project: project.to_owned(),
+            id,
+            run,
+            discard,
+        });
     }
     let board = state
         .boards
@@ -996,8 +1015,20 @@ fn remove_card(core: &Core, project: &str, id: u64) -> Result<Vec<Notice>, Strin
         }
     }
     let mut notices = unblocked(board, &blocked_before, &By::Person);
+    let run = removed.auto.clone().filter(|run| !run.stage.is_over());
+    let dropping = run.is_some();
+    if let Some(run) = run {
+        state.dropped.push(finish::Dropped {
+            project: project.to_owned(),
+            id,
+            run,
+            discard: false,
+        });
+    }
     boards.save(&mut state, project);
-    if let (Some(owner), Status::Progress) = (removed.owner.clone(), removed.status) {
+    if let (Some(owner), Status::Progress, false) =
+        (removed.owner.clone(), removed.status, dropping)
+    {
         notices.push(Notice {
             to: owner,
             text: format!(
@@ -1108,7 +1139,7 @@ pub(crate) async fn update(core: &Arc<Core>, request: &HarnessRequest) -> Result
         let (core, request) = (core.clone(), request.clone());
         blocking(move || {
             let project = caller_project(&core, &request);
-            let shipping = changes.status == Some(Status::Done) && {
+            let own_run = {
                 let state = core.boards.lock();
                 state
                     .boards
@@ -1116,6 +1147,10 @@ pub(crate) async fn update(core: &Arc<Core>, request: &HarnessRequest) -> Result
                     .and_then(|board| board.card(id).ok())
                     .is_some_and(|card| auto::own_run(card, &agent))
             };
+            if own_run && changes.status == Some(Status::Open) {
+                return Err("Auto runs this card, so it does not go back to Open. If you cannot do it, say why with ask and blocked true, and the card waits for the person.".into());
+            }
+            let shipping = own_run && changes.status == Some(Status::Done);
             if shipping {
                 changes.status = None;
                 if changes.is_empty() {
@@ -1493,6 +1528,7 @@ pub(crate) fn reached_by_more_than_offer(core: &Core, agent_id: &str) {
 /// boards that changed.
 pub(crate) fn tick(core: &Arc<Core>) {
     offer(core);
+    finish::clear_dropped(core);
     auto::tick(core);
     finish::tick(core);
     tickets::tick(core);

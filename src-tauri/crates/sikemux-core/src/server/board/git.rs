@@ -271,13 +271,17 @@ pub(super) fn check(cwd: &Path, command: &str) -> Result<(bool, String), String>
     Ok((output.status.success(), said(&output)))
 }
 
-/// Takes away a card's worktree and its branch, here and on the remote.
-pub(super) fn remove_worktree(repo: &Path, tree: &Path, branch: &str) {
+/// Takes away a card's worktree and its branch, here and, when `remote`, on
+/// the remote too.
+pub(super) fn remove_worktree(repo: &Path, tree: &Path, branch: &str, remote: bool) {
     let target = tree.to_string_lossy().into_owned();
     if let Err(error) = git(repo, &["worktree", "remove", "--force", &target]) {
         eprintln!("sikemux core: Auto left the worktree {target}: {error}");
     }
     let _ = git(repo, &["branch", "-D", branch]);
+    if !remote {
+        return;
+    }
     let _ = git_in(
         repo,
         &["push", "--quiet", "origin", "--delete", branch],

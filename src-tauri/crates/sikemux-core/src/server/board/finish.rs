@@ -72,6 +72,74 @@ pub(crate) fn hold(core: &Core, project: &str, id: u64, agent: &str, why: String
     });
 }
 
+/// A run Auto no longer holds, because its card was moved or taken off the
+/// board, whose agent and worktree are to go.
+pub(super) struct Dropped {
+    pub project: String,
+    pub id: u64,
+    pub run: Run,
+    /// The card is to be done afresh, so its pull request and pushed branch
+    /// go too.
+    pub discard: bool,
+}
+
+/// Stops the agents of runs Auto no longer holds and clears their worktrees
+/// away, each once no step of it is under way.
+pub(super) fn clear_dropped(core: &Arc<Core>) {
+    let ready: Vec<Dropped> = {
+        let mut state = core.boards.lock();
+        if state.dropped.is_empty() {
+            return;
+        }
+        let dropped = std::mem::take(&mut state.dropped);
+        let (ready, waiting): (Vec<Dropped>, Vec<Dropped>) = dropped
+            .into_iter()
+            .partition(|dropped| !state.jobs.contains(&(dropped.project.clone(), dropped.id)));
+        state.dropped = waiting;
+        for dropped in &ready {
+            state.jobs.insert((dropped.project.clone(), dropped.id));
+        }
+        ready
+    };
+    for dropped in ready {
+        let core = core.clone();
+        tokio::spawn(async move {
+            let key = (dropped.project.clone(), dropped.id);
+            clear(&core, dropped).await;
+            core.boards.lock().jobs.remove(&key);
+        });
+    }
+}
+
+async fn clear(core: &Arc<Core>, dropped: Dropped) {
+    let Dropped { run, discard, .. } = dropped;
+    if core.chats.stop(&run.agent) {
+        core.note_agent_gone(&run.agent);
+    }
+    if let (true, Some(pull)) = (discard, &run.pull) {
+        if let Err(error) = codehost::close(pull).await {
+            eprintln!(
+                "sikemux core: Auto left the pull request {} open: {error}",
+                pull.url
+            );
+        }
+    }
+    if run.worktree.is_empty() {
+        return;
+    }
+    let remote = discard || run.pull.is_none();
+    let (repo, tree, branch) = (
+        PathBuf::from(&run.repo),
+        PathBuf::from(&run.worktree),
+        run.branch,
+    );
+    let _ = blocking(move || {
+        git::remove_worktree(&repo, &tree, &branch, remote);
+        Ok(())
+    })
+    .await;
+}
+
 /// What a step of a run works from, read once when it starts.
 #[derive(Clone)]
 struct Step {
@@ -273,7 +341,7 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
     };
     if ahead == 0 {
         return Err(format!(
-            "{} finished without a change to merge; read its answer and mark the card done or move it back to Open",
+            "{} finished without a change to merge; read its answer, then mark the card done, or move it back to Open for Auto to start it over",
             step.name(core)
         ));
     }
@@ -579,7 +647,7 @@ async fn merged(core: &Arc<Core>, step: &Step) {
         step.run.branch.clone(),
     );
     let _ = blocking(move || {
-        git::remove_worktree(&repo, &tree, &branch);
+        git::remove_worktree(&repo, &tree, &branch, true);
         Ok(())
     })
     .await;

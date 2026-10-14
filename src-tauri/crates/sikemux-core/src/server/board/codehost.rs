@@ -194,6 +194,18 @@ pub(super) async fn state(pull: &Pull) -> Result<String, String> {
     Ok(text(&found, "state").unwrap_or_else(|| "open".to_owned()))
 }
 
+/// Closes the pull request without merging it.
+pub(super) async fn close(pull: &Pull) -> Result<(), String> {
+    let repo = pull.repo();
+    plugins::call(
+        repo.host,
+        "setPullState",
+        repo.params(json!({ "number": pull.number, "state": "closed" })),
+    )
+    .await
+    .map(drop)
+}
+
 /// Merges the pull request at `sha`, the commit whose checks passed.
 pub(super) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
     let repo = pull.repo();

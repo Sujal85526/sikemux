@@ -2,6 +2,7 @@
 //! up, the board starts an agent of its own in a git worktree of its own, a
 //! few at once, and ships its work when its turn ends.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -342,6 +343,12 @@ pub(super) fn tick(core: &Arc<Core>) {
                 board.auto_note = note;
                 state.dirty.insert(project.clone());
             }
+            let stepping: HashSet<u64> = state
+                .jobs
+                .iter()
+                .filter(|(other, _)| *other == project)
+                .map(|(_, id)| *id)
+                .collect();
             let Some(board) = state.boards.get_mut(&project) else {
                 continue;
             };
@@ -352,7 +359,7 @@ pub(super) fn tick(core: &Arc<Core>) {
             let mut picks: Vec<u64> = board
                 .cards
                 .iter()
-                .filter(|card| takes(board, card))
+                .filter(|card| takes(board, card) && !stepping.contains(&card.id))
                 .map(|card| card.id)
                 .collect();
             picks.sort_unstable();
@@ -461,7 +468,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
             let (mut launch, launcher) = match started {
                 Ok(started) => started,
                 Err(error) => {
-                    git::remove_worktree(&tree.repo, &tree.path, &tree.branch);
+                    git::remove_worktree(&tree.repo, &tree.path, &tree.branch, true);
                     return Err(error.into());
                 }
             };
@@ -496,7 +503,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
     });
     if !placed {
         blocking(move || {
-            git::remove_worktree(&tree.repo, &tree.path, &tree.branch);
+            git::remove_worktree(&tree.repo, &tree.path, &tree.branch, true);
             Ok(())
         })
         .await
