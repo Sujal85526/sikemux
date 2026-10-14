@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -17,11 +18,13 @@ use crate::protocol::{AgentStatus, ChatState};
 
 use super::chat::{self, Delivery};
 use super::connection::blocking;
+use super::kept::Kept;
 use super::names::project_of;
 use super::remote::unix_ms;
 use super::session::{self, Session};
 use super::{agent, workspace, Core};
 
+const FILE: &str = "agent-mailbox.json";
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_WAITING: usize = 10;
 const BOARD: &str = "board";
@@ -70,11 +73,11 @@ pub(crate) struct Answered {
     pub cli: String,
 }
 
-/// The messages still waiting, as each agent reads them, for a core that
-/// takes over.
+/// The messages still waiting, as each agent reads them, kept in the data
+/// folder.
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MailboxRecord {
+struct MailboxRecord {
     waiting: HashMap<String, Vec<String>>,
 }
 
@@ -93,9 +96,9 @@ struct State {
     wake_failed: HashMap<String, u64>,
 }
 
-#[derive(Default)]
 pub(crate) struct Mailbox {
     state: Mutex<State>,
+    kept: Kept,
 }
 
 enum Admitted {
@@ -110,14 +113,30 @@ impl Mailbox {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    pub(crate) fn record(&self) -> MailboxRecord {
-        MailboxRecord {
-            waiting: self.lock().waiting.clone(),
+    /// Takes up the messages left waiting for agents `known` says still
+    /// exist.
+    pub(crate) fn new(data_dir: Option<&Path>, known: impl Fn(&str) -> bool) -> Self {
+        let kept = Kept::new(data_dir, FILE);
+        let mut record: MailboxRecord = kept.load();
+        record.waiting.retain(|agent_id, _| known(agent_id));
+        Self {
+            state: Mutex::new(State {
+                waiting: record.waiting,
+                ..State::default()
+            }),
+            kept,
         }
     }
 
-    pub(crate) fn restore(&self, record: MailboxRecord) {
-        self.lock().waiting = record.waiting;
+    /// Changes the messages waiting, and keeps what they are now.
+    fn change<R>(&self, change: impl FnOnce(&mut HashMap<String, Vec<String>>) -> R) -> R {
+        let mut state = self.lock();
+        let changed = change(&mut state.waiting);
+        state.waiting.retain(|_, waiting| !waiting.is_empty());
+        self.kept.save(&MailboxRecord {
+            waiting: state.waiting.clone(),
+        });
+        changed
     }
 
     fn admit(&self, letter: &Letter, to: &str, to_name: &str) -> Result<Admitted, String> {
@@ -174,22 +193,27 @@ impl Mailbox {
 
     /// Answers how many wait now.
     fn wait(&self, agent_id: &str, text: String) -> usize {
-        let mut state = self.lock();
-        let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
-        waiting.push(text);
-        waiting.len()
+        self.change(|waiting| {
+            let waiting = waiting.entry(agent_id.to_owned()).or_default();
+            waiting.push(text);
+            waiting.len()
+        })
     }
 
     fn take(&self, agent_id: &str) -> Vec<String> {
-        self.lock().waiting.remove(agent_id).unwrap_or_default()
+        if !self.has_waiting(agent_id) {
+            return Vec::new();
+        }
+        self.change(|waiting| waiting.remove(agent_id).unwrap_or_default())
     }
 
     /// Keeps `texts` waiting ahead of any that arrived meanwhile.
     fn put_back(&self, agent_id: &str, mut texts: Vec<String>) {
-        let mut state = self.lock();
-        let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
-        texts.append(waiting);
-        *waiting = texts;
+        self.change(|waiting| {
+            let waiting = waiting.entry(agent_id.to_owned()).or_default();
+            texts.append(waiting);
+            *waiting = texts;
+        });
     }
 
     /// A message the agent was handed but dropped unread waits for its next
@@ -729,14 +753,14 @@ pub(crate) async fn from_auto(core: &Arc<Core>, to: String, text: String) -> Res
 
 /// Drops the messages holding `mark` that still wait for the agent.
 pub(crate) fn withdraw(core: &Core, agent_id: &str, mark: &str) {
-    let mut state = core.harness.mailbox.lock();
-    let Some(waiting) = state.waiting.get_mut(agent_id) else {
+    if !is_waiting(core, agent_id, mark) {
         return;
-    };
-    waiting.retain(|text| !text.contains(mark));
-    if waiting.is_empty() {
-        state.waiting.remove(agent_id);
     }
+    core.harness.mailbox.change(|waiting| {
+        if let Some(waiting) = waiting.get_mut(agent_id) {
+            waiting.retain(|text| !text.contains(mark));
+        }
+    });
 }
 
 /// Whether a message holding `mark` still waits for the agent's turn to end.

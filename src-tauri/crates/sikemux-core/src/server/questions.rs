@@ -5,6 +5,7 @@
 //! the first answer reaches the asker as a message.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -16,12 +17,14 @@ use crate::protocol::WindowCall;
 
 use super::activity::Activity;
 use super::connection::ClientId;
+use super::kept::Kept;
 use super::messages;
 use super::names::project_of;
 use super::notify::Signal;
 use super::remote::unix_ms;
 use super::Core;
 
+const FILE: &str = "agent-questions.json";
 const MAX_QUESTION_BYTES: usize = 8 * 1024;
 const MAX_CHOICES: usize = 9;
 const MAX_LABEL_CHARS: usize = 200;
@@ -131,10 +134,10 @@ impl Question {
     }
 }
 
-/// The questions still open, for a core that takes over.
+/// The questions still open, kept in the data folder.
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QuestionsRecord {
+struct QuestionsRecord {
     open: Vec<Question>,
 }
 
@@ -152,9 +155,9 @@ struct State {
     shown_devices: HashMap<String, String>,
 }
 
-#[derive(Default)]
 pub(crate) struct Questions {
     state: Mutex<State>,
+    kept: Kept,
 }
 
 /// A question that waits on the person.
@@ -182,16 +185,27 @@ impl Questions {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    pub(crate) fn record(&self) -> QuestionsRecord {
-        QuestionsRecord {
-            open: self.lock().open.clone(),
+    /// Takes up the questions left open by agents `known` says still exist.
+    pub(crate) fn new(data_dir: Option<&Path>, known: impl Fn(&str) -> bool) -> Self {
+        let kept = Kept::new(data_dir, FILE);
+        let mut record: QuestionsRecord = kept.load();
+        record.open.retain(|question| known(&question.agent_id));
+        Self {
+            state: Mutex::new(State {
+                dirty: !record.open.is_empty(),
+                open: record.open,
+                ..State::default()
+            }),
+            kept,
         }
     }
 
-    pub(crate) fn restore(&self, record: QuestionsRecord) {
-        let mut state = self.lock();
-        state.open = record.open;
+    /// The open questions changed: the window is told, and they are kept.
+    fn changed(&self, state: &mut State) {
         state.dirty = true;
+        self.kept.save(&QuestionsRecord {
+            open: state.open.clone(),
+        });
     }
 
     /// Whether the agent waits on the person to answer a question.
@@ -263,7 +277,7 @@ impl Questions {
             !(question.id == id && question.agent_id == agent_id && question.went_to(lead))
         });
         if state.open.len() != before {
-            state.dirty = true;
+            self.changed(&mut state);
         }
     }
 
@@ -276,7 +290,7 @@ impl Questions {
             .open
             .retain(|question| !(question.agent_id == agent_id && question.asks_person()));
         if state.open.len() != before {
-            state.dirty = true;
+            self.changed(&mut state);
         }
     }
 }
@@ -300,13 +314,15 @@ pub(crate) fn turn_ended(core: &Core, agent_id: &str) {
         return;
     }
     let now = unix_ms();
-    for question in &mut questions.lock().open {
+    let mut state = questions.lock();
+    for question in &mut state.open {
         if let Stage::Lead { ended_at, .. } = &mut question.stage {
             if read.contains(&question.id) && ended_at.is_none() {
                 *ended_at = Some(now);
             }
         }
     }
+    questions.changed(&mut state);
 }
 
 fn text_param(params: &Value, key: &str, max: usize) -> Result<Option<String>, String> {
@@ -475,7 +491,7 @@ fn open(
         ));
     }
     state.open.extend(questions.iter().cloned());
-    state.dirty = true;
+    core.harness.questions.changed(&mut state);
     Ok(questions)
 }
 
@@ -549,7 +565,7 @@ async fn hand_to_lead(core: &Arc<Core>, question: &Question) {
             lead: None,
             passed: false,
         };
-        state.dirty = true;
+        core.harness.questions.changed(&mut state);
     }
 }
 
@@ -662,7 +678,7 @@ fn pass_on(
         passed: true,
     };
     let (id, name) = (question.id.clone(), question.name.clone());
-    state.dirty = true;
+    core.harness.questions.changed(&mut state);
     Ok(json!({
         "questionId": id,
         "askedOf": "the person",
@@ -771,7 +787,7 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
             .ok_or("That question has been answered already")?;
         let text = answer_text(&state.open[index], &params)?;
         let question = state.open.remove(index);
-        state.dirty = true;
+        core.harness.questions.changed(&mut state);
         (question, text)
     };
     let (question, text) = question;
@@ -800,7 +816,7 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
     {
         let mut state = core.harness.questions.lock();
         state.open.push(question);
-        state.dirty = true;
+        core.harness.questions.changed(&mut state);
         return Err(error);
     }
     if let Stage::Person {
@@ -933,7 +949,7 @@ pub(crate) fn tick(core: &Arc<Core>) {
             }
         }
         if changed {
-            state.dirty = true;
+            core.harness.questions.changed(&mut state);
         }
     }
     for (lead, question) in withdrawn {

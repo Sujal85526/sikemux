@@ -24,8 +24,8 @@ use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs, RunsReco
 use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 
 use super::connection::blocking;
-use super::messages::{self, Mailbox, MailboxRecord};
-use super::questions::{self, Questions, QuestionsRecord};
+use super::messages::{self, Mailbox};
+use super::questions::{self, Questions};
 use super::window::{self, Call};
 use super::{board, follow, saved, spawn};
 use super::{session, Core};
@@ -71,8 +71,6 @@ const LAUNCH_CUT_SHORT: &str = "Sikemux's background process was updated while t
 pub(crate) struct HarnessRecord {
     runs: RunsRecord,
     journals: Vec<JournalRecord>,
-    mailbox: MailboxRecord,
-    questions: QuestionsRecord,
 }
 
 struct State {
@@ -153,9 +151,10 @@ pub(crate) struct Harness {
 }
 
 impl Harness {
-    /// Journals and the tool-call tally go under `data_dir`; without one they
-    /// live in memory, or not at all.
-    pub(crate) fn new(data_dir: Option<&Path>) -> Self {
+    /// Journals, the tool-call tally, and the messages and questions between
+    /// agents go under `data_dir`; without one they live in memory, or not at
+    /// all. Messages and questions of agents `known` does not hold are dropped.
+    pub(crate) fn new(data_dir: Option<&Path>, known: impl Fn(&str) -> bool) -> Self {
         Self {
             state: Mutex::new(State {
                 runs: Runs::default(),
@@ -168,8 +167,8 @@ impl Harness {
             waits: AtomicUsize::new(0),
             plugins: watch::channel(0).0,
             plugin_waits: AtomicUsize::new(0),
-            mailbox: Mailbox::default(),
-            questions: Questions::default(),
+            mailbox: Mailbox::new(data_dir, &known),
+            questions: Questions::new(data_dir, &known),
             spawning: spawn::Spawning::default(),
         }
     }
@@ -234,16 +233,12 @@ impl Harness {
         self.read(|state| HarnessRecord {
             runs: state.runs.record(),
             journals: state.journals.record(),
-            mailbox: self.mailbox.record(),
-            questions: self.questions.record(),
         })
     }
 
     /// Takes over an earlier core's runs, keys and journals. A launch the
     /// window was in the middle of answered the earlier core, so it is over.
     pub(crate) fn restore(&self, record: HarnessRecord) {
-        self.mailbox.restore(record.mailbox);
-        self.questions.restore(record.questions);
         self.change(|state| {
             state.runs = Runs::restored(record.runs);
             state.journals.restore(record.journals);
@@ -1239,7 +1234,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_plugin_wait_answers_at_once_unless_it_has_seen_the_latest_change() {
-        let harness = Harness::new(None);
+        let harness = Harness::new(None, |_| true);
         assert_eq!(
             plugins_wait(&harness, &json!({})).await,
             Ok(json!({ "version": 0 }))
@@ -1292,7 +1287,7 @@ mod tests {
 
     #[test]
     fn task_ids_and_commands_are_resolved_before_anything_starts() {
-        let harness = Harness::new(None);
+        let harness = Harness::new(None, |_| true);
         let resolve = |params: Value, restart: bool| {
             harness.read(|state| launch_target(state, "/one", &params, restart))
         };
@@ -1326,7 +1321,7 @@ mod tests {
 
     #[test]
     fn a_run_follows_its_session_and_says_how_it_ended() {
-        let harness = Harness::new(None);
+        let harness = Harness::new(None, |_| true);
         harness.change(|state| {
             state
                 .runs

@@ -17,6 +17,7 @@ mod harness;
 mod host;
 mod inbox;
 mod join;
+mod kept;
 mod messages;
 mod names;
 mod notify;
@@ -320,6 +321,8 @@ impl Core {
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
         let detection = ManifestRegistry::bundled()
             .map_err(|error| ServerError::Manifests(error.to_string()))?;
+        let names = names::Names::new(data_dir);
+        let harness = harness::Harness::new(data_dir, |agent_id| names.get(agent_id).is_some());
         Ok(Arc::new_cyclic(|me| Self {
             me: me.clone(),
             sessions: Mutex::new(HashMap::new()),
@@ -334,7 +337,7 @@ impl Core {
             build,
             detection: RwLock::new(detection),
             manifest_dir: Mutex::new(None),
-            harness: harness::Harness::new(data_dir),
+            harness,
             agent_key: agent_key::AgentKey::default(),
             window: window::Window::new(first_session_id()),
             frozen: watch::channel(false).0,
@@ -348,7 +351,7 @@ impl Core {
             shares: share::Shares::default(),
             workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
-            names: names::Names::new(data_dir),
+            names,
             boards: board::Boards::new(data_dir),
             edits: edits::Edits::new(data_dir, me.clone()),
             notify: notify::Notifier::default(),
