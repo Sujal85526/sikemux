@@ -28,7 +28,7 @@ export function RundeckActivity({ paneId, project, active }: { paneId: string; p
 
     const runs = useMemo(() => newestExecutions(res.data?.executions ?? []), [res.data]);
     const anyLive = runs.some((ex) => isLiveStatus(ex.status));
-    const now = useNow(active && anyLive);
+    const now = useNow(active && anyLive, 5_000);
     useEvery(active, anyLive ? 5_000 : 30_000, () => void res.refresh().catch(() => {}));
 
     const usualByJob = useMemo(() => {
