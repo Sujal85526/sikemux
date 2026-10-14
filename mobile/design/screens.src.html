@@ -185,6 +185,10 @@
   .msg-user { align-self: flex-end; max-width: 84%; margin: 12px 0 8px; padding: 9px 13px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--line) 80%, transparent); background: color-mix(in oklab, var(--rail-2) 72%, transparent); color: var(--ink); font-size: 14px; line-height: 1.57; }
   code.chip { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 5px; background: var(--acc-soft); color: color-mix(in oklab, var(--acc) 74%, var(--ink)); }
   .prose { color: var(--ink); font-size: 14.5px; line-height: 1.59; margin: 6px 0 8px; }
+  .letter-from { display: flex; align-items: center; gap: 8px; margin: 16px 0 2px; color: var(--ink-dim); font-size: 11.5px; line-height: 1.4; }
+  .letter-from::before, .letter-from::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .letter-from b { color: var(--ink); font-weight: 600; }
+  .letter-from svg { flex: none; }
   .thought { color: var(--ink-faint); font-size: 12.5px; line-height: 1.56; font-style: italic; margin: 8px 0; }
 
   .tools { font-family: var(--mono); font-size: 11.5px; margin: 6px 0; }
@@ -1738,6 +1742,36 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Reading back</b><div class="note">Scrolled up, the transcript holds still while the agent keeps writing below. A round arrow sits just above the composer, as on the Mac, and takes you back to the latest message. Near the end, new lines follow on their own. Links open in the browser; holding a message opens its actions, where its text can be copied or selected.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="justify-content:flex-start">
+          <div class="prose">All 214 terminal tests pass. The fix keeps channel output back until the snapshot is written, then lets it through in order.</div>
+          <div class="letter-from"><span class="claude">{{IconClaude:13}}</span><span>Message from <b>Otter</b></span></div>
+          <div class="prose">I'm changing the attach handshake in <code class="chip">core/session.rs</code>. Hold off on committing the replay fix until I push, so we don't both touch the snapshot code.</div>
+          <div class="work"><span class="work-sum">Worked for 6s <span class="calls">· 1 tool call</span>{{IconChevron:11}}</span></div>
+          <div class="prose">Holding the commit. I told Otter the fix only touches the reader, and asked it to send word once its change is in.</div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Ask about this project, or type / for commands</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="picker">Medium<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="ring"><i class="ctx codex" style="--p:46"></i></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A message from another agent</b><div class="note">Another agent on the host sent this chat a message with agent_send. It reads as prose under a centred line with the sender's mark and name, as on the Mac, never in the person's bubble, so it is not taken for something the person wrote. Several sent together each get their own line. A tap shows its copy button and the time it came.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>

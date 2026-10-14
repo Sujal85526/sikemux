@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { messageLetters } from '@mac/chat/agentLetters';
 import { durationLabel } from '@mac/chat/durationLabel';
 import { basename } from '@mac/lib/paths';
 import { rateLabel, sentLabel, type RowMeta } from '@mac/chat/messageMeta';
@@ -344,6 +345,27 @@ export function Message({
         onTap(message);
       }
     : undefined;
+  const letters = messageLetters(message);
+  if (letters) {
+    return (
+      <Pressable onPress={tap} onLongPress={keepLongPress} accessibilityHint={tap ? 'Tap for copy and the time it came' : undefined}>
+        {letters.map((letter, index) => (
+          <View key={index}>
+            <View style={styles.letterFrom}>
+              <View style={styles.letterRule} />
+              <AgentIcon provider={letter.cli} size={13} />
+              <Text style={styles.letterLabel}>
+                Message from <Text style={styles.letterName}>{letter.name}</Text>
+              </Text>
+              <View style={styles.letterRule} />
+            </View>
+            <LongText id={`${message.id}/letter/${index}`} text={letter.text} live={false} style={styles.prose} />
+          </View>
+        ))}
+        {strip ? <Strip meta={{ ...strip, text: letters.map((letter) => letter.text).join('\n\n') }} mine={false} /> : null}
+      </Pressable>
+    );
+  }
   if (message.role === 'user') {
     const failed = unsent?.state === 'failed';
     const { parts, context } = sentParts(message);
@@ -587,6 +609,10 @@ const makeStyles = (colors: Palette) => {
     stripTime: { fontFamily: fonts.ui, fontSize: 11, fontVariant: ['tabular-nums'], color: colors.inkDim },
     stripRate: { marginLeft: 'auto', fontFamily: fonts.mono, fontSize: 11, fontStyle: 'italic', color: colors.inkDim },
     prose: { fontFamily: fonts.ui, fontSize: 14.5, lineHeight: 23, color: colors.ink },
+    letterFrom: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 2 },
+    letterRule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+    letterLabel: { fontFamily: fonts.ui, fontSize: 11.5, lineHeight: 16, color: colors.inkDim },
+    letterName: { fontFamily: fonts.uiSemibold, color: colors.ink },
     thought: { marginVertical: 8 },
     thoughtText: { ...italic, fontSize: 12.5, lineHeight: 19.5, color: colors.inkFaint },
     showRest: { alignSelf: 'flex-start', marginTop: 6, marginBottom: 4 },
