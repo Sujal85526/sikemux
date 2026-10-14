@@ -27,6 +27,7 @@ import { useSavedUsage } from "./useSavedUsage";
 import { usePromptQueue } from "./usePromptQueue";
 import { useChatWorktree } from "./useChatWorktree";
 import { useStickToBottom } from "./useStickToBottom";
+import { mentionContext, useMates } from "./agentMentions";
 
 /* Reading a whole transcript is one round trip to the parser, so this waits
    at most this long before showing it anyway. */
@@ -229,6 +230,7 @@ export function AgentChatPane({
     }, [active]);
 
     const editable = state.capabilities.editing === true && state.connection === "ready" && !state.running;
+    const mates = useMates(agent.id);
     const editMessage = useCallback(
         (message: ChatMessage, text: string) => {
             const messageId = message.promptId;
@@ -237,11 +239,11 @@ export function AgentChatPane({
             setComposerError(null);
             dispatch({ type: "rewind", messageId });
             dispatch({ type: "local_prompt", text, paths, messageId });
-            acpApi.edit(agentRef.current.id, messageId, text, paths, []).catch((error: unknown) => {
+            acpApi.edit(agentRef.current.id, messageId, text, paths, mentionContext(text, mates)).catch((error: unknown) => {
                 dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
             });
         },
-        [agentRef, dispatch],
+        [agentRef, dispatch, mates],
     );
 
     const stop = () => {
