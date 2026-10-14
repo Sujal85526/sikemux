@@ -141,7 +141,7 @@ fn schemas_stay_lean_so_prose_lives_in_the_guide() {
         prose += description.len();
     }
     assert!(
-        prose <= 1800,
+        prose <= 2000,
         "tool descriptions are paid on every request; explain it in SIKEMUX_GUIDE.md instead"
     );
 }

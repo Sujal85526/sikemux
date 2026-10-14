@@ -53,6 +53,8 @@ pub const HARNESS_METHODS: &[&str] = &[
     "ui.open",
     "page.show",
     "events.wait",
+    "agent.list",
+    "agent.send",
     "skills.manage",
     "app.console",
 ];

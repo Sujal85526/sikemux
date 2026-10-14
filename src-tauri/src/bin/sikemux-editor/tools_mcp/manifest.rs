@@ -131,8 +131,10 @@ impl Manifest {
              An HTML page you wrote yourself, including charts and mockups the person asks to see, goes in your reply with page_show; never serve it or open it in a tab with browser_navigate. \
              Plugin tools such as jira_*, github_*, slack_* and signoz_* act as the person through the sign-in they made in Sikemux; \
              for those services use them, not another MCP server's tools for the same service. \
-             To create or install a skill, use the skills tool, which gives it to every agent in Sikemux; never write into your own skills folder.",
-            self.guide.name, self.guide.name
+             To create or install a skill, use the skills tool, which gives it to every agent in Sikemux; never write into your own skills folder. \
+             Sikemux runs other agents beside you, each named with a word such as Otter: agent_list shows them and agent_send messages one. \
+             Message one to hand it work that is its own or to work with it; for a piece of your own task, use your own subagents. Read the agents topic of {} first.",
+            self.guide.name, self.guide.name, self.guide.name
         );
         if self.offers_simulator() {
             instructions.push_str(

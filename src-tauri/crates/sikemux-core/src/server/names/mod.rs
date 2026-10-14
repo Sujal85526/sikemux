@@ -108,6 +108,14 @@ impl Names {
             .map(|entry| entry.name.clone())
     }
 
+    pub(crate) fn get(&self, agent_id: &str) -> Option<AgentName> {
+        self.lock()
+            .agents
+            .iter()
+            .find(|entry| entry.agent_id == agent_id)
+            .map(Entry::view)
+    }
+
     /// The agent's name, given now when it has none, and whether that changed
     /// anything. `running` holds the agents running here.
     pub(crate) fn give(

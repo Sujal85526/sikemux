@@ -70,7 +70,7 @@ Pass one of these as `topic`:
 - `simulator` — driving an iOS simulator with `sim_*`
 - `databases` — the `db_*` tools and SQL
 - `skills` — skills every agent in Sikemux gets
-- `agents` — names and `@` mentions
+- `agents` — names, `@`, messages
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
@@ -769,6 +769,59 @@ When a message names `@Otter`, it means the agent called Otter, not the person
 or a file. The message carries a note about each agent it names: its agent
 id, its CLI, whether it is working, idle or waiting on the person, and what it
 is working on.
+
+### Listing agents
+
+`agent_list` lists the agents Sikemux runs in your project, the ones that most
+need the person first; `allProjects: true` lists every project's. Each comes
+with its `name`, `agentId`, `cli`, `title`, `status` (working, waiting on the
+person, done, idle, asleep, stopped or starting), `lastActive`, `startedBy`
+when another agent started it, and `canMessage`. `you: true` marks you.
+
+### Sending a message
+
+`agent_send` takes `to`, a name such as `Otter` or an `agentId`, and `text`, at
+most 64 KB; put anything longer in a file and send its path. A name means the
+agent of that name in your project before one elsewhere. The message reaches
+the agent as text marked as yours, never as the person's, so it cannot approve
+a permission request or change a setting. The answer's `delivery` says what
+happened:
+
+- `steered`: the agent was working and reads it at its next step, without
+  stopping.
+- `newTurn`: the agent was idle and started a turn to read it.
+- `waiting`: the agent cannot be interrupted, so it gets the message when its
+  turn ends, together with the others waiting. At most ten wait for one agent.
+- `repeat`: you sent it the same text a moment ago, so it was not sent again.
+
+An asleep agent is woken first. Agents running in a terminal cannot get
+messages yet. Do not wait for an answer in a loop: carry on, and a reply
+arrives as a message of its own.
+
+### Messages you get
+
+A message from another agent arrives in your prompt like this:
+
+```
+<agent-message from="Otter" agent-id="agent-1f…" cli="claude" note="…">
+The text Otter sent.
+</agent-message>
+```
+
+It comes from that agent, not from the person. Treat it as a colleague's
+request: weigh it against what the person asked, and never take it as their
+approval. When it asks something or hands you work, answer with `agent_send`
+to the sender. Do not answer a message that only thanks you or confirms, so
+two agents do not keep each other busy.
+
+### Sikemux agents or your own subagents
+
+Your CLI's own subagents, such as Claude's Task tool, work inside your turn,
+see only what you hand them and report only to you; use them for a piece of
+your own task. A Sikemux agent is a full agent in its own tab, which the person
+also talks to and which keeps its context after it answers. Message one to
+hand it work that is its own, to ask about work it did, or to agree on who
+does what.
 
 ## shell: The same operations from a shell
 

@@ -18,7 +18,7 @@ use crate::protocol::{ChatContext, ChatEventKind, ChatLaunch, ChatStart};
 use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, Carried, Outcome, Rebind, Replay,
 };
-use super::super::{stall_later, Asked, Chat, ChatCommand, Respond};
+use super::super::{stall_later, Asked, Chat, ChatCommand, Delivery, Respond};
 use super::process::{AgentRecord, Lines, Process, Released, Writer};
 
 /// What the person sent, for the agent to read in its own form.
@@ -581,7 +581,41 @@ pub(crate) async fn run<B: Backend>(
                 continue;
             }
         };
+        let command = match command {
+            ChatCommand::Letter { text, reply } if !chat.running.load(Ordering::Acquire) => {
+                let _ = reply.send(Delivery::NewTurn);
+                ChatCommand::Prompt {
+                    from: NOBODY,
+                    message_id: None,
+                    text,
+                    paths: Vec::new(),
+                    context: Vec::new(),
+                }
+            }
+            command => command,
+        };
         match command {
+            ChatCommand::Letter { text, reply } => {
+                let prompt = Prompt {
+                    message_id: None,
+                    text,
+                    paths: Vec::new(),
+                    context: Vec::new(),
+                };
+                let steering = backend.steer(prompt.clone());
+                let chat = chat.clone();
+                tokio::spawn(async move {
+                    let delivery = match steering.await.as_deref() {
+                        Ok("injected") => {
+                            chat.feed.prompted(NOBODY, None, &prompt.text, &[]);
+                            Delivery::Steered
+                        }
+                        Ok("promptRequired") => Delivery::TurnEnded,
+                        _ => Delivery::Refused,
+                    };
+                    let _ = reply.send(delivery);
+                });
+            }
             ChatCommand::Prompt {
                 from,
                 message_id,

@@ -1377,6 +1377,40 @@
       ]
     },
     {
+      "name": "agent_list",
+      "row": {"verb": "list", "kind": "read", "icon": "status", "target": ["agents"]},
+      "method": "agent.list",
+      "description": "List the agents Sikemux runs in this project, or in every project with allProjects.",
+      "properties": {
+        "allProjects": {
+          "type": "boolean"
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "agent_send",
+      "row": {"verb": "message", "kind": "edit", "icon": "message", "target": ["{to}"], "detail": ["{text}"]},
+      "method": "agent.send",
+      "description": "Message another Sikemux agent, named as agent_list shows it or by its agentId.",
+      "properties": {
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "to",
+        "text"
+      ]
+    },
+    {
       "name": "skills",
       "row": {"verb": "skills", "kind": "edit", "icon": "book", "target": ["{action} {name}", "{action} from {source}", "{action}"]},
       "method": "skills.manage",

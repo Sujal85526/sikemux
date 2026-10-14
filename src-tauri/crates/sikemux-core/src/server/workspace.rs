@@ -312,7 +312,7 @@ impl Workspaces {
     }
 
     /// Whether the app has the chat open, and if so whether it is asleep.
-    fn published(&self, agent_id: &str) -> Option<bool> {
+    pub(crate) fn published(&self, agent_id: &str) -> Option<bool> {
         self.lock()
             .chats
             .iter()

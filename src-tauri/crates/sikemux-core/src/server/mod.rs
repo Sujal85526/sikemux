@@ -12,6 +12,7 @@ mod handover;
 mod harness;
 mod host;
 mod join;
+mod messages;
 mod names;
 mod notify;
 mod prepare;
@@ -611,12 +612,24 @@ impl Core {
         chats
     }
 
-    fn device_view_frame(&self) -> Option<Vec<u8>> {
+    /// The chats and sessions, each agent numbered in the order it wants the
+    /// person.
+    pub(crate) fn ranked_infos(
+        &self,
+    ) -> (
+        Vec<crate::protocol::ChatInfo>,
+        Vec<crate::protocol::SessionInfo>,
+    ) {
         let mut sessions = self.session_infos();
         let mut chats = self.chat_infos();
         display::rank(&mut chats, &mut sessions, |agent_id| {
             self.seen.started_at(agent_id)
         });
+        (chats, sessions)
+    }
+
+    fn device_view_frame(&self) -> Option<Vec<u8>> {
+        let (chats, sessions) = self.ranked_infos();
         let mut attentions = self.chats.attentions();
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         let recent = self.workspaces.recent(&chats);
@@ -872,6 +885,7 @@ async fn device_views(core: Arc<Core>) {
             core.broadcast_to(&event, |client| client.peer.is_local());
         }
         core.publish_device_view();
+        messages::deliver_waiting(&core);
     }
 }
 

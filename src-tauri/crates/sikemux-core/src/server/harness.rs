@@ -24,6 +24,7 @@ use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs, RunsReco
 use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 
 use super::connection::blocking;
+use super::messages::{self, Mailbox, MailboxRecord};
 use super::window::{self, Call};
 use super::{session, Core};
 use crate::skills;
@@ -50,6 +51,8 @@ const PLUGIN_SETTLE: Duration = Duration::from_secs(1);
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const TOOL_CALLS_FILE: &str = "agent-tool-calls.json";
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
+/// Tools only an agent that proves who it is may call.
+const AGENT_METHODS: &str = "agent.";
 
 const WINDOW_CLOSED_NOTE: &str = "Sikemux's window is closed, so this lists only the runs you started and the event cursor. Panes, the tasks in sikemux.json and listening ports need the window open.";
 const AWAITING_TRUST_NOTE: &str = "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.";
@@ -64,6 +67,8 @@ const LAUNCH_CUT_SHORT: &str = "Sikemux's background process was updated while t
 pub(crate) struct HarnessRecord {
     runs: RunsRecord,
     journals: Vec<JournalRecord>,
+    #[serde(default)]
+    mailbox: MailboxRecord,
 }
 
 struct State {
@@ -136,6 +141,8 @@ pub(crate) struct Harness {
     waits: AtomicUsize,
     plugins: watch::Sender<u64>,
     plugin_waits: AtomicUsize,
+    /// Messages between agents waiting for their turn to end.
+    pub(crate) mailbox: Mailbox,
 }
 
 impl Harness {
@@ -154,6 +161,7 @@ impl Harness {
             waits: AtomicUsize::new(0),
             plugins: watch::channel(0).0,
             plugin_waits: AtomicUsize::new(0),
+            mailbox: Mailbox::default(),
         }
     }
 
@@ -217,12 +225,14 @@ impl Harness {
         self.read(|state| HarnessRecord {
             runs: state.runs.record(),
             journals: state.journals.record(),
+            mailbox: self.mailbox.record(),
         })
     }
 
     /// Takes over an earlier core's runs, keys and journals. A launch the
     /// window was in the middle of answered the earlier core, so it is over.
     pub(crate) fn restore(&self, record: HarnessRecord) {
+        self.mailbox.restore(record.mailbox);
         self.change(|state| {
             state.runs = Runs::restored(record.runs);
             state.journals.restore(record.journals);
@@ -374,14 +384,24 @@ async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> 
 /// Answers one tool call. The call is counted whether or not it succeeds.
 pub(crate) async fn call(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value, String> {
     validate_harness(&request)?;
-    if let Some(secret) = request.agent_secret.take() {
-        let agent_id = request.agent_id.as_deref().unwrap_or_default();
-        if !core.agent_key.proves(agent_id, &secret) {
-            return Err(
-                "this tool call's secret is not its agent's; start the agent from Sikemux again"
-                    .into(),
-            );
+    let proven = match request.agent_secret.take() {
+        Some(secret) => {
+            let agent_id = request.agent_id.as_deref().unwrap_or_default();
+            if !core.agent_key.proves(agent_id, &secret) {
+                return Err(
+                    "this tool call's secret is not its agent's; start the agent from Sikemux again"
+                        .into(),
+                );
+            }
+            true
         }
+        None => false,
+    };
+    if request.method.starts_with(AGENT_METHODS) && !proven {
+        return Err(format!(
+            "{} works only for an agent Sikemux started, which proves who it is; start this agent from Sikemux again",
+            request.method.replace('.', "_")
+        ));
     }
     let tool = tool_name(&request);
     let result = dispatch(core, request).await;
@@ -416,6 +436,8 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
                 .map(|run| with_fields(&run, json!({})))
         }
         "events.wait" => events_wait(core, &request).await,
+        "agent.list" => messages::list(core, &request).await,
+        "agent.send" => messages::send(core, &request).await,
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
         "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,

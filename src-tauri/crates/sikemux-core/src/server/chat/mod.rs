@@ -73,6 +73,12 @@ pub(crate) enum ChatCommand {
         context: Vec<ChatContext>,
         reply: oneshot::Sender<Result<String, String>>,
     },
+    /// A message from another agent: steered into the running turn, or the
+    /// start of a new one when none runs.
+    Letter {
+        text: String,
+        reply: oneshot::Sender<Delivery>,
+    },
     StopTask {
         task_id: String,
     },
@@ -94,6 +100,17 @@ pub(crate) enum ChatCommand {
     HandOver {
         reply: oneshot::Sender<Result<native::Handed, String>>,
     },
+}
+
+/// What became of a message from another agent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Delivery {
+    NewTurn,
+    Steered,
+    /// The turn ended as it was steered; sending it again starts a new one.
+    TurnEnded,
+    /// The agent cannot take it mid-turn.
+    Refused,
 }
 
 #[derive(Clone)]
@@ -318,7 +335,7 @@ impl Chat {
         self.readiness.send_replace(Readiness::Ready(start));
     }
 
-    fn is_ready(&self) -> bool {
+    pub(crate) fn is_ready(&self) -> bool {
         matches!(*self.readiness.borrow(), Readiness::Ready(_))
     }
 
@@ -1354,6 +1371,14 @@ pub(crate) async fn steer(
         .await
         .map_err(|_| CoreError::from(STOPPED))?
         .map_err(CoreError::from)
+}
+
+pub(crate) async fn letter(core: &Core, agent_id: &str, text: String) -> CoreResult<Delivery> {
+    let (reply, answer) = oneshot::channel();
+    core.chats
+        .running(agent_id)?
+        .send(ChatCommand::Letter { text, reply })?;
+    answer.await.map_err(|_| CoreError::from(STOPPED))
 }
 
 pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) -> CoreResult<()> {
