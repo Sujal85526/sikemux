@@ -15,6 +15,7 @@ import * as commands from "../state/commands";
 import { appTaskRuntime } from "../tasks/application";
 import { NativeTaskExecutionBackend, WorkbenchTaskTerminalSurface, taskPtyBindings } from "../tasks/nativeRuntime";
 import type { TaskExecutionRequest } from "../tasks/runtime";
+import { openTerminalWorker } from "../agents/terminalWorker";
 import { appConsole } from "./appConsole";
 
 /**
@@ -203,6 +204,7 @@ async function showPage(request: HarnessRequest) {
 
 export async function handleHarnessRequest(request: HarnessRequest, signal?: AbortSignal): Promise<unknown> {
     if (signal?.aborted) throw signal.reason;
+    if (request.method === "agent.terminal") return openTerminalWorker(request.params);
     const session = projectSession(request);
     const { params, project } = request;
     switch (request.method) {

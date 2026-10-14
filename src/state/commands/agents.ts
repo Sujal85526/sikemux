@@ -19,7 +19,7 @@ import { agentExecutablePath, profileOf, relaunchSpec } from "./agentLaunchComma
 import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
-import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree } from "../types";
+import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, Session } from "../types";
 import { selectSession } from "./sessions";
 import { keepOpenedProjectInView, openProjectSession, projectSessionInBackground, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
@@ -235,6 +235,78 @@ export function adoptChat(chat: AcpChat): boolean {
         };
         d.agents[agent.id] = agent;
         const win = agentWindow(agent, chat.cwd);
+        d.windows[win.id] = win;
+        d.windowsBySession[sessionId] = [...(d.windowsBySession[sessionId] ?? []), win.id];
+        adopted = true;
+    });
+    return adopted;
+}
+
+/** An agent another agent starts in a terminal, as the core asks the window to open it. */
+export interface TerminalWorker {
+    agentId: string;
+    cli: string;
+    name: string;
+    lead: string;
+    model?: string | null;
+    permissionMode: string;
+    launcher?: string | null;
+}
+
+/**
+ * The record of a terminal worker, in its lead's folder and on its lead's account when they run the same CLI, and the
+ * project tab it joins: its lead's. Null when the lead is no longer open.
+ */
+export function planTerminalWorker(worker: TerminalWorker): { agent: Agent; session: Session } | null {
+    const state = getState();
+    const type = worker.cli;
+    const lead = state.agents[worker.lead];
+    const leadWindowId = lead ? agentWindowId(state, lead.id) : null;
+    const sessionId = leadWindowId ? ownerSessionId(state, leadWindowId) : null;
+    const session = sessionId ? state.sessions[sessionId] : undefined;
+    if (!isAgentType(type) || !lead || !session || session.kind !== "project" || state.agents[worker.agentId]) return null;
+    const same = lead.type === type;
+    const cwd = lead.cwd || session.cwd;
+    const leadTree = lead.worktree;
+    const worktree = leadTree && (cwd === leadTree.path || cwd.startsWith(`${leadTree.path}/`)) ? { ...leadTree } : undefined;
+    const permissionMode = normalizePermissionMode(type, worker.permissionMode as AgentPermissionMode);
+    const profileId =
+        profileOfLauncher(worker.launcher ?? null, state.providerProfiles, type) ?? (same ? lead.profileId : state.selectedProviderProfileIds[type]);
+    const profile = profileOf(state, { profileId, type });
+    const executablePath = profile?.executablePath || (same ? lead.executablePath : undefined) || detectedExecutablePath(state, type);
+    const model = worker.model ?? (same ? lead.model : undefined);
+    const effort = same ? lead.effort : undefined;
+    const known = peekResource(agentSessionsR, type, cwd, profile?.configPath)?.map((row) => row.id);
+    const agent: Agent = {
+        id: worker.agentId,
+        type,
+        name: worker.name,
+        lead: lead.id,
+        title: type,
+        ...relaunchSpec(state, { type, permissionMode, profileId: profile?.id, executablePath, model, effort }),
+        createdAt: Date.now(),
+        permissionMode,
+        profileId: profile?.id,
+        executablePath,
+        cwd,
+        model,
+        effort,
+        ...(known ? { baselineSessionIds: [...new Set(known)] } : {}),
+        ...(worktree ? { worktree } : {}),
+        ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
+        launchState: "live",
+    };
+    return { agent, session };
+}
+
+/** Shows a terminal worker already running in its terminal beside its lead, leaving the screen where it is. */
+export function adoptTerminalWorker(agent: Agent, sessionId: string): boolean {
+    let adopted = false;
+    mutate((d) => {
+        const session = d.sessions[sessionId];
+        if (d.agents[agent.id] || !session) return;
+        d.agents[agent.id] = agent;
+        const win = agentWindow(agent, agent.cwd || session.cwd);
         d.windows[win.id] = win;
         d.windowsBySession[sessionId] = [...(d.windowsBySession[sessionId] ?? []), win.id];
         adopted = true;
