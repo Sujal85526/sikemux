@@ -47,6 +47,7 @@ struct Started {
     model: Option<String>,
     lead_name: String,
     lead_cli: String,
+    reports: bool,
     chat: Arc<chat::Chat>,
 }
 
@@ -134,6 +135,7 @@ fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> 
         } else {
             lead.provider
         },
+        reports,
         chat,
     })
 }
@@ -157,7 +159,7 @@ pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<
             .await
             .map_err(|error| error.to_string())?
     };
-    let reports = request.params.get("report") != Some(&Value::Bool(false));
+    let reports = started.reports;
     let answer = json!({
         "name": started.name,
         "agentId": started.agent_id,
@@ -183,16 +185,17 @@ async fn hand_task(core: &Arc<Core>, started: Started, prompt: String) {
         name,
         lead_name,
         lead_cli,
+        reports,
         chat,
         ..
     } = started;
     let lead_id = chat.origin.started_by.clone().unwrap_or_default();
     let failed = match chat::until_started(core, chat).await {
         Ok(_) => {
-            let task = messages::task(&lead_id, &lead_name, &lead_cli, prompt);
-            match chat::letter(core, &agent_id, task).await {
-                Ok(_) => return,
-                Err(error) => error.to_string(),
+            let task = messages::task(&lead_id, &lead_name, &lead_cli, reports, prompt);
+            match messages::hand_task(core, &agent_id, task).await {
+                Ok(()) => return,
+                Err(error) => error,
             }
         }
         Err(error) => error.to_string(),

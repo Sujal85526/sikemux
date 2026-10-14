@@ -205,7 +205,18 @@ fn wrapped(letter: &Letter) -> String {
 }
 
 /// The task a lead gives an agent it started, as that agent reads it.
-pub(crate) fn task(lead_id: &str, lead_name: &str, lead_cli: &str, text: String) -> String {
+pub(crate) fn task(
+    lead_id: &str,
+    lead_name: &str,
+    lead_cli: &str,
+    reports: bool,
+    text: String,
+) -> String {
+    let answer = if reports {
+        format!("When your turn ends, your final answer goes to {lead_name} by itself. Message {lead_name} with agent_send if you need to ask it something first.")
+    } else {
+        format!("Your answers do not go to {lead_name} by themselves: send {lead_name} what it needs with agent_send when you are done.")
+    };
     wrapped(&Letter {
         from_id: lead_id.to_owned(),
         from_name: lead_name.to_owned(),
@@ -213,9 +224,31 @@ pub(crate) fn task(lead_id: &str, lead_name: &str, lead_cli: &str, text: String)
         text,
         at: unix_ms(),
         note: Some(format!(
-            "{lead_name}, another agent in Sikemux, started you to do this; it is your lead, not the person. When your turn ends, your final answer goes to {lead_name} by itself. Message {lead_name} with agent_send if you need to ask it something first."
+            "{lead_name}, another agent in Sikemux, started you to do this; it is your lead, not the person. {answer}"
         )),
     })
+}
+
+/// Hands a new agent its task: into a turn, or ahead of whatever waits for
+/// it when it is already busy with something else.
+pub(crate) async fn hand_task(
+    core: &Arc<Core>,
+    agent_id: &str,
+    task: String,
+) -> Result<(), String> {
+    let mailbox = &core.harness.mailbox;
+    if mailbox.has_waiting(agent_id) {
+        mailbox.returned(agent_id, task);
+        return Ok(());
+    }
+    match chat::letter(core, agent_id, task.clone()).await {
+        Ok(Delivery::Steered | Delivery::NewTurn) => Ok(()),
+        Ok(Delivery::TurnEnded | Delivery::Refused) => {
+            mailbox.returned(agent_id, task);
+            Ok(())
+        }
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 /// How an agent can be reached.

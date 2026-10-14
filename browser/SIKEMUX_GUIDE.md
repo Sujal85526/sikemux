@@ -832,7 +832,8 @@ A prompt from your lead arrives as a message from it, and its note says it
 started you. Your final answer goes to your lead by itself each time your turn
 ends, so finish a turn with what your lead needs: what you did, what you
 found, and anything left open. Message your lead with `agent_send` only to ask
-it something mid-task.
+it something mid-task. When the note says your answers do not go to your lead
+by themselves, send it what it needs with `agent_send` when you are done.
 
 ### Messages you get
 
