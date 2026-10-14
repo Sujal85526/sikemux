@@ -25,6 +25,8 @@ import "../jira.css";
 
 const sameList = (a: JiraList, b: JiraList) => JSON.stringify(a) === JSON.stringify(b);
 
+const ticketOf = (issue: JiraIssueSummary) => ({ key: issue.key, url: issue.url, source: issue.issueType ?? undefined, provider: "jira" as const });
+
 const MY_WORK: [JiraList, string][] = [
     [{ kind: "mine" }, "Assigned to me"],
     [{ kind: "reported" }, "Reported by me"],
@@ -400,7 +402,12 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                             void sendToBoard({
                                 title: issue.summary,
                                 details: issue.description,
-                                ticket: { key: issue.key, url: issue.url, source: issue.issueType ?? undefined, provider: "jira" },
+                                ticket: ticketOf(issue),
+                                subtasks: issue.subtasks
+                                    .filter((sub) => sub.statusCategory !== "done")
+                                    .map((sub) => ({ title: sub.summary, details: "", ticket: ticketOf(sub) })),
+                                blockedBy: issue.blockedBy,
+                                blocks: issue.blocks,
                             })
                         }>
                         Send to board

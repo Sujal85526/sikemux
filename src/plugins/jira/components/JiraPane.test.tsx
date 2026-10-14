@@ -53,6 +53,9 @@ const detail: JiraIssue = {
     comments: [{ id: "1", author: "Raj", created: "2026-10-04T09:00:00.000+0000", body: "Seen on staging" }],
     commentCount: 1,
     transitions: [{ id: "31", name: "Review", to: "In Review" }],
+    subtasks: [],
+    blockedBy: [],
+    blocks: [],
 };
 
 afterEach(() => {

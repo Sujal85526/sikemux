@@ -8,7 +8,7 @@ import { notify, reportError } from "../state/toast";
 import type { PluginKind } from "../plugins/kinds";
 import type { GitStatus } from "../api/git";
 import type { GitArea } from "../state/types";
-import type { CardTicket } from "../agents/agentBoard";
+import type { BoardCard, CardTicket, NewCard, ProjectBoard } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
 import { nearestProjectSessionId } from "../agents/agentTargets";
 
@@ -57,24 +57,71 @@ function clipped(text: string, max: number, tail: string): string {
     return points.length > max ? points.slice(0, max).join("") + tail : text;
 }
 
-/** Puts a ticket on the board of the nearest open project, as a card. Only the person does this. */
-export async function sendToBoard(card: { title: string; details: string; ticket: CardTicket }): Promise<boolean> {
+export interface TicketCard {
+    title: string;
+    details: string;
+    ticket: CardTicket;
+}
+
+function fitted(card: TicketCard): NewCard {
+    return {
+        ...card,
+        title: clipped(card.title.replace(/\s+/g, " ").trim(), 199, "…"),
+        details: clipped(card.details, 4000, "\n\n[Cut short; the ticket has the rest.]"),
+    };
+}
+
+function ticketCard(board: ProjectBoard, key: string): BoardCard | undefined {
+    return board.cards.find((card) => card.ticket?.key.toLowerCase() === key.toLowerCase());
+}
+
+/**
+ * Puts a ticket on the board of the nearest open project as a card, with its subtasks as cards under it. It waits
+ * on the tickets that block it, and the tickets it blocks wait on it, when those are on the board too. Only the
+ * person does this.
+ */
+export async function sendToBoard(card: TicketCard & { subtasks?: TicketCard[]; blockedBy?: string[]; blocks?: string[] }): Promise<boolean> {
     const state = getState();
     const session = state.sessions[nearestProjectSessionId(state) ?? ""];
-    if (!session?.cwd) {
+    const folder = session?.cwd;
+    if (!folder) {
         notify("error", "Open a project to put this on its board");
         return false;
     }
+    let board: ProjectBoard;
     try {
-        const title = clipped(card.title.replace(/\s+/g, " ").trim(), 199, "…");
-        const details = clipped(card.details, 4000, "\n\n[Cut short; the ticket has the rest.]");
-        cmd.setAgentBoard(session.cwd, await agentBoardApi.add(session.cwd, { ...card, title, details }));
-        notify("success", `put ${card.ticket.key} on ${session.name}'s board`);
-        return true;
+        board = await agentBoardApi.add(folder, fitted(card));
     } catch (error) {
         reportError("send to the board")(error);
         return false;
     }
+    const made = ticketCard(board, card.ticket.key);
+    const then = async (label: string, work: () => Promise<ProjectBoard>) => {
+        try {
+            board = await work();
+        } catch (error) {
+            reportError(label)(error);
+        }
+    };
+    if (made) {
+        for (const sub of card.subtasks ?? []) {
+            const there = ticketCard(board, sub.ticket.key);
+            if (!there) await then(`put ${sub.ticket.key} under it`, () => agentBoardApi.add(folder, { ...fitted(sub), parent: made.id }));
+            else if (there.parent === null)
+                await then(`put ${sub.ticket.key} under it`, () => agentBoardApi.update(folder, there.id, { parent: made.id }));
+        }
+        const waits = (card.blockedBy ?? []).flatMap((key) => ticketCard(board, key)?.id ?? []);
+        if (waits.length > 0) await then("make it wait on its blockers", () => agentBoardApi.update(folder, made.id, { dependsOn: waits }));
+        for (const key of card.blocks ?? []) {
+            const blocked = ticketCard(board, key);
+            if (blocked && !blocked.dependsOn.includes(made.id)) {
+                await then(`make ${key} wait on it`, () => agentBoardApi.update(folder, blocked.id, { dependsOn: [...blocked.dependsOn, made.id] }));
+            }
+        }
+    }
+    cmd.setAgentBoard(folder, board);
+    notify("success", `put ${card.ticket.key} on ${session.name}'s board`);
+    return true;
 }
 
 /** The folder of the project in front of the person, or null when a project is not what they are looking at. */

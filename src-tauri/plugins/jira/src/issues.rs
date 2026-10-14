@@ -79,6 +79,37 @@ pub struct IssueDetail {
     /// How many comments there are, which can be more than are shown.
     pub comment_count: u64,
     pub transitions: Vec<Transition>,
+    pub subtasks: Vec<IssueSummary>,
+    /// The keys of the issues this one is blocked by.
+    pub blocked_by: Vec<String>,
+    /// The keys of the issues this one blocks.
+    pub blocks: Vec<String>,
+}
+
+/// The keys this issue is blocked by and the keys it blocks, from its links.
+fn blocking_links(fields: &Value) -> (Vec<String>, Vec<String>) {
+    let (mut blocked_by, mut blocks) = (Vec::new(), Vec::new());
+    for link in fields
+        .get("issuelinks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let named = |key: &str| {
+            text(link.pointer(&format!("/type/{key}")))
+                .is_some_and(|name| name.eq_ignore_ascii_case("blocks"))
+        };
+        if !named("name") && !named("outward") {
+            continue;
+        }
+        if let Some(key) = text(link.pointer("/inwardIssue/key")) {
+            blocked_by.push(key);
+        }
+        if let Some(key) = text(link.pointer("/outwardIssue/key")) {
+            blocks.push(key);
+        }
+    }
+    (blocked_by, blocks)
 }
 
 pub(crate) fn text(value: Option<&Value>) -> Option<String> {
@@ -364,7 +395,8 @@ pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDe
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let path = issue_path(&request.key)?;
     let sprint_field = sprint_field(&site, &credentials).await;
-    let mut fields = format!("{SUMMARY_FIELDS},project,reporter,labels,created,description");
+    let mut fields =
+        format!("{SUMMARY_FIELDS},project,reporter,labels,created,description,subtasks,issuelinks");
     if let Some(field) = &sprint_field {
         fields.push(',');
         fields.push_str(field);
@@ -399,6 +431,7 @@ pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDe
     let all = found.get("fields").unwrap_or(&Value::Null);
     let mut comments = comments(&comment_page);
     comments.reverse();
+    let (blocked_by, blocks) = blocking_links(all);
     Ok(IssueDetail {
         summary: summarise(&found, &site.host, sprint_field.as_deref()),
         project: text(all.pointer("/project/key")),
@@ -422,6 +455,15 @@ pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDe
             .unwrap_or(comments.len() as u64),
         comments,
         transitions: transitions(&moves),
+        subtasks: all
+            .get("subtasks")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|subtask| summarise(subtask, &site.host, None))
+            .collect(),
+        blocked_by,
+        blocks,
     })
 }
 

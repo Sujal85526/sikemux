@@ -66,6 +66,11 @@ export interface JiraIssue extends JiraIssueSummary {
     comments: JiraComment[];
     commentCount: number;
     transitions: JiraTransition[];
+    subtasks: JiraIssueSummary[];
+    /** The keys of the issues this one is blocked by. */
+    blockedBy: string[];
+    /** The keys of the issues this one blocks. */
+    blocks: string[];
 }
 
 export interface JiraPage {
