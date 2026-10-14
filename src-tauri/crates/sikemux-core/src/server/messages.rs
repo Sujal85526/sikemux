@@ -39,7 +39,19 @@ const WAKE_RETRY_MS: u64 = 60_000;
 /// has taken in the paste.
 const ENTER_AFTER_PASTE: Duration = Duration::from_millis(150);
 
+/// What a message between agents is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Kind {
+    Message,
+    /// How a worker's turn ended, sent to its lead.
+    Report,
+    Question,
+    Answer,
+}
+
 struct Letter {
+    kind: Kind,
     from_id: String,
     from_name: String,
     cli: String,
@@ -124,9 +136,10 @@ impl Mailbox {
             .iter()
             .rev()
             .find(|sent| sent.digest == digest && now.saturating_sub(sent.at) < REPEAT_WINDOW_MS);
-        // Each answer closes a question of its own, however alike two answers
-        // read, and a board note repeats only because the same change happened again.
-        if let Some(repeat) = repeat.filter(|_| letter.answers.is_none() && letter.from_id != BOARD)
+        // Answers, reports and questions each stand for an event of their own,
+        // however alike they read, and so does a board note.
+        if let Some(repeat) =
+            repeat.filter(|_| letter.kind == Kind::Message && letter.from_id != BOARD)
         {
             return Ok(Admitted::Repeat {
                 seconds_ago: now.saturating_sub(repeat.at) / 1000,
@@ -243,6 +256,7 @@ pub(crate) fn task(
         format!("Your answers do not go to {lead_name} by themselves: send {lead_name} what it needs with agent_send when you are done.")
     };
     wrapped(&Letter {
+        kind: Kind::Message,
         from_id: lead_id.to_owned(),
         from_name: lead_name.to_owned(),
         cli: lead_cli.to_owned(),
@@ -549,7 +563,7 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             if target.agent_id == from {
                 return Err("That agent is you".into());
             }
-            let letter = letter_from(&agents, from, text, None);
+            let letter = letter_from(&agents, Kind::Message, from, text, None);
             Ok((target, letter))
         })
         .await
@@ -561,9 +575,9 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     Ok(sent)
 }
 
-/// Sends `text` from one agent to another with `note` in place of the usual
-/// one. Fails when the agent it is for has stopped or is gone.
-pub(crate) async fn tell(
+/// Puts the question `text` from one agent to its lead, with `note` in
+/// place of the usual one. Fails when the lead has stopped or is gone.
+pub(crate) async fn question(
     core: &Arc<Core>,
     from: String,
     to: String,
@@ -579,7 +593,10 @@ pub(crate) async fn tell(
                 .find(|agent| agent.agent_id == to && agent.reach != Reach::Stopped)
                 .cloned()
                 .ok_or("that agent is not running")?;
-            Ok((target, letter_from(&agents, from, text, Some(note))))
+            Ok((
+                target,
+                letter_from(&agents, Kind::Question, from, text, Some(note)),
+            ))
         })
         .await
         .map_err(|error| error.to_string())?
@@ -608,6 +625,7 @@ pub(crate) async fn answer(
         .map_err(|error| error.to_string())?
     };
     let letter = Letter {
+        kind: Kind::Answer,
         from_id: "person".to_owned(),
         from_name: "the person".to_owned(),
         cli: "person".to_owned(),
@@ -639,6 +657,7 @@ pub(crate) async fn from_board(
         .map_err(|error| error.to_string())?
     };
     let letter = Letter {
+        kind: Kind::Message,
         from_id: BOARD.to_owned(),
         from_name: "Board".to_owned(),
         cli: "sikemux".to_owned(),
@@ -654,6 +673,7 @@ const AUTO_NOTE: &str = "Sent by Sikemux's Auto, which runs this project's board
 
 fn auto_letter(text: String) -> Letter {
     Letter {
+        kind: Kind::Message,
         from_id: "auto".to_owned(),
         from_name: "Auto".to_owned(),
         cli: "sikemux".to_owned(),
@@ -707,9 +727,16 @@ pub(crate) fn is_waiting(core: &Core, agent_id: &str, mark: &str) -> bool {
         .is_some_and(|waiting| waiting.iter().any(|waiting| waiting.contains(mark)))
 }
 
-fn letter_from(agents: &[Listed], from: String, text: String, note: Option<String>) -> Letter {
+fn letter_from(
+    agents: &[Listed],
+    kind: Kind,
+    from: String,
+    text: String,
+    note: Option<String>,
+) -> Letter {
     let sender = agents.iter().find(|agent| agent.agent_id == from);
     Letter {
+        kind,
         from_name: sender
             .and_then(|agent| agent.name.clone())
             .unwrap_or_else(|| from.clone()),
@@ -749,7 +776,7 @@ pub(crate) async fn report_as(
             let note = format!(
                 "{name} is an agent you started, and this is how its turn ended, sent by Sikemux. Reply with agent_send to {name} if it needs more."
             );
-            let mut letter = letter_from(&agents, worker, text, Some(note));
+            let mut letter = letter_from(&agents, Kind::Report, worker, text, Some(note));
             letter.from_name = name;
             Ok(target.map(|target| (target, letter)))
         })
