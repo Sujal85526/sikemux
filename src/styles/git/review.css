@@ -101,8 +101,6 @@
 }
 .merge-review-content {
     min-width: 0;
-    content-visibility: auto;
-    contain-intrinsic-size: auto 240px;
 }
 .merge-sections {
     display: flex;
