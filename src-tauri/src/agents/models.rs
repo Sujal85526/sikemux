@@ -4,11 +4,13 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
-use super::executable::{apply_login_environment, apply_process_config};
+use sikemux_core::launch::discovery::error_detail;
+use sikemux_core::launch::AgentSpec;
+
+use super::executable::apply_login_environment;
 
 const MODEL_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
 const MODEL_CATALOG_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
-const MODEL_CATALOG_ERROR_DETAIL_LIMIT: usize = 240;
 pub(super) const CLAUDE_MODEL_CATALOG_ARGS: &[&str] = &[
     "--print",
     "--output-format",
@@ -47,8 +49,12 @@ pub(super) async fn run_model_catalog_executable_without_env(
         })
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
-    apply_process_config(&mut command, agent, config_path);
-    command.envs(crate::model_providers::environment(agent).await);
+    let spec = AgentSpec {
+        config_path: config_path.map(str::to_owned),
+        ..AgentSpec::new(agent)
+    };
+    let providers = crate::model_providers::environment(agent).await;
+    command.envs(spec.launch(executable.to_path_buf(), providers).env);
     let mut child = command
         .spawn()
         .map_err(|_| format!("Could not start {agent} model lookup"))?;
@@ -71,7 +77,7 @@ pub(super) async fn run_model_catalog_executable_without_env(
         .map_err(|_| format!("{agent} model lookup timed out"))?
         .map_err(|_| format!("Could not read {agent} model lookup output"))?;
     if !output.status.success() {
-        let detail = model_catalog_error_detail(&output.stderr);
+        let detail = error_detail(&output.stderr);
         return Err(match detail {
             Some(detail) => format!("{agent} model lookup exited unsuccessfully: {detail}"),
             None => format!("{agent} model lookup exited unsuccessfully"),
@@ -84,39 +90,12 @@ pub(super) async fn run_model_catalog_executable_without_env(
         .map_err(|_| format!("{agent} model catalog was not valid UTF-8"))
 }
 
-pub(super) fn model_catalog_error_detail(stderr: &[u8]) -> Option<String> {
-    let normalized = String::from_utf8_lossy(stderr)
-        .chars()
-        .map(|character| {
-            if character.is_control() {
-                ' '
-            } else {
-                character
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    if normalized.is_empty() {
-        return None;
-    }
-    let mut characters = normalized.chars();
-    let detail = characters
-        .by_ref()
-        .take(MODEL_CATALOG_ERROR_DETAIL_LIMIT)
-        .collect::<String>();
-    Some(if characters.next().is_some() {
-        format!("{detail}…")
-    } else {
-        detail
-    })
-}
-
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{run_model_catalog_executable_without_env, MODEL_CATALOG_ERROR_DETAIL_LIMIT};
+    use super::run_model_catalog_executable_without_env;
     use std::path::Path;
+
+    const MODEL_CATALOG_ERROR_DETAIL_LIMIT: usize = 240;
 
     #[tokio::test]
     async fn model_catalog_subprocess_drops_removed_environment() {

@@ -35,7 +35,7 @@ pub async fn agent_usage(
     let executable = executable_path
         .as_deref()
         .map(expand_home)
-        .or_else(|| crate::system::find_executable(agent.as_str()))
+        .or_else(|| sikemux_process::user_environment::find_executable(agent.as_str()))
         .ok_or_else(|| format!("{} is not available", agent.as_str()))?;
     let usage = match agent {
         AgentKind::Claude => claude_usage(&executable, config_path.as_deref()).await,

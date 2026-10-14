@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use super::accounts::{agent_account_status, agent_command};
 use super::AgentKind;
+use sikemux_core::launch::AgentSpec;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "state", rename_all = "camelCase")]
@@ -242,10 +243,15 @@ pub(super) async fn check_sign_in(
                 return AgentStatus::Unknown;
             };
             let providers = crate::model_providers::environment(agent.as_str()).await;
+            let spec = AgentSpec {
+                config_path: config_path.map(str::to_owned),
+                ..AgentSpec::new(agent.as_str())
+            };
+            let launch = spec.launch(program.to_path_buf(), providers);
             let shell = sikemux_pty::user_shell::login_shell_environment();
             let environment = shell
                 .iter()
-                .chain(providers.iter())
+                .chain(launch.env.iter())
                 .map(|(name, value)| (name.as_str(), value.as_str()));
             opencode_status(&listing, environment)
         }

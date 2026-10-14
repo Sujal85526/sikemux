@@ -5849,6 +5849,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sikemux-client",
+ "sikemux-keychain",
  "sikemux-process",
  "sikemux-pty",
  "sikemux-wire",
@@ -6110,6 +6111,7 @@ name = "sikemux-process"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "tempfile",
  "workspace-hack",
 ]
 

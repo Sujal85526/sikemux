@@ -111,27 +111,6 @@ pub fn account_dir(config_path: &str) -> PathBuf {
     }
 }
 
-pub fn apply_agent_profile(
-    command: &mut CommandBuilder,
-    context: Option<&PtyContext>,
-    profile: Option<&PtyAgentProfile>,
-) {
-    let Some(root) = profile
-        .and_then(|profile| profile.config_path.as_deref())
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(account_dir)
-    else {
-        return;
-    };
-    if let Some(variable) = context
-        .and_then(|context| context.agent_type.as_deref())
-        .and_then(account_variable)
-    {
-        command.env(variable, root);
-    }
-}
-
 pub const OPTIONAL_PTY_ENV: &[&str] = &[
     "SIKEMUX_SHELL",
     "SIKEMUX_SESSION_ID",
@@ -251,8 +230,8 @@ pub fn configure_pty_environment(
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_agent_profile, configure_pty_environment, PtyAgentProfile, PtyContext};
-    use crate::tests::{env, local_shell_context};
+    use super::{configure_pty_environment, PtyContext};
+    use crate::tests::env;
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
     use std::path::Path;
@@ -312,28 +291,6 @@ mod tests {
         assert_eq!(
             super::quote_shell_word(r"it's\", Some(super::ShellKind::Zsh)),
             r"'it'\''s\'"
-        );
-    }
-
-    #[test]
-    fn agent_profiles_pin_provider_config_directories() {
-        let profile = PtyAgentProfile {
-            config_path: Some("/profiles/work/config.toml".into()),
-            environment_keys: Vec::new(),
-        };
-        let mut codex = CommandBuilder::new("codex");
-        let mut context = local_shell_context();
-        context.agent_id = Some("agent-1".into());
-        context.agent_type = Some("codex".into());
-        apply_agent_profile(&mut codex, Some(&context), Some(&profile));
-        assert_eq!(env(&codex, "CODEX_HOME"), Some("/profiles/work".into()));
-
-        let mut claude = CommandBuilder::new("claude");
-        context.agent_type = Some("claude".into());
-        apply_agent_profile(&mut claude, Some(&context), Some(&profile));
-        assert_eq!(
-            env(&claude, "CLAUDE_CONFIG_DIR"),
-            Some("/profiles/work".into())
         );
     }
 

@@ -12,6 +12,8 @@ pub mod frozen;
 pub mod harness;
 #[cfg(unix)]
 pub mod join;
+#[cfg(unix)]
+pub mod launch;
 pub use sikemux_wire::protocol;
 #[cfg(unix)]
 pub mod push;

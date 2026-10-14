@@ -14,8 +14,8 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use sikemux_core::acp::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use sikemux_core::client::Reply;
+use sikemux_core::launch::skills;
 use sikemux_core::protocol::{Request, Response};
-use sikemux_pty::user_shell::user_variable;
 use tauri::{AppHandle, Manager};
 
 use super::agent_skills;
@@ -68,7 +68,7 @@ impl BrowserManager {
         let args_prefix = match agent_type {
             "claude" => {
                 let mut args = claude_browser_args(app, &launch)?;
-                args.extend(skill_args(data_dir, agent_skills::claude_args));
+                args.extend(skills::skill_args(data_dir, skills::claude_args));
                 args
             }
             "codex" => codex_browser_args(&launch)?,
@@ -83,9 +83,9 @@ impl BrowserManager {
                     pi_browser_extension(app)?.to_string_lossy().into_owned(),
                 ];
                 args.extend(if agent_type == "pi" {
-                    skill_args(data_dir, |dir| Ok(agent_skills::pi_args(dir)))
+                    skills::skill_args(data_dir, |dir| Ok(skills::pi_args(dir)))
                 } else {
-                    skill_args(data_dir, agent_skills::omp_args)
+                    skills::skill_args(data_dir, skills::omp_args)
                 });
                 args
             }
@@ -106,10 +106,14 @@ impl BrowserManager {
                 environment.push((
                     "OPENCODE_CONFIG_CONTENT".into(),
                     opencode_browser_config(
-                        inherited_opencode_config().as_deref(),
+                        skills::inherited_opencode_config().as_deref(),
                         &launch,
-                        data_dir
-                            .map(|dir| (opencode_own_skill_paths(), agent_skills::library(dir))),
+                        data_dir.map(|dir| {
+                            (
+                                skills::opencode_user_paths(),
+                                sikemux_core::skills::library(dir),
+                            )
+                        }),
                     )?,
                 ));
                 Vec::new()
@@ -138,45 +142,22 @@ pub fn acp_browser_server(app: &AppHandle, agent_id: &str, secret: &str) -> AppR
     Ok(McpServer::Stdio(server))
 }
 
-/// Hands a chat launch the Sikemux skills library. Chats take a separate
-/// path from terminals, and for Hermes and Grok a separate private home,
+/// Gives a Hermes or Grok chat a private home holding the skills library,
 /// since the tools reach them over the protocol rather than their config.
-pub async fn chat_skills(
+pub async fn chat_home(
     app: &AppHandle,
-    agent_id: Option<&str>,
+    agent_id: &str,
     provider: &str,
     program: &Path,
-    args: &mut Vec<String>,
     env: &mut BTreeMap<String, String>,
 ) {
     let Some(data_dir) = skills_data_dir(app) else {
         return;
     };
-    let library = agent_skills::library(&data_dir);
-    env.insert(
-        sikemux_core::skills::LIBRARY_ENV.into(),
-        library.to_string_lossy().into_owned(),
-    );
-    let program = program.to_string_lossy();
-    match (provider, agent_id) {
-        ("claude", _) => {
-            let front = skill_args(Some(&data_dir), agent_skills::claude_args);
-            args.splice(0..0, front);
-        }
-        ("omp", _) => args.extend(skill_args(Some(&data_dir), agent_skills::omp_args)),
-        ("opencode", _) => {
-            let existing = env
-                .get("OPENCODE_CONFIG_CONTENT")
-                .cloned()
-                .or_else(inherited_opencode_config);
-            if let Some(config) =
-                chat_opencode_config(existing.as_deref(), &opencode_own_skill_paths(), &library)
-            {
-                env.insert("OPENCODE_CONFIG_CONTENT".into(), config);
-            }
-        }
-        ("hermes", Some(agent_id)) => {
-            match chat_hermes_home(app, agent_id, &program, &library).await {
+    let library = sikemux_core::skills::library(&data_dir);
+    match provider {
+        "hermes" => {
+            match chat_hermes_home(app, agent_id, &program.to_string_lossy(), &library).await {
                 Ok(home) => {
                     env.insert("HERMES_HOME".into(), home.to_string_lossy().into_owned());
                 }
@@ -185,7 +166,7 @@ pub async fn chat_skills(
                 }
             }
         }
-        ("grok", Some(agent_id)) => match chat_grok_home(app, agent_id, &library) {
+        "grok" => match chat_grok_home(app, agent_id, &library) {
             Ok(home) => {
                 env.insert("GROK_HOME".into(), home.to_string_lossy().into_owned());
             }
@@ -229,23 +210,6 @@ fn chat_grok_home(app: &AppHandle, agent_id: &str, library: &Path) -> AppResult<
     Ok(home)
 }
 
-/// An OpenCode chat's inline config with the skills library added. A config
-/// that is not plain JSON is left as the person wrote it, without the skills.
-fn chat_opencode_config(
-    existing: Option<&str>,
-    own_paths: &[String],
-    library: &Path,
-) -> Option<String> {
-    let mut config = match existing.map(str::trim).filter(|text| !text.is_empty()) {
-        None => json!({}),
-        Some(text) => serde_json::from_str::<Value>(text)
-            .ok()
-            .filter(Value::is_object)?,
-    };
-    agent_skills::add_opencode_paths(&mut config, own_paths, library);
-    Some(config.to_string())
-}
-
 /// Makes the store an agent keeps its sessions in inside its real home, if it
 /// has none yet, so a private home links to it rather than starting its own.
 /// Sikemux lists and resumes sessions from the real home.
@@ -268,15 +232,10 @@ fn share_session_store(real_home: &Path, name: &str, folder: bool) -> std::io::R
 
 /// The app data folder with the skills library ready in it. Without one,
 /// agents launch without Sikemux skills rather than pointed at a missing folder.
-fn skills_data_dir(app: &AppHandle) -> Option<PathBuf> {
+pub fn skills_data_dir(app: &AppHandle) -> Option<PathBuf> {
     let data_dir = app.path().app_data_dir().ok()?;
-    match sikemux_core::skills::ready_library(&data_dir) {
-        Ok(_) => Some(data_dir),
-        Err(error) => {
-            eprintln!("Sikemux skills are unavailable: {error}");
-            None
-        }
-    }
+    skills::ready(&data_dir)?;
+    Some(data_dir)
 }
 
 /// The protocol asks for an absolute path, and a development launch runs
@@ -286,7 +245,7 @@ fn absolute_command(command: &str) -> AppResult<PathBuf> {
     if path.is_absolute() {
         return Ok(path);
     }
-    crate::system::find_executable(command)
+    sikemux_process::user_environment::find_executable(command)
         .ok_or_else(|| AppError::Other(format!("{command} is not on PATH")))
 }
 
@@ -395,30 +354,6 @@ fn muse_browser_args(
 
 /// Skills arguments for one launch. A library that cannot be set up costs the
 /// agent its Sikemux skills, never its launch.
-fn skill_args(
-    data_dir: Option<&Path>,
-    make: impl FnOnce(&Path) -> std::io::Result<Vec<String>>,
-) -> Vec<String> {
-    let Some(data_dir) = data_dir else {
-        return Vec::new();
-    };
-    make(data_dir).unwrap_or_else(|error| {
-        eprintln!("Sikemux skills are unavailable to this agent: {error}");
-        Vec::new()
-    })
-}
-
-fn opencode_own_skill_paths() -> Vec<String> {
-    let config_home = user_variable("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| crate::system::user_home().join(".config"));
-    agent_skills::opencode_own_paths(&config_home.join("opencode"))
-}
-
-fn inherited_opencode_config() -> Option<String> {
-    user_variable("OPENCODE_CONFIG_CONTENT")
-}
-
 fn opencode_browser_config(
     existing: Option<&str>,
     launch: &BrowserMcpLaunch,
@@ -444,7 +379,7 @@ fn opencode_browser_config(
         json!({ "type": "local", "command": command, "enabled": true }),
     );
     if let Some((own_paths, library)) = skills {
-        agent_skills::add_opencode_paths(&mut config, &own_paths, &library);
+        skills::add_opencode_paths(&mut config, &own_paths, &library);
     }
     serde_json::to_string(&config).map_err(AppError::from)
 }
@@ -507,7 +442,8 @@ async fn prepare_hermes_home(
     .await?;
     if let Some(data_dir) = data_dir {
         let config = std::fs::read_to_string(home.join("config.yaml")).unwrap_or_default();
-        let dirs = agent_skills::hermes_external_dirs(&config, &agent_skills::library(data_dir));
+        let dirs =
+            agent_skills::hermes_external_dirs(&config, &sikemux_core::skills::library(data_dir));
         if let Err(error) = run_config_command(
             agent_program,
             &["config", "set", "skills.external_dirs", &dirs, "--force"],
@@ -544,7 +480,7 @@ async fn prepare_grok_home(
     if let Some(data_dir) = data_dir {
         let path = home.join("config.toml");
         let config = std::fs::read_to_string(&path).unwrap_or_default();
-        match agent_skills::grok_config(&config, &agent_skills::library(data_dir)) {
+        match agent_skills::grok_config(&config, &sikemux_core::skills::library(data_dir)) {
             Ok(config) => std::fs::write(&path, config)?,
             Err(error) => eprintln!("Sikemux skills are unavailable to Grok: {error}"),
         }
@@ -655,20 +591,6 @@ mod tests {
             command: "/Apps/Sikemux.app/sikemux-editor".into(),
             args: vec!["--tools-mcp".into()],
         }
-    }
-
-    #[test]
-    fn an_opencode_chat_keeps_an_inline_config_it_cannot_read_untouched() {
-        let library = Path::new("/data/skills");
-        let added = chat_opencode_config(Some(r#"{"provider":{"x":{}}}"#), &[], library).unwrap();
-        assert!(added.contains("/data/skills") && added.contains("provider"));
-        assert!(chat_opencode_config(None, &[], library)
-            .unwrap()
-            .contains("/data/skills"));
-        assert_eq!(
-            chat_opencode_config(Some("{ // mine\n \"provider\": {}, }"), &[], library),
-            None
-        );
     }
 
     #[test]

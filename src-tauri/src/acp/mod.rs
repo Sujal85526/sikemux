@@ -4,14 +4,15 @@
 //! forwards every command to the core. The core's events come back on its
 //! connection and reach the page as `acp_event`.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sikemux_core::acp::{bounded_text, native};
+use sikemux_core::acp::bounded_text;
 use sikemux_core::client::{ClientError, CoreClient, Reply};
+use sikemux_core::launch::{self, AgentLaunch, AgentSpec};
 use sikemux_core::protocol::{
     ChatAccount, ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch,
     ChatLauncher, ChatStart, Request, Response,
@@ -217,71 +218,6 @@ pub(crate) async fn reconnected(app: &AppHandle, client: Option<&Arc<CoreClient>
     }
 }
 
-/// What starts an agent: a program, its arguments and the environment it
-/// gets on top of the core's.
-struct Program {
-    program: PathBuf,
-    args: Vec<String>,
-    env: BTreeMap<String, String>,
-}
-
-/// The account directory the agent keeps its sign-in and sessions in: the
-/// profile's, or one the person chose in their shell profile, which their
-/// terminal agents use too.
-fn account_environment(
-    provider: &str,
-    config_path: Option<&str>,
-) -> Result<BTreeMap<String, String>, String> {
-    if let Some(path) = config_path {
-        bounded_text("config path", path, 4_096)?;
-    }
-    Ok(
-        crate::agents::accounts::account_environment(provider, config_path)
-            .into_iter()
-            .collect(),
-    )
-}
-
-fn native_program(executable: &Path, arguments: &[&str], environment_keys: &[String]) -> Program {
-    Program {
-        program: executable.to_path_buf(),
-        args: arguments
-            .iter()
-            .map(|argument| (*argument).to_owned())
-            .collect(),
-        env: forwarded_environment(environment_keys),
-    }
-}
-
-fn with_user_path(env: &mut BTreeMap<String, String>) {
-    if let Some(path) = crate::system::child_path() {
-        env.insert("PATH".into(), path);
-    }
-}
-
-/// The variables the person's profile names, with the values their shell
-/// gives them, since the core may have started before they were set.
-fn forwarded_environment(environment_keys: &[String]) -> BTreeMap<String, String> {
-    let mut seen = HashSet::new();
-    let mut env = BTreeMap::new();
-    for key in environment_keys.iter().take(64) {
-        if !seen.insert(key) || !valid_environment_key(key) {
-            continue;
-        }
-        if let Some(value) = sikemux_pty::user_shell::user_variable(key) {
-            env.insert(key.clone(), value);
-        }
-    }
-    env
-}
-
-fn valid_environment_key(key: &str) -> bool {
-    let mut chars = key.chars();
-    matches!(chars.next(), Some('_' | 'A'..='Z' | 'a'..='z'))
-        && chars.all(|ch| matches!(ch, '_' | 'A'..='Z' | 'a'..='z' | '0'..='9'))
-        && key.len() <= 128
-}
-
 /// One of the person's accounts, as the page names it.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -298,7 +234,7 @@ fn chat_account(provider: &str, account: &AccountRequest) -> ChatAccount {
     ChatAccount {
         id: account.id.clone(),
         label: account.label.clone(),
-        env: crate::agents::accounts::account_environment(provider, account.config_path.as_deref())
+        env: launch::account_environment(provider, account.config_path.as_deref())
             .into_iter()
             .collect(),
     }
@@ -332,41 +268,44 @@ async fn core(pty: &PtyManager) -> Result<Arc<CoreClient>, String> {
     pty.client().await.map_err(|error| error.to_string())
 }
 
-async fn prepare(
-    agent_id: &str,
-    provider: &str,
-    config_path: Option<&str>,
-    executable_path: Option<&str>,
-    environment_keys: &[String],
-) -> Result<Program, String> {
-    let agent_executable =
-        crate::agents::resolve_agent_executable(provider, executable_path).await?;
-    let mut program = native_program(
-        &agent_executable,
-        native::arguments(provider).unwrap_or_default(),
-        environment_keys,
+/// How the app starts `spec` as a chat, with the skills library and, for
+/// Hermes and Grok, a private home of its own.
+async fn chat_launch(
+    app: &AppHandle,
+    agent_id: Option<&str>,
+    spec: &AgentSpec,
+) -> Result<AgentLaunch, String> {
+    if let Some(path) = spec.config_path.as_deref() {
+        bounded_text("config path", path, 4_096)?;
+    }
+    let program = spec.program().await?;
+    let providers = crate::model_providers::environment(&spec.provider).await;
+    let mut launch = spec.chat(
+        program,
+        providers,
+        crate::browser::agents::skills_data_dir(app).as_deref(),
     );
-    program
-        .env
-        .extend(account_environment(provider, config_path)?);
-    program
-        .env
-        .extend(crate::model_providers::environment(provider).await);
-    program
-        .env
-        .insert(crate::ports::AGENT_ID_ENV.into(), agent_id.to_owned());
-    with_user_path(&mut program.env);
-    Ok(program)
+    if let Some(agent_id) = agent_id {
+        launch
+            .env
+            .insert(crate::ports::AGENT_ID_ENV.into(), agent_id.to_owned());
+        crate::browser::agents::chat_home(
+            app,
+            agent_id,
+            &spec.provider,
+            &launch.program,
+            &mut launch.env,
+        )
+        .await;
+    }
+    Ok(launch)
 }
 
 /// One way to start a chat agent that the app offers paired devices.
 pub(crate) struct LauncherSpec {
     pub id: String,
-    pub provider: String,
     pub label: String,
-    pub config_path: Option<String>,
-    pub executable_path: Option<String>,
-    pub environment_keys: Vec<String>,
+    pub agent: AgentSpec,
     pub permission_mode: String,
     /// The agent's status as the app last saw it, passed on to devices.
     pub status: Option<String>,
@@ -375,38 +314,14 @@ pub(crate) struct LauncherSpec {
 /// What [`acp_start`] would run for `spec`, for the core to start without
 /// the window.
 pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<ChatLauncher, String> {
-    let executable =
-        crate::agents::resolve_agent_executable(&spec.provider, spec.executable_path.as_deref())
-            .await?;
-    let mut program = native_program(
-        &executable,
-        native::arguments(&spec.provider).unwrap_or_default(),
-        &spec.environment_keys,
-    );
-    program.env.extend(account_environment(
-        &spec.provider,
-        spec.config_path.as_deref(),
-    )?);
-    program
-        .env
-        .extend(crate::model_providers::environment(&spec.provider).await);
-    with_user_path(&mut program.env);
-    crate::browser::agents::chat_skills(
-        app,
-        None,
-        &spec.provider,
-        &program.program,
-        &mut program.args,
-        &mut program.env,
-    )
-    .await;
+    let launch = chat_launch(app, None, &spec.agent).await?;
     Ok(ChatLauncher {
         id: spec.id,
-        provider: spec.provider,
+        provider: spec.agent.provider,
         label: spec.label,
-        program: program.program,
-        args: program.args,
-        env: program.env,
+        program: launch.program,
+        args: launch.args,
+        env: launch.env,
         permission_mode: spec.permission_mode,
         account: None,
         fallbacks: Vec::new(),
@@ -438,16 +353,14 @@ pub async fn acp_start(
     bounded_text("working directory", &cwd, 4_096)?;
     let launch_id = uuid::Uuid::new_v4();
     manager.preparing.insert(agent_id.clone(), launch_id);
-    let prepared = prepare(
-        &agent_id,
-        &provider,
-        config_path.as_deref(),
-        executable_path.as_deref(),
-        &environment_keys,
-    )
-    .await;
-    let mut program = match prepared {
-        Ok(program) => program,
+    let spec = AgentSpec {
+        provider: provider.clone(),
+        executable_path,
+        config_path: config_path.clone(),
+        environment_keys,
+    };
+    let mut prepared = match chat_launch(&app, Some(&agent_id), &spec).await {
+        Ok(prepared) => prepared,
         Err(error) => {
             manager
                 .preparing
@@ -455,15 +368,6 @@ pub async fn acp_start(
             return Err(error);
         }
     };
-    crate::browser::agents::chat_skills(
-        &app,
-        Some(&agent_id),
-        &provider,
-        &program.program,
-        &mut program.args,
-        &mut program.env,
-    )
-    .await;
     let secret = match crate::browser::agents::agent_secret(&app, &agent_id).await {
         Ok(secret) => secret,
         Err(error) => {
@@ -472,7 +376,7 @@ pub async fn acp_start(
         }
     };
     if !secret.is_empty() {
-        program.env.insert(
+        prepared.env.insert(
             crate::browser::agents::AGENT_SECRET_ENV.into(),
             secret.clone(),
         );
@@ -490,9 +394,9 @@ pub async fn acp_start(
         agent_id: agent_id.clone(),
         provider: provider.clone(),
         cwd: PathBuf::from(&cwd),
-        program: program.program,
-        args: program.args,
-        env: program.env,
+        program: prepared.program,
+        args: prepared.args,
+        env: prepared.env,
         mcp_servers,
         resume_id: resume_id.clone(),
         permission_mode,
@@ -794,46 +698,6 @@ pub async fn acp_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_profile_names_the_agents_account_directory() {
-        for (provider, key) in [("codex", "CODEX_HOME"), ("claude", "CLAUDE_CONFIG_DIR")] {
-            let env = account_environment(provider, Some("/profile")).unwrap();
-            assert_eq!(env.get(key).map(String::as_str), Some("/profile"));
-        }
-        assert!(account_environment("opencode", Some("/profile"))
-            .unwrap()
-            .is_empty());
-    }
-
-    #[test]
-    fn native_agents_run_their_own_binary_in_acp_mode() {
-        let program = native_program(
-            Path::new("/bin/grok"),
-            native::arguments("grok").unwrap(),
-            &[],
-        );
-        assert_eq!(program.program, Path::new("/bin/grok"));
-        assert_eq!(program.args, ["agent", "--no-leader", "stdio"]);
-    }
-
-    #[test]
-    fn only_named_valid_variables_are_forwarded() {
-        let env = forwarded_environment(&["PATH".into(), "PATH".into(), "BAD-KEY".into()]);
-        assert_eq!(env.keys().collect::<Vec<_>>(), ["PATH"]);
-    }
-
-    #[test]
-    fn config_files_name_their_directory() {
-        assert_eq!(
-            sikemux_pty::launch::account_dir("/home/me/.codex/config.toml"),
-            Path::new("/home/me/.codex")
-        );
-        assert_eq!(
-            sikemux_pty::launch::account_dir("/home/me/.claude"),
-            Path::new("/home/me/.claude")
-        );
-    }
 
     #[test]
     fn every_event_kind_keeps_the_name_the_page_reads() {

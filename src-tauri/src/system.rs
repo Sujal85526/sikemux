@@ -161,10 +161,6 @@ pub fn user_home() -> PathBuf {
     sikemux_process::paths::home().unwrap_or_default()
 }
 
-pub fn find_executable(name: &str) -> Option<PathBuf> {
-    find_executables(name).into_iter().next()
-}
-
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IntegrationHealth {
@@ -189,58 +185,10 @@ pub async fn integration_health() -> IntegrationHealth {
 fn read_integration_health() -> IntegrationHealth {
     IntegrationHealth {
         shell: configured_shell(),
-        git: find_executable("git").is_some(),
-        aws: find_executable("aws").is_some(),
-        rnd: find_executable("rnd").is_some(),
+        git: sikemux_process::user_environment::find_executable("git").is_some(),
+        aws: sikemux_process::user_environment::find_executable("aws").is_some(),
+        rnd: sikemux_process::user_environment::find_executable("rnd").is_some(),
     }
-}
-
-pub fn find_executables(name: &str) -> Vec<PathBuf> {
-    let Some(paths) = sikemux_process::user_environment::var_os("PATH") else {
-        return Vec::new();
-    };
-    #[cfg(windows)]
-    let names: Vec<String> = if PathBuf::from(name).extension().is_some() {
-        vec![name.to_string()]
-    } else {
-        std::env::var("PATHEXT")
-            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
-            .split(';')
-            .filter(|extension| !extension.is_empty())
-            .map(|extension| format!("{name}{}", extension.to_ascii_lowercase()))
-            .chain(std::iter::once(name.to_string()))
-            .collect()
-    };
-    #[cfg(not(windows))]
-    let names = vec![name.to_string()];
-
-    find_executables_in(std::env::split_paths(&paths), &names)
-}
-
-fn find_executables_in(paths: impl IntoIterator<Item = PathBuf>, names: &[String]) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    for directory in paths {
-        for candidate_name in names {
-            let candidate = directory.join(candidate_name);
-            if !candidate.is_file() {
-                continue;
-            }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let Ok(metadata) = candidate.metadata() else {
-                    continue;
-                };
-                if metadata.permissions().mode() & 0o111 == 0 {
-                    continue;
-                }
-            }
-            if !found.contains(&candidate) {
-                found.push(candidate);
-            }
-        }
-    }
-    found
 }
 
 /// Existing modules use HOME for established ~/.config, ~/.ssh and ~/.aws
@@ -551,7 +499,6 @@ pub async fn boot_init() -> AppResult<BootInfo> {
 #[cfg(test)]
 mod executable_tests {
     use super::*;
-    use tempfile::tempdir;
 
     #[cfg(unix)]
     #[test]
@@ -577,32 +524,5 @@ mod executable_tests {
         assert_eq!(&parts[..3], ["/Users/me/.nvm/bin", "/usr/bin", "/bin"]);
         let mut seen = std::collections::HashSet::new();
         assert!(parts.iter().all(|part| seen.insert(*part)), "{path}");
-    }
-
-    #[test]
-    fn executable_lookup_returns_every_healthy_candidate_in_path_order() {
-        let first = tempdir().expect("first path");
-        let second = tempdir().expect("second path");
-        let first_candidate = first.path().join("tool");
-        let second_candidate = second.path().join("tool");
-        std::fs::write(&first_candidate, b"first").expect("first executable");
-        std::fs::write(&second_candidate, b"second").expect("second executable");
-
-        #[cfg(unix)]
-        for candidate in [&first_candidate, &second_candidate] {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = std::fs::metadata(candidate).unwrap().permissions();
-            permissions.set_mode(0o755);
-            std::fs::set_permissions(candidate, permissions).unwrap();
-        }
-
-        let names = vec!["tool".to_string()];
-        assert_eq!(
-            find_executables_in(
-                [first.path().to_path_buf(), second.path().to_path_buf()],
-                &names,
-            ),
-            vec![first_candidate, second_candidate]
-        );
     }
 }

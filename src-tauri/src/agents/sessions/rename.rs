@@ -57,7 +57,7 @@ pub(super) fn agent_executable(
 ) -> Result<PathBuf, String> {
     configured
         .map(expand_home)
-        .or_else(|| crate::system::find_executable(agent.as_str()))
+        .or_else(|| sikemux_process::user_environment::find_executable(agent.as_str()))
         .ok_or_else(|| format!("{} is not available", agent.as_str()))
 }
 

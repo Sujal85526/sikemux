@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use portable_pty::CommandBuilder;
 use serde::{Deserialize, Serialize};
 use sikemux_pty::launch::{
-    account_dir, account_variable, apply_agent_profile, configure_interactive_command,
-    configure_pty_environment, validate_direct_command, PtyContext,
+    account_dir, account_variable, configure_interactive_command, configure_pty_environment,
+    validate_direct_command, PtyContext,
 };
 use sikemux_pty::shell::{
     configure_shell_integration, configure_task_command, inherited_ssh_environment,
@@ -95,9 +95,6 @@ pub(crate) fn prepare_terminal(
         validate_direct_command(command, context.as_ref())?;
     }
     let shell = configured_shell();
-    let direct_profile = direct_command
-        .as_ref()
-        .and_then(|command| command.profile.clone());
     let mut cmd = CommandBuilder::new(&shell);
     if let Some(command) = direct_command.as_ref() {
         configure_interactive_command(&mut cmd, &shell, command);
@@ -110,17 +107,11 @@ pub(crate) fn prepare_terminal(
         launch.cli_endpoint.as_deref(),
         &HashMap::new(),
     );
-    apply_agent_profile(&mut cmd, context.as_ref(), direct_profile.as_ref());
     let mut owner = Owner::from_context(context.as_ref());
     let variable = owner.agent_type.as_deref().and_then(account_variable);
     owner.account_home = variable
         .and_then(|variable| env.get(variable))
-        .map(|home| account_dir(home))
-        .or_else(|| {
-            variable?;
-            let path = direct_profile.as_ref()?.config_path.as_deref()?;
-            (!path.trim().is_empty()).then(|| account_dir(path))
-        });
+        .map(|home| account_dir(home));
     for (key, value) in env {
         cmd.env(key, value);
     }

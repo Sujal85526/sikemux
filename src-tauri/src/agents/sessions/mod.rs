@@ -88,7 +88,7 @@ pub async fn live_agent_sessions(
     let executable = executable_path
         .as_deref()
         .map(expand_home)
-        .or_else(|| crate::system::find_executable("claude"))
+        .or_else(|| sikemux_process::user_environment::find_executable("claude"))
         .ok_or_else(|| "claude is not available".to_string())?;
     let mut command = Command::from(sikemux_process::user_environment::command(executable));
     apply_login_environment(&mut command);

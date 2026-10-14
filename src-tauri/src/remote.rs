@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use sikemux_core::client::CoreClient;
+use sikemux_core::launch::AgentSpec;
 use sikemux_core::protocol::{
     AllowedDevice, BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat,
     PublishedRecent, RemoteStatus,
@@ -73,11 +74,13 @@ pub async fn remote_publish_workspace(
     for request in launchers {
         let spec = LauncherSpec {
             id: request.id,
-            provider: request.provider,
             label: request.label,
-            config_path: request.config_path,
-            executable_path: request.executable_path,
-            environment_keys: request.environment_keys,
+            agent: AgentSpec {
+                provider: request.provider,
+                executable_path: request.executable_path,
+                config_path: request.config_path,
+                environment_keys: request.environment_keys,
+            },
             permission_mode: request.permission_mode,
             status: request.status,
         };

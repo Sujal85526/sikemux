@@ -360,7 +360,7 @@ pub(super) fn agent_command(
 }
 
 async fn executable(agent: AgentKind, executable_path: Option<&str>) -> Result<PathBuf, String> {
-    super::resolve_agent_executable(agent.as_str(), executable_path).await
+    sikemux_core::launch::discovery::resolve(agent.as_str(), executable_path).await
 }
 
 /// Who an account is signed in as, asked of the agent's own CLI.
@@ -620,27 +620,6 @@ pub async fn agent_account_sign_out(
     } else {
         Err("The agent could not sign out".into())
     }
-}
-
-/// The variables that point an agent at an account's directory.
-pub(crate) fn account_environment(
-    provider: &str,
-    config_path: Option<&str>,
-) -> Vec<(String, String)> {
-    let Some(variable) = sikemux_pty::launch::account_variable(provider) else {
-        return Vec::new();
-    };
-    let directory = match config_path.map(str::trim).filter(|path| !path.is_empty()) {
-        Some(path) => sikemux_pty::launch::account_dir(path)
-            .to_string_lossy()
-            .into_owned(),
-        // The default account is wherever the person's shell points the agent.
-        None => match sikemux_pty::user_shell::user_variable(variable) {
-            Some(directory) => directory,
-            None => return Vec::new(),
-        },
-    };
-    vec![(variable.to_owned(), directory)]
 }
 
 #[cfg(test)]

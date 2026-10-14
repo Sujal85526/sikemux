@@ -3,30 +3,17 @@
 //! holds every provider's facts. Connecting a keyed provider saves its key in the
 //! Keychain and hands it to OpenCode, Pi and OMP as they start.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex, OnceLock};
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::{LazyLock, OnceLock};
 use std::time::Duration;
 
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
+use sikemux_core::launch::providers::{Providers, KEY_SERVICE};
 
-/// A development build keeps entries of its own, so it never spends or replaces the
-/// installed app's sign-in.
-#[cfg(not(test))]
-const KEY_SERVICE: &str = if cfg!(debug_assertions) {
-    "sikemux-model-provider-dev"
-} else {
-    "sikemux-model-provider"
-};
-/// Tests keep to an entry of their own, so they never replace or delete a real key.
-#[cfg(test)]
-const KEY_SERVICE: &str = "sikemux-model-provider-test";
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const RUNNER_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// The agents that read these providers' keys from their environment.
-const READERS: &[&str] = &["opencode", "pi", "omp"];
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -104,117 +91,27 @@ pub struct ModelProvider {
     models: Option<Vec<String>>,
 }
 
-/// Which providers have a key saved, and the keys themselves once read, so
-/// a launch does not start the Keychain tool for every provider every time.
-struct Store {
-    path: PathBuf,
-    connected: Mutex<BTreeSet<String>>,
-    keys: Mutex<HashMap<String, String>>,
+static STORE: OnceLock<Providers> = OnceLock::new();
+
+pub fn init(data_dir: &Path) {
+    let _ = STORE.set(Providers::new(data_dir));
 }
 
-static STORE: OnceLock<Store> = OnceLock::new();
-
-pub fn init(path: PathBuf) {
-    let _ = STORE.set(Store::load(path));
-}
-
-fn store() -> Result<&'static Store, String> {
+fn store() -> Result<&'static Providers, String> {
     STORE
         .get()
         .ok_or_else(|| "Model providers are not ready yet".to_string())
 }
 
-impl Store {
-    fn load(path: PathBuf) -> Self {
-        let connected = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<BTreeSet<String>>(&bytes).ok())
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|id| keyed(id).is_ok())
-            .collect();
-        Self {
-            path,
-            connected: Mutex::new(connected),
-            keys: Mutex::new(HashMap::new()),
-        }
-    }
-
-    fn connected(&self) -> BTreeSet<String> {
-        self.connected
-            .lock()
-            .map(|connected| connected.clone())
-            .unwrap_or_default()
-    }
-
-    fn set_connected(&self, id: &str, connected: bool) -> Result<(), String> {
-        let mut ids = self
-            .connected
-            .lock()
-            .map_err(|_| "Model providers are unavailable".to_string())?;
-        let changed = if connected {
-            ids.insert(id.to_owned())
-        } else {
-            ids.remove(id)
-        };
-        if !changed {
-            return Ok(());
-        }
-        let bytes = serde_json::to_vec(&*ids).map_err(|error| error.to_string())?;
-        sikemux_process::files::write_atomic(&self.path, &bytes, false)
-            .map_err(|error| error.to_string())
-    }
-
-    fn remember_key(&self, id: &str, key: Option<String>) {
-        if let Ok(mut keys) = self.keys.lock() {
-            match key {
-                Some(key) => keys.insert(id.to_owned(), key),
-                None => keys.remove(id),
-            };
-        }
-    }
-
-    fn key(&self, id: &str) -> Option<String> {
-        if let Some(key) = self.keys.lock().ok()?.get(id).cloned() {
-            return Some(key);
-        }
-        let key = match sikemux_keychain::read(KEY_SERVICE, id) {
-            Ok(key) => key?,
-            Err(error) => {
-                eprintln!("Sikemux could not read the {id} key: {error}");
-                return None;
-            }
-        };
-        self.remember_key(id, Some(key.clone()));
-        Some(key)
-    }
-}
-
-fn reads_provider_keys(agent: &str) -> bool {
-    READERS.contains(&agent)
-}
-
 /// The keys `agent` should start with, under the names it looks for.
 pub async fn environment(agent: &str) -> BTreeMap<String, String> {
-    if !reads_provider_keys(agent) {
-        return BTreeMap::new();
-    }
     let Ok(store) = store() else {
         return BTreeMap::new();
     };
-    let connected = store.connected();
-    if connected.is_empty() {
-        return BTreeMap::new();
-    }
-    tokio::task::spawn_blocking(move || {
-        connected
-            .iter()
-            .filter_map(|id| Some((keyed(id).ok()?.1, store.key(id)?)))
-            .flat_map(|(spec, key)| spec.env.iter().map(move |name| (name.clone(), key.clone())))
-            .collect()
-    })
-    .await
-    .unwrap_or_default()
+    let agent = agent.to_owned();
+    tokio::task::spawn_blocking(move || store.environment(&agent))
+        .await
+        .unwrap_or_default()
 }
 
 fn client() -> &'static Client {
@@ -280,7 +177,7 @@ async fn local_models(provider: &Provider) -> Option<Vec<String>> {
 /// Local runners are asked what they have on every call, so only when settings ask.
 #[tauri::command]
 pub async fn model_providers() -> Vec<ModelProvider> {
-    let saved = store().map(Store::connected).unwrap_or_default();
+    let saved = store().map(Providers::connected).unwrap_or_default();
     futures::future::join_all(CATALOGUE.iter().map(|provider| {
         let saved = &saved;
         async move {
@@ -333,6 +230,7 @@ pub async fn model_provider_disconnect(id: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn every_provider_has_its_own_id_and_key_names() {
@@ -376,24 +274,5 @@ mod tests {
         );
         assert!(check_failure("Groq", StatusCode::BAD_GATEWAY)
             .is_some_and(|failure| failure.contains("could not check")));
-    }
-
-    #[test]
-    fn the_connected_list_survives_a_restart_and_drops_unknown_providers() {
-        let directory = tempfile::tempdir().expect("temporary directory");
-        let path = directory.path().join("model-providers.json");
-        std::fs::write(&path, r#"["baseten","retired-provider"]"#).expect("write list");
-        let store = Store::load(path.clone());
-        assert_eq!(store.connected(), BTreeSet::from(["baseten".to_string()]));
-        store.set_connected("groq", true).expect("connect");
-        assert_eq!(
-            Store::load(path.clone()).connected(),
-            BTreeSet::from(["baseten".to_string(), "groq".to_string()])
-        );
-        store.set_connected("baseten", false).expect("disconnect");
-        assert_eq!(
-            std::fs::read_to_string(&path).expect("read list"),
-            r#"["groq"]"#
-        );
     }
 }

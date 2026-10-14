@@ -18,7 +18,7 @@ fn is_executable(path: &Path) -> bool {
 }
 
 fn executable_in_path(bin: &str) -> Option<PathBuf> {
-    crate::system::find_executable(bin)
+    sikemux_process::user_environment::find_executable(bin)
 }
 
 fn go_env(name: &str) -> Option<String> {
