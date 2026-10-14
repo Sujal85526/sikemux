@@ -1,4 +1,4 @@
-import { memo, useContext, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useContext, useMemo, useState, type ReactNode } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { basename } from "../lib/paths";
 import {
@@ -16,6 +16,8 @@ import {
     IconWorkflow,
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
+import { isAgentType } from "../agents/catalog";
+import { messageLetters, type AgentLetter } from "./agentLetters";
 import { MessageEditor } from "./MessageEditor";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
@@ -91,6 +93,11 @@ export function warmTranscript(messages: readonly ChatMessage[]): Promise<void> 
         const message = messages[index];
         if (warmed.has(message)) continue;
         warmed.add(message);
+        const letters = messageLetters(message);
+        if (letters) {
+            texts.push(...letters.map((letter) => ({ text: letter.text, typed: false })));
+            continue;
+        }
         for (const part of sentParts(message).parts) {
             if (part.kind === "text") texts.push({ text: part.text, typed: message.role === "user" });
             else if (part.kind === "thought") texts.push({ text: part.text, typed: false });
@@ -250,6 +257,44 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
     );
 }
 
+function SentTime({ at, took }: { at: number; took: number | null }) {
+    return (
+        <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={sentTitle(at)}>
+            {took === null ? sentLabel(at) : `${sentLabel(at)} · took ${durationLabel(took)}`}
+        </time>
+    );
+}
+
+/* Another agent's message reads as prose under a line naming who sent it, so
+   it is never mistaken for something the person typed. */
+function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[]; at: number | null }) {
+    return (
+        <article className="chat-message agent-letter">
+            <div className="chat-message-content">
+                {letters.map((letter, index) => (
+                    <Fragment key={index}>
+                        <div className="chat-letter-from" title={letter.agentId}>
+                            <span className="chat-letter-rule" />
+                            {isAgentType(letter.cli) && <AgentIcon type={letter.cli} size={14} className={`agent-glyph ${letter.cli}`} />}
+                            <span>
+                                Message from <b>{letter.name}</b>
+                            </span>
+                            <span className="chat-letter-rule" />
+                        </div>
+                        <div className="chat-markdown">
+                            <FoldedMarkdown id={`${id}-letter-${index}`} text={letter.text} live={false} />
+                        </div>
+                    </Fragment>
+                ))}
+                <div className="chat-message-meta">
+                    <CopyButton value={letters.map((letter) => letter.text).join("\n\n")} label="message" size={15} />
+                    {at !== null && <SentTime at={at} took={null} />}
+                </div>
+            </div>
+        </article>
+    );
+}
+
 export const ChatMessageRow = memo(function ChatMessageRow({
     message,
     live,
@@ -271,10 +316,12 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     /** Where the shown parts start, when the work before them is folded away. */
     from?: number;
 }) {
+    const letters = useMemo(() => messageLetters(message), [message]);
     const { parts, context } = useMemo(() => sentParts(message), [message]);
     const shown = useMemo(() => shownParts(parts, from), [parts, from]);
     const [editing, setEditing] = useState(false);
     const attachments = message.attachments ?? [];
+    if (letters) return <AgentLetters id={message.id} letters={letters} at={at} />;
     if (editing && onEdit) {
         const written = parts.flatMap((part) => (part.kind === "text" ? [part.text] : [])).join("\n\n");
         return (
@@ -318,11 +365,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
                             </Tooltip>
                         )}
                         <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />
-                        {at !== null && (
-                            <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={sentTitle(at)}>
-                                {took === null ? sentLabel(at) : `${sentLabel(at)} · took ${durationLabel(took)}`}
-                            </time>
-                        )}
+                        {at !== null && <SentTime at={at} took={took} />}
                         {rate !== null && (
                             <span className="chat-message-rate" title="Writing speed, estimated from the text that arrived">
                                 {rateLabel(rate)}

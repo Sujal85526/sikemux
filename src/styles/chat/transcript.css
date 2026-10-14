@@ -69,6 +69,42 @@
     font-size: calc(13.5px * var(--chat-text-em, 1));
 }
 
+/* Another agent's message: a centred line naming the sender, then its text
+   as prose rather than in the person's bubble. */
+.chat-message.agent-letter {
+    padding-top: 17px;
+    padding-bottom: 10px;
+}
+
+.chat-letter-from {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    color: var(--ink-dim);
+    font-size: var(--text-2xs);
+    line-height: 1.4;
+}
+
+.chat-letter-from b {
+    color: var(--ink);
+    font-weight: 600;
+}
+
+.chat-letter-from > .agent-glyph {
+    flex: none;
+}
+
+.chat-letter-rule {
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+}
+
+.chat-message.agent-letter .chat-markdown + .chat-letter-from {
+    margin-top: 14px;
+}
+
 .chat-message-content {
     flex: 1 1 auto;
     min-width: 0;

@@ -1,6 +1,7 @@
 import type { ShareClientMessage, ShareServerMessage } from "../../server/protocol/generated/types";
 import { ShareCloseCode } from "../../server/protocol/generated/types";
 import { chatActions, recordOf } from "../chat/acpEvents";
+import { messageLetters } from "../chat/agentLetters";
 import { earlierMessages, withEarlier } from "../chat/earlier";
 import { chatReducer, initialChatState } from "../chat/reducer";
 import type { AcpPermissionRequest, ChatAction, ChatMessage, ChatState } from "../chat/types";
@@ -51,7 +52,8 @@ export function sharedChatTitle(snapshot: ShareSnapshot): string | null {
     if (snapshot.agent.title) return snapshot.agent.title;
     const first = snapshot.agent.messages.find((message) => message.role === "user");
     const part = first?.parts.find((candidate) => candidate.kind === "text");
-    const words = part?.kind === "text" ? part.text.split(/\s+/).filter(Boolean).join(" ") : "";
+    const text = (first && messageLetters(first)?.[0]?.text) ?? (part?.kind === "text" ? part.text : "");
+    const words = text.split(/\s+/).filter(Boolean).join(" ");
     return words ? (words.length > 80 ? `${words.slice(0, 79)}…` : words) : null;
 }
 

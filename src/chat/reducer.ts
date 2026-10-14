@@ -1,4 +1,5 @@
 import { recordOf } from "./acpEvents";
+import { isAgentLetter } from "./agentLetters";
 import { toolDiff, toolFailure } from "./diff";
 import { toolPage } from "./pages";
 import { toolOutput } from "./toolOutput";
@@ -56,6 +57,7 @@ const textOf = (value: unknown): string | undefined => (typeof value === "string
 function isMarkupOnly(text: string): boolean {
     const trimmed = text.trim();
     if (!trimmed) return true;
+    if (isAgentLetter(trimmed)) return false;
     if (isHarnessMarkup(trimmed)) return true;
     if (!trimmed.startsWith("<") || /\n\s*\n/.test(trimmed)) return false;
     return /^<([a-z][\w-]*)\b[^>]*>[\s\S]*<\/\1>$/i.test(trimmed);
