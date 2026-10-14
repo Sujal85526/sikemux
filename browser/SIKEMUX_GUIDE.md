@@ -57,20 +57,21 @@ from the list below.
 
 Pass one of these as `topic`:
 
-- `config` — writing or fixing `sikemux.json`, and what `configStatus` means
-- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, and what survives a reload
+- `config` — writing or fixing `sikemux.json`, and `configStatus`
+- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, reloads
 - `output` — `task_read` paging, `plain`, `tail`, `search`, and `events_wait`
 - `ui` — `ui_open` for files, diffs, terminals and the preview
 - `pages` — charts, tables, diagrams and mockups in your reply
 - `browser-reading` — page state, report modes, element numbers and lines, `browser_find`, frames
 - `browser-input` — clicking, typing, `browser_act`, keys, drag, upload, scrolling, dialogs
-- `browser-pages` — navigating, reloading, waiting, local files, viewport sizes, tabs
+- `browser-pages` — navigating, reloading, waiting, local files, viewports, tabs
 - `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
-- `browser-debugging` — `browser_network`, loads, `browser_console`, `app_console`, `browser_evaluate`
+- `browser-debugging` — network, console, `app_console`, `browser_evaluate`
 - `simulator` — driving an iOS simulator with `sim_*`
 - `databases` — the `db_*` tools and SQL
 - `skills` — skills every agent in Sikemux gets
 - `agents` — names, `@`, messages
+- `board` — the project's cards: adding, claiming, finishing
 - `shell` — the `sikemux tool` CLI for scripts and tasks
 
 ## config: Writing sikemux.json
@@ -810,7 +811,7 @@ you as the agent that started it: you are its lead. The answer gives its `name`
 and `agentId` at once; it gets the prompt, from you, once it is ready.
 
 Each time its turn ends, its final answer comes to you as a message from it,
-cut to about 4 KB. It says instead when the turn was stopped or failed, or the
+cut to about 4 KB, with the board card it holds, if any. It says instead when the turn was stopped or failed, or the
 agent stopped running, so you are never left waiting. Pass
 `report: false` for an agent whose answers you do not need. Do not wait in a
 loop for it: carry on, and its answer arrives as a message. Message it with
@@ -897,6 +898,55 @@ your own task. A Sikemux agent is a full agent in its own tab, which the person
 also talks to and which keeps its context after it answers. Message one to
 hand it work that is its own, to ask about work it did, or to agree on who
 does what.
+
+## board: The project's board
+
+Each project has one board of cards, the plan the person and the project's
+agents share. It outlives every agent: when you are compacted or closed, the
+plan is still there. The person sees it as columns, Open, In progress, Needs
+you and Done, one band for each lead's team.
+
+A card has a `title`, `details`, a `status` (open, in progress or done), the
+agent that owns it, the card it sits under (`parent`), the cards it waits on
+(`dependsOn`) and a `result` note. Cards are numbered within the project,
+such as `3`. The person can put a Jira or Linear ticket on the board as a card;
+you cannot attach one.
+
+### Reading the board
+
+`board_list` lists every card: yours first, then your team's (your lead, the
+agents it started and theirs), then the rest, work in progress before open
+cards and done ones last. Long details and results are cut short; pass `card`
+for one card in full, with the cards under it. `waitsOn` lists the cards it
+waits on that are not done yet, and `waitingOnThePerson` marks a card whose
+owner waits on the person's answer.
+
+### Adding cards
+
+`board_add` takes a `title`, one line, and `details`, the brief another agent
+would need to do it. `parent` puts it under a card, such as one step of a
+bigger card; `dependsOn` lists the cards that must be done first. Pass
+`claim: true` to take it yourself at once. Split a task into cards when it has
+parts others could do alongside you, not for every step of your own work.
+
+### Claiming and finishing
+
+`board_claim` takes a card that is open, nobody owns and waits on nothing
+left undone; it is yours in one step, so two agents never take the same card.
+A refusal says who has it or what it waits on. Then do the work, and finish
+with `board_update`: `status: "done"` and a `result` saying what you did and
+where, such as the files, commits or pull request. `status: "open"` gives a
+card back for someone else. You may change your own cards, cards the agents
+you started own, and cards nobody owns.
+
+When a card is done, the cards waiting on it are free to claim, and their
+owners are told. When you were started by another agent and sit idle, the
+board tells you of your team's open cards nobody has taken, once each: claim
+one and do it, or end your turn. Each time your turn ends, the report your lead
+gets names your card.
+
+When the person moves or changes a card you own, a message from the board
+says so. Notes from the board come as messages from `Board`.
 
 ## shell: The same operations from a shell
 
