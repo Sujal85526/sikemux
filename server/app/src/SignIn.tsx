@@ -40,7 +40,7 @@ const CODE_DETAIL: Record<CodePurpose, string> = {
 
 /** On a shared chat's page a finished sign-in stays there, where the chat then opens, instead of going to the account pages. */
 function staying() {
-  return isSharePath(location.pathname)
+  return isSharePath(location.pathname) || location.pathname === "/host"
     ? { navigate: () => undefined }
     : undefined;
 }

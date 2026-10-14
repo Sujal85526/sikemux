@@ -1,6 +1,7 @@
 //! What the core shares with the accounts server at api.sikemux.com. The types
-//! in [`protocol`] and [`share`] are generated from `server/protocol/schema`.
+//! in [`protocol`], [`share`] and [`host`] are generated from `server/protocol/schema`.
 
+pub mod host;
 #[cfg(unix)]
 pub mod live;
 pub mod share;
@@ -64,6 +65,7 @@ mod tests {
                 let path = example?.path();
                 let json = std::fs::read_to_string(&path)?;
                 let written = super::share::round_trip(&name, &json)
+                    .or_else(|| super::host::round_trip(&name, &json))
                     .ok_or_else(|| format!("{name} has fixtures but no Rust type"))?
                     .map_err(|error| format!("{}: {error}", path.display()))?;
                 let read: serde_json::Value = serde_json::from_str(&json)?;

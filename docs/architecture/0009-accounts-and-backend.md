@@ -83,6 +83,18 @@ not become a remote shell on someone's Mac. This decision keeps that rule.
   it. Removing a phone from elsewhere also revokes the Clerk session that registered it, and
   deleting an account deletes the user in Clerk; deleted accounts are erased 30 days later.
 
+- 2026-10-14: A host with no browser, such as a Linux box reached over SSH, signs in by code,
+  as in OAuth's device grant. `sikemux core sign-in` asks the API for a secret code and a short
+  user code, shows the user code and a link, and asks every five seconds for at most ten
+  minutes. The person opens the link on app.sikemux.com, or enters the code in the phone app,
+  checks the host's name and approves it. The host then gets the account and a fresh challenge,
+  signs it as any device registers, and is on the account. It keeps no sign-in token: its core
+  already proves itself with its key on the live connection. The API stores only a hash of the
+  secret code. Clerk offers no device grant; RFC 8628's own polling is used because an
+  unregistered host has no live connection to be told on, and it asks only while someone is
+  signing it in. The user code is eight of twenty consonants, good for ten minutes, and
+  lookups are limited per account, so guessing one is out of reach.
+
 ## Alternatives considered
 
 - **Bonjour on the local network only.** Needs no server, but finds a Mac only on the same

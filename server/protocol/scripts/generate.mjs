@@ -32,7 +32,10 @@ async function format(text, path) {
  * change to them leaves the phone's native code, and its over-the-air updates, alone. Their
  * fixtures go in fixtures-core, which the core's own contract test reads.
  */
-const CORE_ONLY = new Set(["share.json"]);
+const CORE_ONLY = new Map([
+  ["share.json", "share.rs"],
+  ["host.json", "host.rs"],
+]);
 
 const schemaDir = join(protocol, "schema");
 const documents = {};
@@ -60,14 +63,13 @@ try {
       rust(definitions, {
         include: (definition) => !CORE_ONLY.has(definition.file),
       }),
-    [join(repo, "src-tauri/crates/sikemux-core/src/accounts/share.rs")]: rust(
-      definitions,
-      {
-        include: (definition) => CORE_ONLY.has(definition.file),
-        imports: "\nuse super::protocol::*;\n",
-      },
-    ),
   };
+  for (const [file, module] of CORE_ONLY)
+    outputs[join(repo, "src-tauri/crates/sikemux-core/src/accounts", module)] =
+      rust(definitions, {
+        include: (definition) => definition.file === file,
+        imports: "\nuse super::protocol::*;\n",
+      });
 } catch (error) {
   if (!(error instanceof SchemaError)) throw error;
   console.error(`The protocol schema is not valid: ${error.message}`);

@@ -61,7 +61,7 @@ export function takeReturn(): string {
   if (isSharePath(saved)) return saved;
   const [path = "/", query = ""] = saved.split("?", 2);
   if (path === "/" && appReturn(`?${query}`)) return saved;
-  if (path === "/oauth-consent") return saved;
+  if (path === "/oauth-consent" || path === "/host") return saved;
   return path === DELETE_ACCOUNT ? path : "/";
 }
 

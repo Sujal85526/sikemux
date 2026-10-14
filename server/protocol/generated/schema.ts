@@ -261,6 +261,102 @@ export const schema = {
       additionalProperties: false,
     },
     HealthStatus: { type: "string", enum: ["ok", "unavailable"] },
+    HostSignIn: {
+      description:
+        "What the host shows and keeps while its person approves it from a device already signed in.",
+      type: "object",
+      properties: {
+        code: { $ref: "#/$defs/HostSignInCode" },
+        userCode: { $ref: "#/$defs/HostSignInUserCode" },
+        verificationUrl: {
+          description:
+            "Where the person approves this host, with the code filled in.",
+          type: "string",
+          format: "uri",
+        },
+        expiresAt: { type: "string", format: "date-time" },
+        interval: {
+          description:
+            "How many seconds the host waits between asks whether it was approved.",
+          type: "integer",
+          minimum: 1,
+        },
+      },
+      required: [
+        "code",
+        "userCode",
+        "verificationUrl",
+        "expiresAt",
+        "interval",
+      ],
+      additionalProperties: false,
+    },
+    HostSignInCode: {
+      description:
+        "The secret a host holds while it waits to be signed in: 32 random bytes in lowercase hex. Only the host ever sees it.",
+      type: "string",
+      pattern: "^[0-9a-f]{64}$",
+    },
+    HostSignInFinish: {
+      description:
+        "Registers the approved host. The signature is the host key's, over the same text a DeviceRegistration signs, with the account from HostSignInState.",
+      type: "object",
+      properties: {
+        code: { $ref: "#/$defs/HostSignInCode" },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+      },
+      required: ["code", "nonce", "signature"],
+      additionalProperties: false,
+    },
+    HostSignInPoll: {
+      type: "object",
+      properties: { code: { $ref: "#/$defs/HostSignInCode" } },
+      required: ["code"],
+      additionalProperties: false,
+    },
+    HostSignInStart: {
+      description:
+        "A host with no browser asks to be signed in. It proves its key only when it finishes, once it knows the account.",
+      type: "object",
+      properties: {
+        key: { $ref: "#/$defs/DeviceKey" },
+        name: { type: "string", minLength: 1, maxLength: 64 },
+        platform: { $ref: "#/$defs/Platform" },
+        channel: { $ref: "#/$defs/Channel" },
+      },
+      required: ["key", "name", "platform", "channel"],
+      additionalProperties: false,
+    },
+    HostSignInState: {
+      description:
+        "Pending until the person approves. Approved carries the account and a fresh challenge, which the host signs as it would a DeviceRegistration and sends back in HostSignInFinish.",
+      type: "object",
+      properties: {
+        status: { $ref: "#/$defs/HostSignInStatus" },
+        account: {
+          description:
+            "Only once approved: the Clerk user id of the account that approved.",
+          type: "string",
+          pattern: "^user_[A-Za-z0-9]+$",
+          maxLength: 64,
+        },
+        nonce: {
+          description: "Only once approved: a challenge good for two minutes.",
+          type: "string",
+          pattern: "^[0-9a-f]{64}$",
+        },
+      },
+      required: ["status"],
+      additionalProperties: false,
+    },
+    HostSignInStatus: { type: "string", enum: ["pending", "approved"] },
+    HostSignInUserCode: {
+      description:
+        "What the host shows its person, who enters or checks it on a device already signed in. Eight consonants in two groups of four.",
+      type: "string",
+      pattern: "^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$",
+    },
     JoinRequest: {
       description: "Which host on the account the phone wants to join.",
       type: "object",
@@ -651,6 +747,20 @@ export const schema = {
         minimumVersions: { $ref: "#/$defs/MinimumVersions" },
       },
       required: ["relays", "minimumVersions"],
+      additionalProperties: false,
+    },
+    PendingHost: {
+      description:
+        "The host waiting behind a user code, for the person to check before approving it.",
+      type: "object",
+      properties: {
+        key: { $ref: "#/$defs/DeviceKey" },
+        name: { type: "string" },
+        platform: { $ref: "#/$defs/Platform" },
+        channel: { $ref: "#/$defs/Channel" },
+        expiresAt: { type: "string", format: "date-time" },
+      },
+      required: ["key", "name", "platform", "channel", "expiresAt"],
       additionalProperties: false,
     },
     Platform: { type: "string", enum: ["macos", "linux", "ios", "android"] },

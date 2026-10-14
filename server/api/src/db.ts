@@ -70,6 +70,17 @@ export interface Tables {
     >;
   };
   challenges: { nonce: string; user_id: string; expires_at: Date };
+  host_sign_ins: {
+    code_hash: string;
+    user_code: string;
+    key: string;
+    name: string;
+    platform: string;
+    channel: string;
+    approved_by: string | null;
+    created_at: CreatedAt;
+    expires_at: Date;
+  };
   push_tokens: {
     device_key: string;
     platform: string;

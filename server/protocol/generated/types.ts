@@ -174,6 +174,57 @@ export const healthStatusValues: readonly HealthStatus[] = [
   "unavailable",
 ];
 
+/** What the host shows and keeps while its person approves it from a device already signed in. */
+export interface HostSignIn {
+  code: HostSignInCode;
+  userCode: HostSignInUserCode;
+  /** Where the person approves this host, with the code filled in. */
+  verificationUrl: string;
+  expiresAt: string;
+  /** How many seconds the host waits between asks whether it was approved. */
+  interval: number;
+}
+
+/** The secret a host holds while it waits to be signed in: 32 random bytes in lowercase hex. Only the host ever sees it. */
+export type HostSignInCode = string;
+
+/** Registers the approved host. The signature is the host key's, over the same text a DeviceRegistration signs, with the account from HostSignInState. */
+export interface HostSignInFinish {
+  code: HostSignInCode;
+  nonce: string;
+  signature: string;
+}
+
+export interface HostSignInPoll {
+  code: HostSignInCode;
+}
+
+/** A host with no browser asks to be signed in. It proves its key only when it finishes, once it knows the account. */
+export interface HostSignInStart {
+  key: DeviceKey;
+  name: string;
+  platform: Platform;
+  channel: Channel;
+}
+
+/** Pending until the person approves. Approved carries the account and a fresh challenge, which the host signs as it would a DeviceRegistration and sends back in HostSignInFinish. */
+export interface HostSignInState {
+  status: HostSignInStatus;
+  /** Only once approved: the Clerk user id of the account that approved. */
+  account?: string;
+  /** Only once approved: a challenge good for two minutes. */
+  nonce?: string;
+}
+
+export type HostSignInStatus = "pending" | "approved";
+export const hostSignInStatusValues: readonly HostSignInStatus[] = [
+  "pending",
+  "approved",
+];
+
+/** What the host shows its person, who enters or checks it on a device already signed in. Eight consonants in two groups of four. */
+export type HostSignInUserCode = string;
+
 /** Which host on the account the phone wants to join. */
 export interface JoinRequest {
   host: DeviceKey;
@@ -358,6 +409,15 @@ export interface Network {
   /** The relays to use, best first. A host connects to every one; a phone dials a host through the relay the host says it is on. */
   relays: Relay[];
   minimumVersions: MinimumVersions;
+}
+
+/** The host waiting behind a user code, for the person to check before approving it. */
+export interface PendingHost {
+  key: DeviceKey;
+  name: string;
+  platform: Platform;
+  channel: Channel;
+  expiresAt: string;
 }
 
 export type Platform = "macos" | "linux" | "ios" | "android";
@@ -698,6 +758,14 @@ export interface Definitions {
   EventId: EventId;
   Health: Health;
   HealthStatus: HealthStatus;
+  HostSignIn: HostSignIn;
+  HostSignInCode: HostSignInCode;
+  HostSignInFinish: HostSignInFinish;
+  HostSignInPoll: HostSignInPoll;
+  HostSignInStart: HostSignInStart;
+  HostSignInState: HostSignInState;
+  HostSignInStatus: HostSignInStatus;
+  HostSignInUserCode: HostSignInUserCode;
   JoinRequest: JoinRequest;
   JoinTicket: JoinTicket;
   LiveAck: LiveAck;
@@ -721,6 +789,7 @@ export interface Definitions {
   LiveServerMessage: LiveServerMessage;
   MinimumVersions: MinimumVersions;
   Network: Network;
+  PendingHost: PendingHost;
   Platform: Platform;
   PushApp: PushApp;
   PushKind: PushKind;

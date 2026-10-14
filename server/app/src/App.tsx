@@ -10,6 +10,7 @@ import {
   DeleteAccountIntro,
 } from "./DeleteAccount.tsx";
 import { Devices, useDevices } from "./Devices.tsx";
+import { HOST, HostApproval } from "./HostApproval.tsx";
 import { Logo } from "./icons.tsx";
 import { useLive } from "./live.ts";
 import { RestoreAccount, useAccountState } from "./RestoreAccount.tsx";
@@ -61,9 +62,11 @@ export function App() {
           ? "Delete your account · Sikemux"
           : path === CONSENT
             ? "Sign in on your computer · Sikemux"
-            : signedIn
-              ? "Your devices · Sikemux"
-              : "Sign in · Sikemux";
+            : path === HOST
+              ? "Add a host · Sikemux"
+              : signedIn
+                ? "Your devices · Sikemux"
+                : "Sign in · Sikemux";
   }, [path, signedIn, showDeleted]);
 
   useEffect(() => {
@@ -118,6 +121,10 @@ export function App() {
         ) : path === CONSENT ? (
           <main className="center">
             {signedIn ? <Consent /> : <SignIn ready={isLoaded} />}
+          </main>
+        ) : path === HOST ? (
+          <main className="center">
+            {signedIn ? <HostApproval /> : <SignIn ready={isLoaded} />}
           </main>
         ) : signedIn ? (
           <Account
