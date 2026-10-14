@@ -1,12 +1,7 @@
+import { AgentMark } from "../agents/AgentMark";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
-import { isAgentType } from "../agents/catalog";
 import { agentDisplay } from "../state/agentStatus";
 import { useStore } from "../state/store";
-import { AgentIcon } from "../ui/Icons";
-
-export function AgentMark({ cli, size = 14 }: { cli: string | null | undefined; size?: number }) {
-    return cli && isAgentType(cli) ? <AgentIcon type={cli} size={size} className={`agent-glyph ${cli}`} /> : null;
-}
 
 /** An agent as a card names it: its mark, its name and what it is doing now. */
 export function Owner({ id, name, cli }: { id: string; name: string | null; cli: string | null }) {

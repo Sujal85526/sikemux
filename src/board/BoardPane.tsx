@@ -20,7 +20,8 @@ import { useCardDrag } from "../ui/kanbanDrag";
 import { Switch } from "../ui/Controls";
 import { AutoPanel } from "./AutoPanel";
 import { CardPanel } from "./CardPanel";
-import { AgentMark, Owner } from "./cardParts";
+import { AgentMark } from "../agents/AgentMark";
+import { Owner } from "./cardParts";
 import "../styles/board.css";
 
 const COLUMNS: readonly [BoardColumn, string][] = [
