@@ -14,9 +14,10 @@
 //!
 //! The account is `FAKE_ACP_ACCOUNT`. An account named in `FAKE_ACP_LIMITED`
 //! has run out of usage, and every turn on it fails the way Claude's adapter
-//! reports that. When `FAKE_ACP_SIGN_IN` names a file, the process reads who
-//! is signed in from it once, as it starts, and refuses every prompt while
-//! nobody was. With `FAKE_ACP_STRICT_LOAD` set, loading a session that never
+//! reports that, until the Unix time in milliseconds `FAKE_ACP_RESETS_AT`
+//! names, which the failure gives when set. When `FAKE_ACP_SIGN_IN` names a
+//! file, the process reads who is signed in from it once, as it starts, and
+//! refuses every prompt while nobody was. With `FAKE_ACP_STRICT_LOAD` set, loading a session that never
 //! saved a turn fails the way Claude's adapter does. While the file
 //! `FAKE_ACP_START_GATE` names exists, the agent does not finish starting.
 
@@ -329,6 +330,7 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
                         "severity": "error",
                         "title": format!("{} hit its usage limit", agent.account),
                         "actions": [],
+                        "resetsAt": resets_at(),
                     } } } },
                 }),
             );
@@ -363,10 +365,19 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
 }
 
 fn limited(account: &str) -> bool {
-    std::env::var("FAKE_ACP_LIMITED")
-        .unwrap_or_default()
-        .split(',')
-        .any(|limited| limited == account)
+    let reset = resets_at().is_some_and(|at| {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+        now.is_ok_and(|now| now.as_millis() >= u128::from(at))
+    });
+    !reset
+        && std::env::var("FAKE_ACP_LIMITED")
+            .unwrap_or_default()
+            .split(',')
+            .any(|limited| limited == account)
+}
+
+fn resets_at() -> Option<u64> {
+    std::env::var("FAKE_ACP_RESETS_AT").ok()?.parse().ok()
 }
 
 fn main() {

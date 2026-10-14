@@ -227,6 +227,7 @@ fn failure_of(message: &Value) -> Option<Failure> {
             kind: FailureKind::Limit,
             title: title("The Claude account has no available quota."),
             details: None,
+            resets_at: None,
         });
     }
     let error = text(message, "error")?;
@@ -239,6 +240,7 @@ fn failure_of(message: &Value) -> Option<Failure> {
         kind,
         title: title("The model provider reported an error."),
         details: None,
+        resets_at: None,
     })
 }
 
@@ -947,6 +949,7 @@ impl Reader {
                     kind,
                     title: said,
                     details: None,
+                    resets_at: None,
                 },
                 response: Some(json!({ "stopReason": "end_turn" })),
             }

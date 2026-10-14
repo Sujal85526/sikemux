@@ -191,8 +191,8 @@ pub fn cli(
     command
 }
 
-/// The core's calls about accounts, all of them the app's own.
-pub const METHODS: [&str; 8] = [
+/// The core's calls about accounts and their limits, all of them the app's own.
+pub const METHODS: [&str; 9] = [
     "agentAccounts",
     "setAgentAccounts",
     "addAgentAccount",
@@ -201,4 +201,5 @@ pub const METHODS: [&str; 8] = [
     "agentUsage",
     "forgetAgentStatus",
     "markAgentSignedOut",
+    "cancelResume",
 ];

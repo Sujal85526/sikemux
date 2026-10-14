@@ -121,6 +121,8 @@ export interface ChatFailure {
     kind: "signIn" | "limit" | "other";
     /** The profile id of the account it failed on. */
     account: string | null;
+    /** When the core sends the stopped prompt again, once a usage limit resets, in Unix milliseconds. */
+    resumesAt?: number;
 }
 
 export type ChatPart =

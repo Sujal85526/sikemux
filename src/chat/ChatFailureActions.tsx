@@ -1,4 +1,5 @@
 import { acpApi } from "../api/acp";
+import { agentApi } from "../api/agents";
 import { AccountSignIn } from "../agents/AccountSignIn";
 import { accountsOf, acpAccount, isAccountProvider } from "../agents/accounts";
 import { useResource } from "../state/resources";
@@ -24,7 +25,19 @@ export function ChatFailureActions({ agent, profile, failure }: { agent: Agent; 
             </span>
         );
     }
-    if (failure.kind === "limit") return <ContinueElsewhere agent={agent} profile={profile} />;
+    if (failure.kind === "limit")
+        return (
+            <>
+                {failure.resumesAt !== undefined && failure.resumesAt > Date.now() && (
+                    <span className="chat-error-actions">
+                        <button type="button" onClick={() => void agentApi.cancelResume(agent.id).catch(reportError("Cancel the resume"))}>
+                            Don't resume
+                        </button>
+                    </span>
+                )}
+                <ContinueElsewhere agent={agent} profile={profile} />
+            </>
+        );
     return null;
 }
 

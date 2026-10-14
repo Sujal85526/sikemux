@@ -30,6 +30,12 @@ struct Forget {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Resuming {
+    agent_id: String,
+}
+
+#[derive(Deserialize)]
 struct Adding {
     provider: String,
     name: String,
@@ -114,6 +120,11 @@ pub(crate) async fn call(core: &Arc<Core>, method: &str, params: Value) -> CoreR
                 .note_status(provider, config_path, &signed_out);
             status::remember(provider, config_path, signed_out);
             core.publish_device_view();
+            answer(())
+        }
+        "cancelResume" => {
+            let resuming: Resuming = parse(params)?;
+            super::chat::reset::cancel_by_person(core, &resuming.agent_id);
             answer(())
         }
         _ => Err(format!("this host does not know {method}").into()),

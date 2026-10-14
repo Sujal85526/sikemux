@@ -40,6 +40,65 @@ pub struct Usage {
     unavailable_reason: Option<String>,
 }
 
+impl UsageResetAt {
+    fn unix_ms(&self) -> Option<u64> {
+        match self {
+            Self::Unix(seconds) => seconds.checked_mul(1000),
+            Self::Iso(text) => rfc3339_ms(text),
+        }
+    }
+}
+
+impl Usage {
+    /// When the account can be used again, in Unix milliseconds: once each
+    /// window it has used up resets. `None` when none reads used up, or one
+    /// that does never says when it resets.
+    pub fn resets_at(&self) -> Option<u64> {
+        let full = self
+            .windows
+            .iter()
+            .filter(|window| window.used_percent >= 100.0);
+        full.map(|window| window.resets_at.as_ref()?.unix_ms())
+            .collect::<Option<Vec<u64>>>()?
+            .into_iter()
+            .max()
+    }
+}
+
+/// `text`, a time such as `2026-08-13T12:00:00.5+02:00`, in Unix milliseconds.
+fn rfc3339_ms(text: &str) -> Option<u64> {
+    let (date, time) = text.split_once(['T', 't', ' '])?;
+    let mut date = date.splitn(3, '-').map(str::parse::<i64>);
+    let (year, month, day) = (date.next()?.ok()?, date.next()?.ok()?, date.next()?.ok()?);
+    let zone = time.find(['Z', 'z', '+', '-'])?;
+    let (clock, zone) = time.split_at(zone);
+    let mut clock = clock.splitn(3, ':');
+    let hours: i64 = clock.next()?.parse().ok()?;
+    let minutes: i64 = clock.next()?.parse().ok()?;
+    let seconds: f64 = clock.next()?.parse().ok()?;
+    let offset = match zone.split_at(1) {
+        ("Z" | "z", "") => 0,
+        (sign, offset) => {
+            let (hours, minutes) = offset.split_once(':')?;
+            let offset = hours.parse::<i64>().ok()? * 60 + minutes.parse::<i64>().ok()?;
+            if sign == "-" {
+                -offset
+            } else {
+                offset
+            }
+        }
+    };
+    // Days since 1970-01-01 in the proleptic Gregorian calendar.
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let of_era = year - era * 400;
+    let of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
+    let days = era * 146_097 + of_era * 365 + of_era / 4 - of_era / 100 + of_year - 719_468;
+    let whole = ((days * 24 + hours) * 60 + minutes - offset) * 60;
+    let ms = whole as f64 * 1000.0 + seconds * 1000.0;
+    (ms >= 0.0).then_some(ms as u64)
+}
+
 /// Every lookup boots the provider's CLI, so a rail that polls gets the answer
 /// the last boot gave until it is old enough to be worth another.
 const USAGE_TTL: Duration = Duration::from_secs(120);

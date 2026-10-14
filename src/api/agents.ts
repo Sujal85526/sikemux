@@ -159,6 +159,8 @@ export const agentApi = {
     account: (agent: AgentType, configPath?: string): Promise<AgentAccountStatus> =>
         accountCall("agentAccountStatus", { provider: agent, configPath }),
     addAccount: (agent: AgentType, name: string): Promise<string> => accountCall("addAgentAccount", { provider: agent, name }),
+    /** Stops a chat a usage limit stopped from sending its prompt again once the limit resets. */
+    cancelResume: (agentId: string): Promise<void> => accountCall("cancelResume", { agentId }),
     signIn: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
         invoke<void>("agent_account_sign_in", { agent, executablePath, configPath }),
     signInCode: (agent: AgentType, configPath: string | undefined, code: string): Promise<void> =>

@@ -6,6 +6,7 @@ pub(crate) mod feed;
 mod history;
 mod native;
 mod rebind;
+pub(crate) mod reset;
 mod states;
 
 use std::collections::HashMap;
@@ -99,6 +100,10 @@ pub(crate) enum ChatCommand {
         reply: oneshot::Sender<Result<(), String>>,
     },
     Cancel,
+    /// The prompt a usage limit stopped, sent again once the limit reset.
+    Resume {
+        prompt: rebind::Replay,
+    },
     /// Lets go of the agent, still running, for a core that replaces this one.
     HandOver {
         reply: oneshot::Sender<Result<native::Handed, String>>,
@@ -907,12 +912,14 @@ pub(crate) struct Chats {
     next_generation: AtomicU64,
     /// Where each chat keeps everything it said, for phones to page back.
     history: Option<PathBuf>,
+    pub(crate) resets: reset::Resets,
 }
 
 impl Chats {
-    pub(crate) fn new(history: Option<PathBuf>) -> Self {
+    pub(crate) fn new(data_dir: Option<&std::path::Path>) -> Self {
         Self {
-            history,
+            history: data_dir.map(|dir| dir.join("chat-history")),
+            resets: reset::Resets::new(data_dir),
             ..Self::default()
         }
     }

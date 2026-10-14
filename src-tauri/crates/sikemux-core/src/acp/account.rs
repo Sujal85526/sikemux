@@ -117,6 +117,9 @@ pub struct Failure {
     pub kind: FailureKind,
     pub title: String,
     pub details: Option<String>,
+    /// When the account can be used again, in Unix milliseconds, when the
+    /// agent says.
+    pub resets_at: Option<u64>,
 }
 
 impl Failure {
@@ -125,6 +128,7 @@ impl Failure {
             kind: FailureKind::SignIn,
             title: title.into(),
             details: None,
+            resets_at: None,
         }
     }
 
@@ -186,6 +190,7 @@ pub fn failure(meta: &Value) -> Option<Failure> {
         kind,
         title,
         details,
+        resets_at: failure.get("resetsAt").and_then(Value::as_u64),
     })
 }
 
@@ -298,6 +303,7 @@ mod tests {
             kind: FailureKind::Limit,
             title: "Limit reached".into(),
             details: Some("Resets at 3pm".into()),
+            resets_at: None,
         };
         let payload = failure.payload(Some("work"));
         assert_eq!(payload["message"], "Limit reached\nResets at 3pm");

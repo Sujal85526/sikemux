@@ -16,6 +16,7 @@ import type {
     AgentNotice,
     AcpToolCall,
     ChatAction,
+    ChatFailure,
     ChatMessage,
     ChatPart,
     ChatState,
@@ -533,9 +534,17 @@ function agentNotice(state: ChatState, update: Record<string, unknown>): ChatSta
     const notice: AgentNotice = { severity, title, ...(description ? { description } : {}) };
     return {
         ...state,
+        failure: resumeOf(state.failure, update),
         ...appendPart(state, { id: `agent-notice-${state.revision}`, kind: "agent_notice", notice }),
         revision: state.revision + 1,
     };
+}
+
+/* A chat a usage limit stopped says when it resumes, or that it no longer will. */
+function resumeOf(failure: ChatFailure | null, update: Record<string, unknown>): ChatFailure | null {
+    if (!("resumesAt" in update) || failure?.kind !== "limit") return failure;
+    const { resumesAt: _, ...rest } = failure;
+    return typeof update.resumesAt === "number" ? { ...rest, resumesAt: update.resumesAt } : rest;
 }
 
 /* The person took the chat back to before one of their messages: it goes, and

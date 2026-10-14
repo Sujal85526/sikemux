@@ -342,7 +342,7 @@ impl Core {
             launching: Gauge::default(),
             listening: OnceLock::new(),
             tools: Mutex::new(None),
-            chats: chat::Chats::new(data_dir.map(|dir| dir.join("chat-history"))),
+            chats: chat::Chats::new(data_dir),
             remote: remote::Remote::default(),
             shares: share::Shares::default(),
             workspaces: workspace::Workspaces::new(data_dir),
@@ -973,6 +973,7 @@ pub(crate) async fn run_core(
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
     remote::start(&core, &config).await;
+    core.chats.resets.arm_saved(&core);
     if config.data_dir.is_some() {
         tokio::spawn(workspace::refresh_launchers(core.clone()));
     }

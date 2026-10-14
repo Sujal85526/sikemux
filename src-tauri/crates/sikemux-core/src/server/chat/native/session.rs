@@ -19,7 +19,7 @@ use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, switches_at_limit, Carried, Outcome,
     Rebind, Replay,
 };
-use super::super::{stall_later, Asked, Chat, ChatCommand, Delivery, Respond};
+use super::super::{reset, stall_later, Asked, Chat, ChatCommand, Delivery, Respond};
 use super::git_guard;
 use super::process::{AgentRecord, Lines, Process, Released, Writer};
 
@@ -478,7 +478,7 @@ pub(crate) async fn run<B: Backend>(
             for update in carried.into_iter().chain(notice) {
                 sink.update(&state.session_id, update);
             }
-            (backend, state, replay)
+            (backend, state, replay.or_else(|| reset::take_due(&chat)))
         }
         Begin::Adopt(adopted) => {
             let Adopted {
@@ -606,6 +606,11 @@ pub(crate) async fn run<B: Backend>(
                 }
                 chat.emit(ChatEventKind::Error, failure);
                 state.failed_prompt = state.last_prompt.take();
+                if let (FailureKind::Limit, Some(prompt)) =
+                    (failed.failure.kind, state.failed_prompt.clone())
+                {
+                    reset::schedule(&chat, &launch, prompt, failed.failure.resets_at);
+                }
                 continue;
             }
             Woke::Stalled(stalled) => {
@@ -685,9 +690,7 @@ pub(crate) async fn run<B: Backend>(
                     continue;
                 }
                 letter_turn = by_letter;
-                state.exhausted.clear();
-                state.signed_in_again = false;
-                state.failed_prompt = None;
+                state.fresh_turn(&chat);
                 let replay = Replay {
                     announce: Some(from),
                     message_id,
@@ -757,9 +760,7 @@ pub(crate) async fn run<B: Backend>(
                     );
                 }
                 let _ = reply.send(Ok(()));
-                state.exhausted.clear();
-                state.signed_in_again = false;
-                state.failed_prompt = None;
+                state.fresh_turn(&chat);
                 let replay = Replay {
                     announce: None,
                     message_id: Some(message_id),
@@ -799,6 +800,7 @@ pub(crate) async fn run<B: Backend>(
                     .as_ref()
                     .is_none_or(|current| current.id != account.id);
                 let notice = moves.then(|| switch_notice(&launch, &account, "chosen"));
+                reset::cancel(&chat);
                 let moved = on_account(&provider, &launch, &account);
                 if let Some(launch) = chat.relaunch(&moved) {
                     let replay = state.failed_prompt.take();
@@ -874,6 +876,16 @@ pub(crate) async fn run<B: Backend>(
                     chat.emit(ChatEventKind::Error, error_message(error));
                 }
             }
+            ChatCommand::Resume { prompt } => {
+                if chat.running.swap(true, Ordering::AcqRel) {
+                    continue;
+                }
+                letter_turn = false;
+                state.fresh_turn(&chat);
+                state.turn += 1;
+                begin(&chat, &mut backend, state.turn, Prompt::from(&prompt)).await;
+                state.last_prompt = Some(prompt);
+            }
             ChatCommand::Cancel => {
                 if chat.running.load(Ordering::Acquire) {
                     state.stopping = Some(state.turn);
@@ -901,6 +913,14 @@ pub(crate) async fn run<B: Backend>(
 }
 
 impl SessionState {
+    /// Forgets how the last turn failed, as a new one starts in its place.
+    fn fresh_turn(&mut self, chat: &Chat) {
+        self.exhausted.clear();
+        self.signed_in_again = false;
+        self.failed_prompt = None;
+        reset::cancel(chat);
+    }
+
     fn start(&self) -> ChatStart {
         ChatStart {
             session_id: self.session_id.clone(),
