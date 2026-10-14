@@ -745,8 +745,14 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
         .expect("the phone connects");
     let workspace = client.workspace().await.expect("workspace");
     assert_eq!(workspace.projects[0].name, "tmp");
-    let fake = workspace.launchers.iter().find(|launcher| launcher.id == "opencode:fake");
-    assert_eq!(fake.map(|launcher| launcher.label.as_str()), Some("OpenCode"));
+    let fake = workspace
+        .launchers
+        .iter()
+        .find(|launcher| launcher.id == "opencode:fake");
+    assert_eq!(
+        fake.map(|launcher| launcher.label.as_str()),
+        Some("OpenCode")
+    );
     assert!(!format!("{workspace:?}").contains(FAKE_AGENT));
 
     let (agent_id, start) = client
@@ -811,7 +817,10 @@ async fn a_watching_device_cannot_start_a_chat() {
     assert!(refusal(refused).contains("watch"));
     assert!(refusal(
         client
-            .call("setWorkspace", json!({ "projects": [], "permissionMode": "bypass" }))
+            .call(
+                "setWorkspace",
+                json!({ "projects": [], "permissionMode": "bypass" })
+            )
             .await
     )
     .contains("only Sikemux on this host"));
