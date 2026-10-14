@@ -94,7 +94,7 @@
       "properties": {
         "owner": { "type": "string", "description": "The workspace." },
         "name": { "type": "string", "description": "The repository slug." },
-        "runId": { "type": "string", "description": "The {uuid} from bitbucket_pipelines." }
+        "runId": { "type": "string", "description": "The {uuid} or build number." }
       },
       "required": ["owner", "name", "runId"]
     },
@@ -106,7 +106,8 @@
       "properties": {
         "owner": { "type": "string", "description": "The workspace." },
         "name": { "type": "string", "description": "The repository slug." },
-        "jobId": { "type": "string", "description": "A step's id from bitbucket_pipeline." },
+        "jobId": { "type": "string", "description": "A step's id from bitbucket_pipeline, or a step {uuid} with runId." },
+        "runId": { "type": "string", "description": "A step {uuid}'s pipeline." },
         "tail": { "type": "integer", "description": "Lines from the end, after grep. Default 200, at most 2000." },
         "grep": { "type": "string", "description": "Only lines containing this, ignoring case." }
       },
