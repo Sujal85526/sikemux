@@ -9,6 +9,7 @@ use tokio::sync::Semaphore;
 use crate::join::{self, JoinHello, JoinReply, Refusal, APPROVAL_TIMEOUT};
 use crate::protocol::PendingDevice;
 
+use super::notify::Signal;
 use super::remote;
 use super::Core;
 
@@ -86,6 +87,7 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
         .remote
         .ask(request.clone(), hello.ticket.account.clone());
     remote::announce(&core);
+    core.notify.send(Signal::Pairing(request.clone()));
     let access = tokio::select! {
         answer = tokio::time::timeout(APPROVAL_TIMEOUT, answered) => {
             answer.ok().and_then(Result::ok).flatten()
@@ -94,6 +96,7 @@ pub(super) async fn serve(core: Arc<Core>, connection: Connection) {
     };
     core.remote.forget_pending(&request.id);
     remote::announce(&core);
+    core.notify.send(Signal::PairingSettled { id: request.id });
     let reply = match access {
         Some(access) => JoinReply::Allowed { access },
         None => JoinReply::Denied,

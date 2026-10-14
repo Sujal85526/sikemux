@@ -1,7 +1,8 @@
 //! Tells paired phones, through the account's push service, when an agent
-//! needs the person, finishes a long turn or runs into a problem. Each phone
-//! chose what it hears about and gave this host a key to seal it with (see
-//! [`crate::push`]); the host decides everything else, since it knows most.
+//! needs the person, finishes a long turn, runs into a problem, or when a
+//! device asks to pair. Each phone chose what it hears about and gave this
+//! host a key to seal it with (see [`crate::push`]); the host decides
+//! everything else, since it knows most.
 
 mod presence;
 #[cfg(test)]
@@ -16,11 +17,12 @@ use tokio::sync::mpsc;
 
 use crate::accounts::live::Push;
 use crate::accounts::protocol::PushKind;
-use crate::protocol::{Attention, NotifyPrefs, NotifyWhen};
+use crate::protocol::{Attention, NotifyPrefs, NotifyWhen, PendingDevice};
 use crate::push::{self, Notification, NotificationCategory, NotificationKind, MAX_PLAINTEXT};
 
 pub(crate) use presence::{Presence, SystemPresence};
 
+use super::access::{self, Needs, Peer};
 use super::remote::{unix_ms, NotifyTarget};
 use super::Core;
 
@@ -76,6 +78,11 @@ pub(crate) enum Signal {
     QuestionCleared {
         id: String,
         agent_id: String,
+    },
+    /// A device waits for someone to let it pair.
+    Pairing(PendingDevice),
+    PairingSettled {
+        id: String,
     },
 }
 
@@ -319,6 +326,8 @@ fn apply(core: &Core, signal: Signal, now: u64) {
                 .remove(&(agent_id.clone(), id.clone()));
             clear_all(core, &agent_id, &question_card(&agent_id, &id), None, now);
         }
+        Signal::Pairing(device) => alert_all(core, &pairing(core, &device), now),
+        Signal::PairingSettled { id } => clear_all(core, "", &pairing_card(&id), None, now),
         Signal::TurnStarted { agent_id } => {
             core.notify.lock().turns.insert(agent_id, now);
         }
@@ -356,6 +365,10 @@ fn question_card(agent_id: &str, id: &str) -> String {
 
 fn input_card(agent_id: &str) -> String {
     format!("input|{agent_id}")
+}
+
+fn pairing_card(id: &str) -> String {
+    format!("pairing|{id}")
 }
 
 /// A notification before it is addressed to a phone.
@@ -611,6 +624,33 @@ fn problem(core: &Core, agent_id: &str, message: &str, now: u64) -> Option<Draft
     Some(draft)
 }
 
+fn pairing(core: &Core, device: &PendingDevice) -> Draft {
+    let name = if device.name.is_empty() {
+        "A phone"
+    } else {
+        &device.name
+    };
+    Draft {
+        kind: NotificationKind::Pairing,
+        card: pairing_card(&device.id),
+        agent_id: String::new(),
+        chat: false,
+        provider: String::new(),
+        chat_title: None,
+        title: clip(&format!("{name} wants to connect"), MAX_TITLE_CHARS),
+        body: clip(
+            &format!("To {}, from your Sikemux account", core.notify.host_name()),
+            MAX_BODY_CHARS,
+        ),
+        detail: None,
+        request_id: None,
+        allow_option_id: None,
+        reject_option_id: None,
+        at: unix_ms(),
+        expires_at: device.expires_at,
+    }
+}
+
 fn wants(
     prefs: &NotifyPrefs,
     kind: NotificationKind,
@@ -619,7 +659,9 @@ fn wants(
     now: u64,
 ) -> bool {
     let kind_on = match kind {
-        NotificationKind::Permission | NotificationKind::Input => prefs.needs_you,
+        NotificationKind::Permission | NotificationKind::Input | NotificationKind::Pairing => {
+            prefs.needs_you
+        }
         NotificationKind::Finished => prefs.finished,
         NotificationKind::Problem => prefs.problems,
         NotificationKind::Clear => true,
@@ -634,6 +676,14 @@ fn wants(
         .iter()
         .any(|mute| mute.agent_id == agent_id && mute.until.is_none_or(|until| until > now));
     kind_on && when && !muted
+}
+
+/// Only phones that may let a device in hear that one asks.
+fn answers_pairing(core: &Core, phone: &str) -> bool {
+    let peer = Peer::Device {
+        id: phone.to_owned(),
+    };
+    access::permit(&peer, core.remote.standing_of(phone), Needs::Owner).is_ok()
 }
 
 /// The phone has this agent open on screen, so it already sees it.
@@ -665,14 +715,16 @@ fn address(draft: &Draft, host: &str, host_name: &str, target: &NotifyTarget) ->
         {
             Some(NotificationCategory::Permission)
         }
-        NotificationKind::Permission | NotificationKind::Input => {
+        NotificationKind::Permission | NotificationKind::Input | NotificationKind::Pairing => {
             Some(NotificationCategory::NeedsYou)
         }
         NotificationKind::Finished => Some(NotificationCategory::Finished),
         NotificationKind::Problem => Some(NotificationCategory::Problem),
         NotificationKind::Clear => None,
     };
-    let url = if draft.chat {
+    let url = if draft.kind == NotificationKind::Pairing {
+        format!("sikemux://device/{host}/pairing")
+    } else if draft.chat {
         format!("sikemux://device/{host}/chat/{}", draft.agent_id)
     } else {
         format!("sikemux://device/{host}")
@@ -722,11 +774,14 @@ fn alert_all(core: &Core, draft: &Draft, now: u64) {
         if !wants(&target.prefs, draft.kind, &draft.agent_id, away, now) {
             continue;
         }
+        if draft.kind == NotificationKind::Pairing && !answers_pairing(core, &phone) {
+            continue;
+        }
         {
             let state = core.notify.lock();
             let once = matches!(
                 draft.kind,
-                NotificationKind::Permission | NotificationKind::Input
+                NotificationKind::Permission | NotificationKind::Input | NotificationKind::Pairing
             );
             if once && state.alerted.contains(&card) {
                 continue;
