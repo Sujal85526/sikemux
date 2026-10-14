@@ -10,6 +10,7 @@ import { RundeckProjectTree } from "./RundeckProjectTree";
 import { RundeckDeploy } from "./RundeckDeploy";
 import { RundeckExecution } from "./RundeckExecution";
 import { RundeckService } from "./RundeckService";
+import { RundeckActivity } from "./RundeckActivity";
 import { hostFromUrl, RundeckHost } from "./parts";
 import "../rundeck.css";
 
@@ -46,6 +47,7 @@ export function RundeckPane({ paneId, active }: Props) {
             return <RundeckStatusError message={status.data.message ?? "Rundeck connection failed"} onRetry={() => status.refresh()} />;
         }
         if (top.kind === "matrix") return <RundeckJobs paneId={paneId} active={active} />;
+        if (top.kind === "activity") return <RundeckActivity key={top.project} paneId={paneId} project={top.project} active={active} />;
         if (top.kind === "service") return <RundeckService key={top.jobId} paneId={paneId} level={top} active={active} />;
         if (top.kind === "deploy") return <RundeckDeploy key={top.jobId} paneId={paneId} level={top} active={active} />;
         if (top.kind === "execution") return <RundeckExecution key={top.executionId} paneId={paneId} level={top} active={active} />;

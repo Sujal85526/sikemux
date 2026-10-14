@@ -45,6 +45,7 @@ function locationCrumbs(paneId: string, project: string, group: string | null): 
 
 export function levelCrumbs(paneId: string, level: RundeckLevel, project: string, group: string | null, runWord = "deploy"): Crumb[] {
     if (level.kind === "matrix" || level.kind === "service") return locationCrumbs(paneId, project, group);
+    if (level.kind === "activity") return [...locationCrumbs(paneId, level.project, null), { key: "activity", label: "Activity" }];
     const job: Crumb = { key: `job-${level.jobId}`, label: level.name, onClick: () => showJob(paneId, level) };
     const base = [...locationCrumbs(paneId, level.project, level.group), job];
     if (level.kind === "deploy") return [...base, { key: "run", label: runWord }];

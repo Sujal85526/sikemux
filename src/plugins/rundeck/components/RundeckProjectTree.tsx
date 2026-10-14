@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import * as cmd from "../state";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { rndJobIndexR, rndMatrixR, rndProjectsR } from "../resources";
-import { IconChevron, IconFolder, IconPanelLeft, IconSearch, Tooltip } from "../../../plugin-api/ui";
+import { IconActivity, IconChevron, IconFolder, IconPanelLeft, IconSearch, Tooltip } from "../../../plugin-api/ui";
 import type { RundeckJob } from "../api";
 import { groupSegments, isLiveStatus } from "../shape";
 import { ancestorPaths, buildGroupTree, type GroupNode } from "./groupTree";
@@ -14,9 +14,9 @@ export function RundeckProjectTree({ paneId, active }: { paneId: string; active:
     const settingsGroup = cmd.rundeckSettings.useSelect((s) => s.activeGroup);
     const { stack } = cmd.useRundeckView(paneId);
     const top = stack[stack.length - 1];
-    const onJob = top && top.kind !== "matrix";
-    const activeProject = onJob ? top.project : settingsProject;
-    const activeGroup = onJob ? top.group : settingsGroup;
+    const onActivity = top?.kind === "activity";
+    const activeProject = top && top.kind !== "matrix" ? top.project : settingsProject;
+    const activeGroup = top && top.kind !== "matrix" && top.kind !== "activity" ? top.group : onActivity ? null : settingsGroup;
     const openState = cmd.useRundeck((s) => s.treeOpen[paneId]);
     const matrix = useResourceEnabled(active && !!activeProject, rndMatrixR, activeProject);
 
@@ -64,7 +64,7 @@ export function RundeckProjectTree({ paneId, active }: { paneId: string; active:
             count: entry ? tree.total : null,
             expandable: tree.children.length > 0,
             open,
-            selected: project === activeProject && activeGroup === null,
+            selected: !onActivity && project === activeProject && activeGroup === null,
             live: project === activeProject && livePaths.has(""),
             error: entry?.error ?? null,
         });
@@ -96,6 +96,30 @@ export function RundeckProjectTree({ paneId, active }: { paneId: string; active:
                     </button>
                 </Tooltip>
             </div>
+            {activeProject && (
+                <div
+                    className="rnd-tree-row"
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={onActivity}
+                    title={`Every run in ${activeProject}`}
+                    onClick={() => cmd.openRundeckActivity(paneId, activeProject)}
+                    onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            cmd.openRundeckActivity(paneId, activeProject);
+                        }
+                    }}>
+                    <span className={`rnd-tree-item${onActivity ? " on" : ""}`}>
+                        <span className="rnd-tree-twist" />
+                        <span className="rnd-tree-icon">
+                            <IconActivity size={14} />
+                        </span>
+                        <span className="rnd-tree-name">Activity</span>
+                        {livePaths.has("") && <span className="rnd-live-dot" title="Something is running" />}
+                    </span>
+                </div>
+            )}
             <div className="rnd-tree-rows" role="tree">
                 {rows.map((row) => (
                     <TreeRow key={`${row.project}\u0000${row.path ?? ""}`} {...row} />

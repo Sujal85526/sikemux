@@ -345,3 +345,10 @@
         background: none;
     }
 }
+
+.rnd-history-more {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-3);
+    border-top: 1px solid var(--rnd-rule);
+}

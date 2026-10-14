@@ -15,6 +15,7 @@ export interface JobRef {
 
 export type RundeckLevel =
     | { kind: "matrix" }
+    | { kind: "activity"; project: string }
     | ({ kind: "service" } & JobRef)
     | ({ kind: "deploy"; branch?: string; options?: Record<string, string> } & JobRef)
     | ({ kind: "execution"; executionId: number } & JobRef);
@@ -168,6 +169,12 @@ export function rundeckHome(paneId: string): void {
 export function selectRundeckGroup(paneId: string, project: string, group: string | null = null): void {
     updateRundeckSettings({ activeProject: project, activeGroup: group });
     rundeckHome(paneId);
+}
+
+/** Every run in a project, over its job list so Back leads there. */
+export function openRundeckActivity(paneId: string, project: string): void {
+    if (rundeckSettings.get().activeProject !== project) updateRundeckSettings({ activeProject: project, activeGroup: null });
+    setStack(paneId, [...HOME.stack, { kind: "activity", project }]);
 }
 
 export function openRundeckJobPalette(): void {
