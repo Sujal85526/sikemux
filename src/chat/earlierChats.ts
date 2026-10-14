@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
 import type { PromptContext } from "../api/acp";
 import { agentNamesApi } from "../api/agentNames";
-import { agentApi, type RecentChat } from "../api/agents";
+import type { RecentChat } from "../api/agents";
+import { agentSessionsApi } from "../api/agentSessions";
 import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
 import { agentCatalogR } from "../state/resources.defs";
@@ -12,25 +13,29 @@ import { mateNote, type Mate } from "./agentMentions";
 
 const EARLIER_LIMIT = 4;
 const EARLIER_SETTLE_MS = 150;
+/** The composer waits on the search as the person types, so it answers with what it found by then. */
+const EARLIER_BUDGET_MS = 600;
 
-/** An earlier chat of the project, offered after `@` by its title; sending the message opens it again. */
+/** An earlier chat of the project, offered after `@` by its title or what was said in it; sending the message opens it again. */
 export interface EarlierChat {
     chat: RecentChat;
     /** The project it opens in. */
     sessionId: string;
 }
 
-/** The project's saved chats whose title holds `needle`, leaving out those open as agents. */
+/** The project's saved chats best matching `needle` by title and by what was said in them, leaving out those open as agents. */
 export function useEarlierChats(agentId: string, needle: string | null): EarlierChat[] {
     const profiles = useStore((s) => s.providerProfiles);
     const selections = useStore((s) => s.selectedProviderProfileIds);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, selections), [profiles, selections]);
     const catalog = useResource(agentCatalogR, runtimeProfiles);
-    const providers = useMemo(
+    const available = useMemo(
         () =>
             (catalog.data ?? [])
                 .filter((agent) => agent.available !== false)
-                .map((agent) => ({ agent: agent.type, configPath: agent.configPath ?? null })),
+                .map((agent) => agent.type)
+                .sort()
+                .join(" "),
         [catalog.data],
     );
     const sessionId = useStore((s) => {
@@ -41,17 +46,31 @@ export function useEarlierChats(agentId: string, needle: string | null): Earlier
     const cwd = useStore((s) => (sessionId ? s.sessions[sessionId]?.cwd || null : null));
     const wanted = needle?.trim().toLowerCase() ?? "";
     const [found, setFound] = useState<{ key: string; chats: EarlierChat[] }>({ key: "", chats: [] });
-    const key = JSON.stringify([providers, cwd, wanted]);
+    const key = JSON.stringify([available, cwd, wanted]);
 
     useEffect(() => {
-        if (!wanted || !cwd || !sessionId || providers.length === 0) return;
+        if (!wanted || !cwd || !sessionId || !available) return;
         let current = true;
         const timer = window.setTimeout(() => {
-            const exclude = Object.values(getState().agents).map((agent) => ({ agent: agent.type, id: agent.resumeId ?? agent.id }));
-            agentApi
-                .recent({ providers, projects: [cwd], limit: EARLIER_LIMIT, query: wanted, exclude })
-                .then((page) => {
-                    if (current) setFound({ key, chats: page.sessions.map((chat) => ({ chat, sessionId })) });
+            agentSessionsApi
+                .search({ query: wanted, projects: [cwd], limit: EARLIER_LIMIT, budgetMs: EARLIER_BUDGET_MS })
+                .then((matches) => {
+                    if (!current) return;
+                    const offered = available.split(" ");
+                    const open = new Set(Object.values(getState().agents).map((agent) => `${agent.type}/${agent.resumeId ?? agent.id}`));
+                    const chats = matches
+                        .filter((found) => offered.includes(found.cli) && !open.has(`${found.cli}/${found.sessionId}`))
+                        .map((found): EarlierChat => ({
+                            chat: {
+                                agent: found.cli,
+                                id: found.sessionId,
+                                title: found.title,
+                                mtime: Math.floor(found.activeAt / 1000),
+                                project: found.project,
+                            },
+                            sessionId,
+                        }));
+                    setFound({ key, chats });
                 })
                 .catch(() => {
                     if (current) setFound({ key, chats: [] });
@@ -61,7 +80,7 @@ export function useEarlierChats(agentId: string, needle: string | null): Earlier
             current = false;
             window.clearTimeout(timer);
         };
-    }, [key, wanted, cwd, sessionId, providers]);
+    }, [key, wanted, cwd, sessionId, available]);
 
     return wanted && found.key === key ? found.chats : [];
 }

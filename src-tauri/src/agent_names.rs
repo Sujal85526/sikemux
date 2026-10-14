@@ -1,5 +1,6 @@
-//! Agents' names. The core gives them and keeps them; these commands pass
-//! the app's asks on to it.
+//! Agents' names, and the saved sessions they ran. The core gives the names
+//! and keeps them, and searches the sessions; these commands pass the app's
+//! asks on to it.
 
 use std::sync::{Arc, Mutex};
 
@@ -11,8 +12,8 @@ use tauri::{AppHandle, Manager, State};
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
 
-/// The core's name calls, the only ones the page may make through this.
-const METHODS: [&str; 3] = ["nameAgent", "renameAgent", "agentsInApp"];
+/// The core's calls the page may make through this.
+const METHODS: [&str; 4] = ["nameAgent", "renameAgent", "agentsInApp", "agentSessions"];
 
 /// Tells the core every agent the app holds.
 const IN_APP: &str = "agentsInApp";
