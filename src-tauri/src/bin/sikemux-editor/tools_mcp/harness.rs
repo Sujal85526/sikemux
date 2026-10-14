@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
+use sikemux_core::cli::protocol::MAX_CLI_FRAME_BYTES;
 use uuid::Uuid;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -17,7 +18,6 @@ pub const REPLY_TIMEOUT: Duration = Duration::from_secs(70);
 /// after an update.
 pub const RESTART_WAIT: Duration = Duration::from_secs(15);
 const RETRY_GAP: Duration = Duration::from_millis(250);
-const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const MAX_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Why a call failed: whether Sikemux could have started on the request.
@@ -130,8 +130,11 @@ fn attempt(
     }))
     .map_err(|error| Failure::Sent(error.to_string()))?;
     frame.push(b'\n');
-    if frame.len() > MAX_REQUEST_BYTES {
-        return Err(Failure::Sent("Harness request exceeds 64 KiB".into()));
+    if frame.len() as u64 > MAX_CLI_FRAME_BYTES {
+        return Err(Failure::Sent(format!(
+            "Harness request exceeds {} KiB",
+            MAX_CLI_FRAME_BYTES / 1024
+        )));
     }
 
     let stream = TcpStream::connect_timeout(
