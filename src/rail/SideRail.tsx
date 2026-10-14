@@ -28,6 +28,8 @@ import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndica
 import { agentDisplayOf, agentIdsOf } from "../state/selectors";
 import { PROJECT_SURFACE_ORDER, PROJECT_SURFACES } from "../workbench/surfaces";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
+import type { PluginSignIn } from "../plugin-api/signInState";
+import { StatusDot, type StatusTone } from "../ui/StatusDot";
 import { useInstalledPlugins } from "../plugins/installed";
 import { railGroupOf, type RailGroup } from "../state/railGroups";
 import { isPluginKind, pluginIdOf } from "../plugins/kinds";
@@ -142,7 +144,7 @@ function SessionCloseButton({ session }: { session: Session }) {
     );
 }
 
-function SimpleRow({ s }: { s: Session }) {
+function SimpleRow({ s, status }: { s: Session; status?: ReactNode }) {
     const { activeSessionId } = useRail();
     const active = s.id === activeSessionId;
     return (
@@ -153,6 +155,7 @@ function SimpleRow({ s }: { s: Session }) {
                 </span>
                 <span className="sess-name">{s.name}</span>
             </button>
+            {status && <span className="row-status">{status}</span>}
             <SessionCloseButton session={s} />
         </div>
     );
@@ -337,10 +340,26 @@ function renderSession(s: Session) {
     return s.kind === "project" ? <ProjectBlock key={s.id} s={s} /> : <SimpleRow key={s.id} s={s} />;
 }
 
+const SIGN_IN_TONE: Record<PluginSignIn, { tone: StatusTone; label: string }> = {
+    "signed-in": { tone: "ok", label: "Signed in" },
+    checking: { tone: "pending", label: "Checking sign-in" },
+    "signed-out": { tone: "off", label: "Signed out" },
+};
+
+function SignInDot({ useSignIn }: { useSignIn: () => PluginSignIn }) {
+    const { tone, label } = SIGN_IN_TONE[useSignIn()];
+    return <StatusDot tone={tone} label={label} />;
+}
+
+function signInDot(plugin: FrontendPlugin): ReactNode {
+    return plugin.useSignIn ? <SignInDot useSignIn={plugin.useSignIn} /> : undefined;
+}
+
 /** A plugin that is enabled but not open yet: the same row its session will be, opening it on click. */
 function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: string }) {
     const surface = plugin.surfaces[0];
     if (!surface) return null;
+    const status = signInDot(plugin);
     return (
         <div className="session-row-shell">
             <button className="sess-row" onClick={plugin.open}>
@@ -349,6 +368,7 @@ function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: str
                 </span>
                 <span className="sess-name">{name}</span>
             </button>
+            {status && <span className="row-status">{status}</span>}
         </div>
     );
 }
@@ -482,7 +502,7 @@ export const SideRail = memo(function SideRail() {
     // Every enabled plugin always has a row; its session is only made on the first click.
     const pluginRows = enabledPlugins.flatMap((plugin) => {
         const opened = plugins.filter((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === plugin.id);
-        if (opened.length > 0) return opened.map(renderSession);
+        if (opened.length > 0) return opened.map((session) => <SimpleRow key={session.id} s={session} status={signInDot(plugin)} />);
         return [<PluginLauncherRow key={plugin.id} plugin={plugin} name={plugin.manifest.name} />];
     });
 

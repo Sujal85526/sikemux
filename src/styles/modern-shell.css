@@ -477,6 +477,39 @@ textarea:focus,
     transform: translateY(-50%);
 }
 
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-full);
+}
+
+.status-dot.ok {
+    background: var(--live);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--live) 22%, transparent);
+}
+
+.status-dot.pending {
+    background: var(--warn);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 22%, transparent);
+    animation: statusDotPulse 1.2s ease-in-out infinite alternate;
+}
+
+.status-dot.off {
+    background: color-mix(in srgb, var(--danger) 70%, var(--text-tertiary));
+}
+
+@keyframes statusDotPulse {
+    to {
+        opacity: 0.45;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .status-dot.pending {
+        animation: none;
+    }
+}
+
 /* Revealed by the pointer, and by the keyboard when it lands there — a close
    you can only reach with a mouse is a close half the app cannot use. Selection
    does not reveal it: a row you are looking at is not a row you are closing. */
@@ -491,7 +524,7 @@ textarea:focus,
 
 .tab-wrap:hover .tab-status,
 .tab-wrap:has(.tab-x:focus-visible) .tab-status,
-.session-row-shell:hover > .row-status,
+.session-row-shell:hover:has(> .row-x) > .row-status,
 .session-row-shell:has(> .row-x:focus-visible) > .row-status,
 .agent-row-wrap:hover > .row-status,
 .agent-row-wrap:has(> .row-x:focus-visible) > .row-status {

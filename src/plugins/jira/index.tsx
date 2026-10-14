@@ -1,6 +1,8 @@
 import { lazy, Suspense } from "react";
 import type { PluginTopBarProps } from "../../plugin-api";
-import { registerFrontendPlugin } from "../../plugin-api";
+import { registerFrontendPlugin, signInOf } from "../../plugin-api";
+import { useResource } from "../../plugin-api/resources";
+import { jiraStatusR } from "./resources";
 import { JiraMark } from "./components/JiraMark";
 import { JIRA_ISSUES, JIRA_PLUGIN_ID } from "./kinds";
 import { openJira } from "./state";
@@ -31,4 +33,7 @@ registerFrontendPlugin({
     mark: (size) => <JiraMark size={size} />,
     linkHosts: [".atlassian.net"],
     TopBarItem: JiraTopBar,
+    useSignIn: function useServiceSignIn() {
+        return signInOf(useResource(jiraStatusR));
+    },
 });
