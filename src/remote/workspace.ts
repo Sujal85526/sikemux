@@ -11,7 +11,8 @@ import type { AgentPermissionMode, AgentType, ProviderProfile, ProviderProfileSe
 /** The longest title the core keeps. */
 const MAX_TITLE_CHARS = 200;
 
-const launcherId = (type: AgentType, profile?: ProviderProfile) => (profile ? `${type}:${profile.id}` : type);
+/** The launcher the app offers for a provider and profile, as devices and the core name it. */
+export const launcherId = (type: AgentType, profileId?: string) => (profileId ? `${type}:${profileId}` : type);
 
 export interface RemoteWorkspace {
     readonly projects: PublishedProject[];
@@ -51,7 +52,7 @@ export function remoteWorkspace(
                 },
             ];
         return own.map((profile) => ({
-            id: launcherId(type, profile),
+            id: launcherId(type, profile.id),
             provider: type,
             label: own.length > 1 ? `${agentLabel(type)} · ${profile.name}` : agentLabel(type),
             configPath: profile.configPath,
@@ -83,7 +84,7 @@ export function remoteRecent(
         const own = profiles.filter((profile) => profile.provider === chat.agent);
         const profile = own.length ? (selectedProviderProfile(chat.agent, profiles, selections) ?? own[0]) : undefined;
         return {
-            launcher: launcherId(chat.agent, profile),
+            launcher: launcherId(chat.agent, profile?.id),
             provider: chat.agent,
             sessionId: chat.id,
             title: Array.from(chat.title).slice(0, MAX_TITLE_CHARS).join(""),

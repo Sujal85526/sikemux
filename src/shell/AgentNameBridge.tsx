@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { agentCwd } from "../agents/agentPtyContext";
-import { agentNamesApi, type NameRequest } from "../api/agentNames";
+import { effectiveMode } from "../agents/agentLaunch";
+import { agentNamesApi, type AgentRun, type NameRequest } from "../api/agentNames";
+import { launcherId } from "../remote/workspace";
 import * as cmd from "../state/commands";
 import { agentIdsOf } from "../state/selectors";
 import { useStore, type StoreState } from "../state/store";
@@ -21,6 +23,16 @@ function nameRequests(state: Pick<StoreState, "agents" | "windows" | "sessions" 
     });
 }
 
+function heldAgents(agents: StoreState["agents"]): { agentIds: string[]; runs: Record<string, AgentRun> } {
+    const agentIds = Object.keys(agents).sort();
+    const runs: Record<string, AgentRun> = {};
+    for (const id of agentIds) {
+        const agent = agents[id];
+        runs[id] = { launcher: launcherId(agent.type, agent.profileId), permissionMode: effectiveMode(agent) };
+    }
+    return { agentIds, runs };
+}
+
 /**
  * Tells the core every agent the app holds, then asks for each one's name. The core names an agent as it starts; this
  * also names the ones restored from before, and tells the core which provider session each runs so a chat opened again
@@ -32,7 +44,7 @@ export function AgentNameBridge() {
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const windowsBySession = useStore((s) => s.windowsBySession);
-    const held = useMemo(() => JSON.stringify(Object.keys(agents).sort()), [agents]);
+    const held = useMemo(() => JSON.stringify(heldAgents(agents)), [agents]);
     const requests = useMemo(
         () => JSON.stringify(nameRequests({ agents, windows, sessions, sessionOrder, windowsBySession })),
         [agents, windows, sessions, sessionOrder, windowsBySession],
@@ -42,7 +54,8 @@ export function AgentNameBridge() {
     const [retries, setRetries] = useState(0);
 
     useEffect(() => {
-        told.current = agentNamesApi.inApp(JSON.parse(held) as string[]).catch(swallow("tell the core which agents the app holds"));
+        const { agentIds, runs } = JSON.parse(held) as ReturnType<typeof heldAgents>;
+        told.current = agentNamesApi.inApp(agentIds, runs).catch(swallow("tell the core which agents the app holds"));
     }, [held]);
 
     useEffect(() => {

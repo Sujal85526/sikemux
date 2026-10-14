@@ -2,7 +2,7 @@
 //! device gains a method here without its native code changing, so one a
 //! released app calls is never removed or renamed.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -13,6 +13,7 @@ use super::access::{Needs, Peer};
 use super::attachments;
 use super::connection::{blocking, ClientConn};
 use super::names::AgentName;
+use super::workspace::AgentRun;
 use super::{share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
@@ -199,12 +200,13 @@ const MAX_AGENTS_IN_APP: usize = 4096;
 #[serde(rename_all = "camelCase")]
 struct AgentsInAppParams {
     agent_ids: HashSet<String>,
+    runs: BTreeMap<String, AgentRun>,
 }
 
 /// Every agent the app holds, sleeping ones included, so their names stay
 /// theirs while nothing of them runs here.
 async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResult<()> {
-    if params.agent_ids.len() > MAX_AGENTS_IN_APP {
+    if params.agent_ids.len() > MAX_AGENTS_IN_APP || params.runs.len() > MAX_AGENTS_IN_APP {
         return Err("the app named more agents than the core keeps".into());
     }
     if !params
@@ -214,6 +216,7 @@ async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResul
     {
         return Err("that is not an agent id".into());
     }
+    core.workspaces.publish_runs(params.runs)?;
     let core = core.clone();
     blocking(move || {
         core.names.set_in_app(params.agent_ids);

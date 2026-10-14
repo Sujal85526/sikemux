@@ -53,13 +53,18 @@ struct Started {
 
 /// How the calling agent runs and where, for its worker to do the same.
 fn lead_of(core: &Core, lead_id: &str, project: &str) -> Result<(Lead, PathBuf), String> {
+    let run = core.workspaces.run_of(lead_id);
     if let Some(chat) = core.chats.get(lead_id) {
         let launch = chat.current_now();
         return Ok((
             Lead {
                 provider: chat.provider().to_owned(),
                 permission_mode: Some(launch.permission_mode.clone()),
-                launcher: chat.origin.launcher.clone(),
+                launcher: chat
+                    .origin
+                    .launcher
+                    .clone()
+                    .or_else(|| run.map(|run| run.launcher)),
                 launch: Some(launch),
             },
             chat.launch.cwd.clone(),
@@ -74,8 +79,8 @@ fn lead_of(core: &Core, lead_id: &str, project: &str) -> Result<(Lead, PathBuf),
         Lead {
             provider: info.agent_type.unwrap_or_default(),
             launch: None,
-            launcher: None,
-            permission_mode: None,
+            launcher: run.as_ref().map(|run| run.launcher.clone()),
+            permission_mode: run.map(|run| run.permission_mode),
         },
         PathBuf::from(cwd),
     ))

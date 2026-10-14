@@ -46,6 +46,17 @@ struct Published {
     palette: BTreeMap<String, String>,
     texture: bool,
     image: Option<BackdropImage>,
+    /// How the app runs each of its agents, by agent id.
+    runs: BTreeMap<String, AgentRun>,
+}
+
+/// The launcher and permission mode the app runs an agent with, which the
+/// core cannot read off a terminal agent itself.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentRun {
+    pub launcher: String,
+    pub permission_mode: String,
 }
 
 #[derive(Default)]
@@ -162,6 +173,22 @@ impl Workspaces {
         published.chats_known = true;
         published.titles = titles;
         Ok(())
+    }
+
+    pub(crate) fn publish_runs(&self, runs: BTreeMap<String, AgentRun>) -> CoreResult<()> {
+        let oversized = |run: &AgentRun| run.launcher.len() > 256 || run.permission_mode.len() > 64;
+        if runs.values().any(oversized) {
+            return Err(
+                "the app said an agent runs with a launcher or mode longer than the core keeps"
+                    .into(),
+            );
+        }
+        self.lock().runs = runs;
+        Ok(())
+    }
+
+    pub(crate) fn run_of(&self, agent_id: &str) -> Option<AgentRun> {
+        self.lock().runs.get(agent_id).cloned()
     }
 
     pub(crate) fn publish_recent(&self, chats: Vec<PublishedRecent>) -> CoreResult<()> {
@@ -432,6 +459,7 @@ impl Workspaces {
             Some(mode) if same => mode.to_owned(),
             Some("bypass") => "bypass".to_owned(),
             Some(_) => "workspace-write".to_owned(),
+            None if matches!(default, "bypass" | "full-access") => "workspace-write".to_owned(),
             None => default.to_owned(),
         };
         let own = lead
@@ -452,23 +480,27 @@ impl Workspaces {
             .iter()
             .filter(|launcher| launcher.provider == provider)
             .collect();
-        let launcher = offered
+        let lead_own = offered
             .iter()
-            .find(|launcher| Some(&launcher.id) == lead.launcher.as_ref())
-            .or_else(|| offered.first())
-            .ok_or_else(|| {
-                let known: Vec<&str> = published
-                    .launchers
-                    .iter()
-                    .map(|launcher| launcher.provider.as_str())
-                    .collect();
-                if known.is_empty() {
-                    "Sikemux has not said which agents it can start; open Sikemux once so it can"
-                        .to_owned()
-                } else {
-                    format!("cli must be one of {}", known.join(", "))
-                }
-            })?;
+            .find(|launcher| Some(&launcher.id) == lead.launcher.as_ref());
+        if same && lead_own.is_none() && offered.len() > 1 {
+            return Err(format!(
+                "Sikemux cannot tell which {provider} account you run on, so it will not start one on another; pick another cli or ask the person to start it"
+            ));
+        }
+        let launcher = lead_own.or_else(|| offered.first()).ok_or_else(|| {
+            let known: Vec<&str> = published
+                .launchers
+                .iter()
+                .map(|launcher| launcher.provider.as_str())
+                .collect();
+            if known.is_empty() {
+                "Sikemux has not said which agents it can start; open Sikemux once so it can"
+                    .to_owned()
+            } else {
+                format!("cli must be one of {}", known.join(", "))
+            }
+        })?;
         match launcher.status.as_deref() {
             Some("missing") => {
                 return Err(format!("{} is not installed on this host", launcher.label))
