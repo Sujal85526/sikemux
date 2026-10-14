@@ -536,16 +536,29 @@ fn read_terminal(core: &Core, target: &Listed, cursor: Option<&str>) -> Result<V
 
 /// What a terminal agent wrote last, if its last turn ended on words, from
 /// its session file, or else the end of its screen.
-pub(crate) fn terminal_answer(core: &Core, agent_id: &str) -> Option<TerminalAnswer> {
+pub(crate) fn terminal_answer(core: &Core, agent_id: &str) -> TerminalTurn {
     let Some((cli, _, path)) = session_file(core, agent_id) else {
-        return screen_tail(core, agent_id, REPORT_SCREEN_LINES).map(TerminalAnswer::Screen);
+        return TerminalTurn {
+            start: None,
+            answer: screen_tail(core, agent_id, REPORT_SCREEN_LINES).map(TerminalAnswer::Screen),
+        };
     };
-    let excerpt = transcript::read(cli, &path, None, 1).ok()?;
-    let turn = build(excerpt.said).pop()?;
-    (turn.last == Last::Message)
-        .then(|| turn.said.last().cloned())
-        .flatten()
-        .map(TerminalAnswer::Said)
+    let turn = transcript::read(cli, &path, None, 1)
+        .ok()
+        .and_then(|excerpt| build(excerpt.said).pop());
+    TerminalTurn {
+        start: turn.as_ref().map(|turn| turn.start),
+        answer: turn
+            .filter(|turn| turn.last == Last::Message)
+            .and_then(|mut turn| turn.said.pop())
+            .map(TerminalAnswer::Said),
+    }
+}
+
+pub(crate) struct TerminalTurn {
+    /// Where the turn starts in the session file, when there is one.
+    pub start: Option<u64>,
+    pub answer: Option<TerminalAnswer>,
 }
 
 pub(crate) enum TerminalAnswer {

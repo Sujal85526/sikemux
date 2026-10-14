@@ -4,7 +4,7 @@
 //! the new agent's turn ends, its final answer goes back to the agent that
 //! started it.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -43,6 +43,10 @@ pub(crate) struct Spawning {
     /// Terminal agents the window is opening, which count against the caps
     /// before they run.
     opening: Mutex<HashSet<String>>,
+    /// Where the turn each terminal worker last reported starts in its session
+    /// file. Its screen redrawing after a turn reads as another turn, which
+    /// must not report again.
+    reported: Mutex<HashMap<String, u64>>,
 }
 
 impl Spawning {
@@ -54,6 +58,12 @@ impl Spawning {
 
     fn opening(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
         self.opening
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn reported(&self) -> std::sync::MutexGuard<'_, HashMap<String, u64>> {
+        self.reported
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -467,11 +477,23 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: Ending) {
         let answer = match chat_answer {
             Some(answer) => answer,
             None => {
-                let (core, worker) = (core.clone(), worker.clone());
-                blocking(move || Ok(follow::terminal_answer(&core, &worker)))
-                    .await
-                    .ok()
-                    .flatten()
+                let turn = {
+                    let (core, worker) = (core.clone(), worker.clone());
+                    blocking(move || Ok(follow::terminal_answer(&core, &worker))).await
+                };
+                let Ok(turn) = turn else { return };
+                let mut reported = core.harness.spawning.reported();
+                if matches!(ending, Ending::Finished) {
+                    if let Some(start) = turn.start {
+                        if reported.insert(worker.clone(), start) == Some(start) {
+                            return;
+                        }
+                    }
+                } else {
+                    reported.remove(&worker);
+                }
+                drop(reported);
+                turn.answer
             }
         };
         let text = report(&core, &worker, ending, answer);
