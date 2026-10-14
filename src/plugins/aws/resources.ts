@@ -4,6 +4,7 @@ import {
     type AgentProfilePicks,
     type AwsIdentity,
     type AwsProfile,
+    type AwsSetup,
     type BillingMonth,
     type Ec2Instance,
     type EcsCluster,
@@ -23,6 +24,11 @@ export const awsProfilesR = resource({
 export const awsAgentProfileR = resource({
     kind: "aws.agentProfile",
     fetch: (project: string | null): Promise<AgentProfilePicks> => awsApi.agentProfilePicks(project),
+});
+
+export const awsSetupR = resource({
+    kind: "aws.setup",
+    fetch: (): Promise<AwsSetup> => awsApi.setup(),
 });
 
 export const awsIdentityR = resource({

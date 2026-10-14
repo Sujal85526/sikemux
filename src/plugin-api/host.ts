@@ -166,6 +166,21 @@ export async function pickFile(title: string, filter?: { name: string; extension
     return typeof picked === "string" ? picked : null;
 }
 
+/** Runs a program in a terminal over the window, settling once the person closes it. */
+export function runInTerminal(title: string, argv: string[]): Promise<void> {
+    const command = argv.map(cmd.shellQuote).join(" ");
+    cmd.runCustomCommand({ id: `plugin-terminal:${title}`, title, detail: "", command, contexts: [], placement: "popup" });
+    const opened = getState().commandPopup;
+    if (!opened) return Promise.resolve();
+    return new Promise((resolve) => {
+        const stop = useStore.subscribe((state) => {
+            if (state.commandPopup?.id === opened.id) return;
+            stop();
+            resolve();
+        });
+    });
+}
+
 /** Brings this surface's session forward, opening it if needed, and returns the pane it shows in. */
 export function openSurface(kind: PluginKind): string | null {
     cmd.openPluginSession(kind);

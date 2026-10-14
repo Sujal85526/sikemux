@@ -36,6 +36,12 @@ export interface AgentProfilePicks {
     effective: { profile: string | null; source: AgentProfileSource } | null;
 }
 
+/** Whether the AWS CLI is installed, and whether Homebrew is there to install it. */
+export interface AwsSetup {
+    cli: boolean;
+    homebrew: boolean;
+}
+
 export interface AwsLoginResult {
     success: boolean;
     stdout: string;
@@ -138,6 +144,7 @@ export interface S3Bucket {
 
 export const awsApi = {
     profiles: () => backend.call<AwsProfile[]>("profiles", {}),
+    setup: () => backend.call<AwsSetup>("setup", {}),
     agentProfilePicks: (project: string | null) => backend.call<AgentProfilePicks>("agentProfilePicks", { project }),
     pickAgentProfile: (project: string | null, profile: string | null) => backend.call<AgentProfilePicks>("pickAgentProfile", { project, profile }),
     identity: (profile: string, force = false) => backend.call<AwsIdentity>("identity", { profile, force }),
