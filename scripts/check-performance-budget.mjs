@@ -148,10 +148,11 @@ const budgets = [
     // cards, and a table copies as markdown. The transcript itself is a chunk
     // of its own, chat, which a shared chat's pane loads too.
     // Main went past this budget on its own; this restores the room.
+    // Agents messaging, asking and spawning each other added real chat UI: questions, the @ menu's agents and earlier chats.
     label: "ACP chat lazy chunk",
     pattern: /^(?:AgentSurface|chat)-.*\.js$/,
-    raw: 152_000,
-    gzip: 49_000,
+    raw: 170_000,
+    gzip: 54_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -215,10 +216,11 @@ const budgets = [
     // room without touching what the app loads at startup.
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     // Main went past this budget on its own; this restores the room.
+    // Agents messaging, asking and spawning each other added real chat UI and its styles.
     label: "ACP chat CSS",
     pattern: /^(?:AgentSurface|chat)-.*\.css$/,
-    raw: 54_000,
-    gzip: 9_800,
+    raw: 57_000,
+    gzip: 10_300,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
