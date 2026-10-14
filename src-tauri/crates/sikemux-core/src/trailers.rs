@@ -16,7 +16,7 @@ pub fn append(message: &str, trailers: &[String]) -> String {
     if trailers.is_empty() {
         return message.to_owned();
     }
-    let joined = if last_paragraph(message).lines().all(is_trailer) {
+    let joined = if message.contains("\n\n") && last_paragraph(message).lines().all(is_trailer) {
         "\n"
     } else {
         "\n\n"
