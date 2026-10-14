@@ -135,6 +135,16 @@ struct AgentQuestion: Decodable, Equatable {
     let blocked: Bool
     /// The lead it waits on, while it has not reached the person.
     let lead: String?
+    /// The lead it went to first, once it reached the person.
+    let via: String?
+    /// That lead passed it on itself rather than leaving it unanswered.
+    let passed: Bool
+
+    /// What it asks, and why it reached the person rather than its lead.
+    var asking: String {
+        guard let via else { return "asks you" }
+        return passed ? "asks you · \(via) didn't know" : "asks you · \(via) didn't answer"
+    }
 }
 
 struct QuestionChoice: Decodable, Equatable {

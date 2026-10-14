@@ -339,7 +339,7 @@ struct AskBody: View {
             if let agent {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.title).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink).lineLimit(1)
-                    ProjectLabel(project: agent.project, suffix: agent.question == nil ? suffix(agent.ask) : "asks you")
+                    ProjectLabel(project: agent.project, suffix: agent.question?.asking ?? suffix(agent.ask))
                 }
                 .padding(.top, 8)
                 if let question = agent.question {
