@@ -6,7 +6,7 @@
 
 mod words;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
@@ -69,6 +69,10 @@ struct Book {
     /// Unknown until the app first says.
     #[serde(default)]
     in_app: Option<HashSet<String>>,
+    /// The lead of each closed agent that an agent still named was started
+    /// under, so the chain of leads stays whole after a lead in it closes.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    closed_leads: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -229,9 +233,7 @@ impl Names {
     /// Forgets a worker that never started, so its name is free again.
     pub(crate) fn forget(&self, agent_id: &str) {
         let mut book = self.lock();
-        let before = book.agents.len();
-        book.agents.retain(|entry| entry.agent_id != agent_id);
-        if book.agents.len() != before {
+        if book.remove(|entry| entry.agent_id == agent_id) {
             self.save(&book);
         }
     }
@@ -250,7 +252,7 @@ impl Names {
     pub(crate) fn team_of(&self, agent_id: &str) -> String {
         let book = self.lock();
         let mut current = agent_id;
-        for _ in 0..=book.agents.len() {
+        for _ in 0..=book.agents.len() + book.closed_leads.len() {
             match book.parent(current) {
                 Some(parent) => current = parent,
                 None => break,
@@ -261,16 +263,7 @@ impl Names {
 
     /// Whether `lead` started `agent_id`, or started an agent that did.
     pub(crate) fn leads(&self, lead: &str, agent_id: &str) -> bool {
-        let book = self.lock();
-        let mut current = agent_id;
-        for _ in 0..=book.agents.len() {
-            match book.parent(current) {
-                Some(parent) if parent == lead => return true,
-                Some(parent) => current = parent,
-                None => break,
-            }
-        }
-        false
+        self.lock().leads(lead, agent_id)
     }
 
     /// Takes the app's word for which agents it holds, and lets go of the
@@ -333,8 +326,8 @@ impl Names {
                 holder.name
             ));
         }
-        book.agents.retain(|entry| {
-            entry.agent_id == agent_id || entry.project != project || !same(&entry.name, &name)
+        book.remove(|entry| {
+            entry.agent_id != agent_id && entry.project == project && same(&entry.name, &name)
         });
         let entry = book
             .entry_mut(agent_id)
@@ -365,10 +358,60 @@ impl Book {
     }
 
     fn parent(&self, agent_id: &str) -> Option<&str> {
-        self.agents
-            .iter()
-            .find(|entry| entry.agent_id == agent_id)
-            .and_then(|entry| entry.parent.as_deref())
+        match self.agents.iter().find(|entry| entry.agent_id == agent_id) {
+            Some(entry) => entry.parent.as_deref(),
+            None => self.closed_leads.get(agent_id).map(String::as_str),
+        }
+    }
+
+    fn leads(&self, lead: &str, agent_id: &str) -> bool {
+        let mut current = agent_id;
+        for _ in 0..=self.agents.len() + self.closed_leads.len() {
+            match self.parent(current) {
+                Some(parent) if parent == lead => return true,
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+        false
+    }
+
+    /// Takes out the entries `gone` picks, and whether there were any.
+    fn remove(&mut self, mut gone: impl FnMut(&mut Entry) -> bool) -> bool {
+        let mut removed = Vec::new();
+        self.agents.retain_mut(|entry| {
+            let keep = !gone(entry);
+            if !keep {
+                removed.push((entry.agent_id.clone(), entry.parent.clone()));
+            }
+            keep
+        });
+        if removed.is_empty() {
+            return false;
+        }
+        for (agent_id, parent) in removed {
+            if let Some(parent) = parent {
+                self.closed_leads.insert(agent_id, parent);
+            }
+        }
+        self.prune_closed_leads();
+        true
+    }
+
+    /// Keeps only the closed leads some named agent's chain still runs through.
+    fn prune_closed_leads(&mut self) {
+        let mut needed: HashSet<&str> = HashSet::new();
+        for entry in &self.agents {
+            let mut current = entry.parent.as_deref();
+            while let Some(id) = current {
+                if self.agents.iter().any(|named| named.agent_id == id) || !needed.insert(id) {
+                    break;
+                }
+                current = self.closed_leads.get(id).map(String::as_str);
+            }
+        }
+        let needed: HashSet<String> = needed.into_iter().map(str::to_owned).collect();
+        self.closed_leads.retain(|id, _| needed.contains(id));
     }
 
     /// How many agents up the chain of leads the person's own agent is.
@@ -377,7 +420,7 @@ impl Book {
         let mut current = agent_id;
         while let Some(parent) = self.parent(current) {
             depth += 1;
-            if depth > self.agents.len() {
+            if depth > self.agents.len() + self.closed_leads.len() {
                 break;
             }
             current = parent;
@@ -494,7 +537,10 @@ impl Book {
             .min_by_key(|(_, entry)| entry.at)
             .map(|(index, _)| index);
         if let Some(index) = oldest_past {
-            return self.agents.remove(index).name;
+            let name = self.agents[index].name.clone();
+            let gone = self.agents[index].agent_id.clone();
+            self.remove(|entry| entry.agent_id == gone);
+            return name;
         }
         let word = pick(WORDS).unwrap_or("Agent");
         (2..)
@@ -510,18 +556,16 @@ impl Book {
             return false;
         }
         let now = unix_ms();
-        let mut changed = false;
-        self.agents.retain_mut(|entry| {
+        let mut seen = false;
+        let removed = self.remove(|entry| {
             if open.contains(&entry.agent_id) {
-                changed |= !entry.seen;
+                seen |= !entry.seen;
                 entry.seen = true;
-                return true;
+                return false;
             }
-            let keep = !entry.seen && now.saturating_sub(entry.at) < STARTING_MS;
-            changed |= !keep;
-            keep
+            entry.seen || now.saturating_sub(entry.at) >= STARTING_MS
         });
-        changed
+        removed || seen
     }
 }
 
