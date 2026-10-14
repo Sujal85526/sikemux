@@ -858,7 +858,7 @@ goes the same way.
 An answer from the person arrives like this:
 
 ```
-<question-answer question="Should amounts be stored in cents?" note="…">
+<question-answer asker="Maple" cli="codex" question="Should amounts be stored in cents?" note="…">
 Cents
 </question-answer>
 ```
@@ -869,8 +869,9 @@ Its question arrives as a message from it, with its choices and whether it
 waits for you. Answer it with `agent_send` to that agent. When you do not know
 the answer, pass it on with `ask`, setting `for` to the agent's name and
 `question` to what the person should be asked; that agent gets the person's
-answer and you get a copy, so carry on with your own work. If your turn ends
-with neither, Sikemux asks the person by itself.
+answer and you get a copy, so carry on with your own work. The copy arrives
+as a `<question-answer>` whose `asker` is that agent. If your turn ends with
+neither, Sikemux asks the person by itself.
 
 ### Messages you get
 
