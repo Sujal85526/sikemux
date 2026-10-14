@@ -226,6 +226,7 @@ function BringItIn() {
       <View style={styles.chips}>
         <Chip primary title="Send me the link" onPress={send} />
         <Chip title={copied ? 'Copied' : 'Copy link'} onPress={copy} />
+        <Chip title="Have a code?" onPress={() => router.push('/host-sign-in')} />
       </View>
     </View>
   );

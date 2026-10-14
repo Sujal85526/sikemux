@@ -1027,11 +1027,11 @@
             <li><span>Sign in with <b>Google · contact@nodelike.com</b></span></li>
             <li><span>Click <b>Allow</b> when it asks</span></li>
           </ol>
-          <div class="acts"><span class="chip-btn primary">Send me the link</span><span class="chip-btn">Copy link</span></div>
+          <div class="acts"><span class="chip-btn primary">Send me the link</span><span class="chip-btn">Copy link</span><span class="chip-btn">Have a code?</span></div>
         </div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, and the phone asks to join it by itself ("A host just signed in"). The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. Until the account has answered, a phone with nothing paired shows only the rail's squares and "Looking for hosts on your account", never these steps; if the account can't be read it says so in one line with Try again, and pulling the list down reads it again too. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
+      <figcaption><b>Waiting for a host</b><div class="note">Signed in, with no host connected and none on the account: the ordinary Devices screen, with a dashed slot where the computer will land. The phone watches the account the whole time, and nothing changes screen when a host signs in: the slot turns into its row, and the phone asks to join it by itself ("A host just signed in"). The steps name the provider and email this phone signed in with, since the host must use the same account. Send me the link opens the share sheet with sikemux.com/phone, to open on the computer; Copy link copies it and reads "Copied" for a moment. Have a code? adds a host that signed in without a browser. Until the account has answered, a phone with nothing paired shows only the rail's squares and "Looking for hosts on your account", never these steps; if the account can't be read it says so in one line with Try again, and pulling the list down reads it again too. This account has no picture, so its initials stand in, from the name or else the email, on the same neutral circle; while a picture loads the circle stays empty.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1442,6 +1442,83 @@
       <figcaption><b>Removed on the host</b><div class="note">When the host has unpaired this phone, trying again can't help, so the phone stops trying and says so. Forget this host forgets it here and goes back to Devices, where a host on the account offers Connect again.</div></figcaption>
     </figure>
 
+
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<section class="flow on-host">
+  <h2>Letting hosts and phones in</h2>
+  <p>The phone answers for its owner what used to wait at the computer: a host with no browser is added to the account by its code, and a phone asking to connect to a host is let in, or not, from another phone already on the account with full control.</p>
+  <div class="phones">
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span></div>
+        <div class="signin" style="padding-top:12px">
+          <h2>Add a host with a code</h2>
+          <p style="margin:0">Enter the code <span class="m" style="color:var(--text-primary)">sikemux core sign-in</span> shows on the computer.</p>
+          <div class="field on"><span class="m" style="font-size:20px;letter-spacing:2px">BCDF-GHJK</span><span class="caret"></span></div>
+          <div class="btn primary">Continue</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Host code</b><div class="note">Reached from "Have a code?" under Bring it in, or from a sikemux://host-sign-in?code= link with the code filled in and looked up at once. The code is the one a server or spare computer prints when it signs in over SSH; dashes and case don't matter. A code that is wrong, refused or past its ten minutes says so in red under the field.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
+        <div class="signin" style="padding-top:12px">
+          <span style="color:var(--text-primary)">{{IconDesktop:34}}</span>
+          <h2>Add build-box to your account?</h2>
+          <p style="margin:0">Linux · stable. Only add a computer you are setting up yourself right now: phones on your account will find it and can ask to join it.</p>
+          <div class="btn primary" style="margin-top:8px">Add host</div>
+          <div class="btn danger">Not mine</div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Check the host</b><div class="note">The host behind the code, as it named itself, with its system and channel, and the same warning app.sikemux.com gives. Add host puts it on the account; the host finishes signing in on its next ask and shows up in Devices to connect to. Not mine stops its sign-in. Either way the screen says what happened, and Done goes back to Devices.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}build-box</span><span style="flex:1;text-align:center;font-weight:600;color:var(--text-primary)">Paired devices</span><span style="width:60px"></span></div>
+        <div class="pad grow">
+          <div class="glabel">Asking to connect</div>
+          <div class="rows">
+            <div class="row"><span class="mark" style="color:var(--text-primary)">{{IconPhone:18}}</span><div class="body"><div class="t">Kishore's Pixel</div><div class="s">Android · from your account</div></div></div>
+            <div class="ibelow"><div class="ichips"><span>Refuse</span><span>Watch only</span><span class="primary">Full control</span></div></div>
+          </div>
+          <div class="glabel">Paired</div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t">Kishore's iPhone</div><div class="s">Full control · this phone</div></div></div>
+            <div class="row"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t">iPad</div><div class="s">Watch only · seen 2d ago</div></div><span class="chev">{{IconChevron:14}}</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Paired devices</b><div class="note">Paired devices in a host's options, offered to a phone with full control. A phone asking to connect leads, with its name, its system and that it came from your account, and Refuse, Watch only and Full control as chips; it gives up after two minutes and drops off the list. Then every paired device with what it may do and when it was last seen; this phone is marked and can't be changed from here. Tapping another opens it. Only a phone that joined through the host's own account with full control may answer: any other is told so in red instead of the list. The list is read again when the app comes back to the front, when a pairing notification arrives while it is open, and when pulled down.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav"><span class="back">{{IconChevron:18}}build-box</span></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <h3>iPad</h3>
+        <div class="track" style="margin:0"><span>Full control</span><span class="on">Watch only</span></div>
+        <div class="sheet-note">See chats and terminals, answer what agents ask</div>
+        <div class="btn danger">Remove from this host</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A paired device</b><div class="note">The Mac's two levels of access, in its words: Full control starts chats, answers agents and types in terminals; Watch only sees them and answers what agents ask. Switching takes effect at once. Remove from this host unpairs it and ends its connections; it can ask again from its own Devices.</div></figcaption>
+    </figure>
 
   </div>
 </section>
@@ -2850,6 +2927,19 @@ expected 1 write, got 2</div>
       </div>
       <div class="home-bar" style="background:#fff"></div></div>
       <figcaption><b>Answering</b><div class="note">On Android the card says the answer is on its way while the phone reaches the host itself, then how it went; "Allowed" fades after a few seconds. When the host can't be reached the card stays, and opens the chat to answer there. A request already answered elsewhere just goes. On an iPhone the chat itself shows the answer, and the card goes once it is in.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone" style="background:#000"><div class="island"></div>
+      <div class="status" style="color:#fff"><span></span><span class="bars"><i></i><i></i></span></div>
+      <div class="lock">
+        <div class="clock"><div>Friday 2 October</div><div>9:41</div></div>
+        <div class="notif">
+          <div class="h"><span class="appicon">{{Logo:15}}</span>SIKEMUX<span class="t">now</span></div>
+          <div class="b"><b>Kishore's Pixel wants to connect</b><br>To build-box, from your Sikemux account</div>
+        </div>
+      </div>
+      <div class="home-bar" style="background:#fff"></div></div>
+      <figcaption><b>A phone asks to connect</b><div class="note">When a phone asks to connect to a host, the host tells the phones that may let it in: those on its own account with full control, under Needs you, like the computer's own prompt. Tapping the card opens Paired devices on that host. It goes once the request is answered anywhere or the asking phone gives up.</div></figcaption>
     </figure>
 
     <figure><div class="phone" style="background:#000"><div class="island"></div>

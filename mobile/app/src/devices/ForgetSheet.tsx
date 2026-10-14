@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 
 import { haptics } from '@/ui/haptics';
 import { goHome } from '@/ui/navigate';
@@ -41,7 +42,7 @@ export function useForget(device: PairedDevice | undefined, done?: () => void) {
   return { forgetting, problem, leave };
 }
 
-/** The device screen's options: for now, forgetting the host. */
+/** The device screen's options: who may connect to the host, and forgetting it. */
 export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice; visible: boolean; onClose: () => void }) {
   const styles = useStyles(makeStyles);
   const type = useType();
@@ -54,6 +55,15 @@ export function ForgetSheet({ device, visible, onClose }: { device: PairedDevice
         <Text style={styles.title} numberOfLines={1}>
           {name}
         </Text>
+        {device.access === 'full' ? (
+          <Button
+            title="Paired devices"
+            onPress={() => {
+              onClose();
+              router.push(`/device/${device.core}/pairing`);
+            }}
+          />
+        ) : null}
         <Text style={type.body}>
           Forgetting removes this host from the phone and, if it can be reached, removes this phone from the host&apos;s paired devices.
           While it is on your account, it stays in Devices to connect to again.

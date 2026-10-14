@@ -192,6 +192,17 @@ export type Snapshot = {
   inbox: Inbox;
 };
 
+export type DeviceAccess = 'full' | 'watch';
+
+/** A device waiting for someone to let it pair with the host. */
+export type PendingPairing = { id: string; deviceId: string; name: string; platform: string; expiresAt: number };
+
+/** A device paired with the host, and what it may do there. */
+export type PairedClient = { id: string; name: string; platform: string; access: DeviceAccess; pairedAt: number; lastSeen?: number };
+
+/** What the `pairing` call answers, and `answerPairing` and `changeDevice` after them. */
+export type Pairing = { pending: PendingPairing[]; devices: PairedClient[] };
+
 /** Kept with the paired host, so it is a name the core sends as is. */
 export type BuildChannel = 'dev' | 'nightly' | 'stable';
 
@@ -246,6 +257,7 @@ function keepInbox(previous: Inbox, next: Inbox): Inbox {
 }
 export const readHost = (json: string) => readCore<HostInfo>(json);
 export const readDigest = (json: string) => readCore<Digest>(json);
+export const readPairing = (json: string) => readCore<Pairing>(json);
 
 /** A chat event as the Mac app's chat code reads it. */
 export type CoreChatEvent = { kind: string; payload: Record<string, unknown> };

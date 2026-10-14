@@ -37,6 +37,7 @@ on:
       - "src/lib/paths.ts"
       - "src/lib/platform.ts"
       - "src/lib/urls.ts"
+      - "src/remote/access.ts"
       - "src/share/cipher.ts"
       - "src/share/link.ts"
       - "src/share/session.ts"
