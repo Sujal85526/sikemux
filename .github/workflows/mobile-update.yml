@@ -31,8 +31,6 @@ on:
       - "src/agents/agentBoard.ts"
       - "src/agents/teams.ts"
       - "src/agents/generated/**"
-      - "src/agents/catalog.ts"
-      - "src/agents/generated/**"
       - "src/chat/**"
       - "src/lib/format.ts"
       - "src/lib/fuzzy.ts"
