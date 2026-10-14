@@ -49,8 +49,7 @@
     font-weight: var(--weight-semibold);
 }
 .agent-row .agent-name,
-.tab-wrap.agent-named .tab-label {
-    color: var(--text-primary);
+.tab-label .agent-name {
     font-weight: var(--weight-medium);
 }
 .agent-name-sep {
