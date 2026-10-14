@@ -26,6 +26,7 @@ mod auto;
 mod codehost;
 mod finish;
 mod git;
+mod tickets;
 
 pub(crate) use auto::Settings;
 use auto::{Run, Stage};
@@ -83,6 +84,13 @@ pub(crate) struct Ticket {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub provider: String,
+    /// The status last put on the ticket in its tracker, so each change goes
+    /// there once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synced: Option<Status>,
+    /// Why the last change did not reach the ticket.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_note: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -258,6 +266,8 @@ struct State {
     jobs: HashSet<(String, u64)>,
     /// Cards whose work is to ship again once the step under way ends.
     reship: HashSet<(String, u64)>,
+    /// Cards whose ticket is being updated.
+    syncing: HashSet<(String, u64)>,
     /// When each card's pull request or ticket was last asked about.
     polled: BTreeMap<(String, u64, &'static str), u64>,
     /// When Auto last looked for cards to start.
@@ -528,6 +538,8 @@ fn ticket_of(value: &Value) -> Result<Option<Ticket>, String> {
         url,
         source: field("source", 40)?,
         provider,
+        synced: None,
+        sync_note: None,
     }))
 }
 
@@ -1483,6 +1495,7 @@ pub(crate) fn tick(core: &Arc<Core>) {
     offer(core);
     auto::tick(core);
     finish::tick(core);
+    tickets::tick(core);
     if !core.boards.lock().dirty.is_empty() {
         core.harness.questions.boards_changed();
     }
