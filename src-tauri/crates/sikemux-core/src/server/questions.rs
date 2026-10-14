@@ -134,6 +134,9 @@ struct State {
     told_window: Option<ClientId>,
     /// The person's open questions phones were told of, and whose they are.
     told_phones: HashMap<String, String>,
+    /// Every question put to the person, assumptions too, that devices'
+    /// views last showed, and whose they are.
+    shown_devices: HashMap<String, String>,
 }
 
 #[derive(Default)]
@@ -794,7 +797,11 @@ fn answer_text(question: &Question, params: &AnswerParams) -> Result<Option<Stri
 pub(crate) fn tick(core: &Arc<Core>) {
     let (askers, leads): (HashSet<String>, HashSet<String>) = {
         let state = core.harness.questions.lock();
-        if state.open.is_empty() && state.told_phones.is_empty() && !state.dirty {
+        if state.open.is_empty()
+            && state.told_phones.is_empty()
+            && state.shown_devices.is_empty()
+            && !state.dirty
+        {
             drop(state);
             tell_window(core);
             return;
@@ -884,10 +891,30 @@ pub(crate) fn tick(core: &Arc<Core>) {
 }
 
 /// Tells phones of each question that now waits on the person, and of each
-/// that no longer does.
+/// that no longer does. An agent whose questions to the person changed counts
+/// as active, which changes the view devices are sent, so they read the
+/// questions again.
 fn tell_phones(core: &Core) {
-    let (asked, cleared) = {
+    let (asked, cleared, changed) = {
         let mut state = core.harness.questions.lock();
+        let shown: HashMap<String, String> = state
+            .open
+            .iter()
+            .filter(|question| question.asks_person())
+            .map(|question| (question.id.clone(), question.agent_id.clone()))
+            .collect();
+        let changed: HashSet<String> = shown
+            .iter()
+            .filter(|(id, _)| !state.shown_devices.contains_key(*id))
+            .chain(
+                state
+                    .shown_devices
+                    .iter()
+                    .filter(|(id, _)| !shown.contains_key(*id)),
+            )
+            .map(|(_, agent_id)| agent_id.clone())
+            .collect();
+        state.shown_devices = shown;
         let now: HashMap<String, Question> = state
             .open
             .iter()
@@ -909,8 +936,11 @@ fn tell_phones(core: &Core) {
             .into_iter()
             .map(|(id, question)| (id, question.agent_id))
             .collect();
-        (asked, cleared)
+        (asked, cleared, changed)
     };
+    for agent_id in changed {
+        core.seen.active(&agent_id);
+    }
     for question in asked {
         core.note_activity(&question.agent_id, Activity::NeedsYou);
         core.notify.send(Signal::Question {
