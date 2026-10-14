@@ -190,8 +190,14 @@
     background: var(--acc-soft);
 }
 .diff-rows {
-    width: max-content;
+    position: relative;
     min-width: 100%;
+}
+.diff-block {
+    position: absolute;
+    left: 0;
+    right: 0;
+    content-visibility: auto;
 }
 .diff-row {
     display: flex;

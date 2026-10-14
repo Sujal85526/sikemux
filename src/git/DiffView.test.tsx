@@ -36,7 +36,6 @@ describe("DiffView", () => {
         const drawn = container.querySelectorAll(".diff-row").length;
         expect(drawn).toBeGreaterThan(0);
         expect(drawn).toBeLessThan(200);
-        const list = container.querySelector<HTMLElement>(".diff-rows")!;
-        expect(parseFloat(list.style.paddingTop) + parseFloat(list.style.paddingBottom) + drawn * 19).toBe(5000 * 19);
+        expect(container.querySelector<HTMLElement>(".diff-rows")!.style.height).toBe(`${5000 * 19}px`);
     });
 });
