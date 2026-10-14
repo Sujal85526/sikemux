@@ -79,6 +79,33 @@
     white-space: nowrap;
 }
 
+.agent-surface-lead {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 4px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-tertiary);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.agent-surface-lead:hover,
+.agent-surface-lead:focus-visible {
+    background: var(--surface-hover);
+    color: var(--ink);
+}
+
+.agent-surface-lead-name {
+    color: var(--ink-dim);
+    font-weight: var(--weight-medium);
+}
+
 .agent-surface-menu {
     display: grid;
     place-items: center;
