@@ -998,6 +998,19 @@ When the person, or the agent that started you, moves or changes a card you
 are working on, a message from the board says so. Notes from the board come
 as messages from `Board`.
 
+### Cards Auto runs
+
+When the person turns on Auto for a project, the board starts an agent of its
+own for each card the person added that nobody has and nothing holds up, each
+in a git worktree and branch of its own. Its task comes as a message from
+`Auto`. Plan first and ask everything at once with `ask`; then do the work,
+run the checks and commit on that branch. Do not push, open a pull request or
+merge: when your turn ends, Auto commits what is left, pushes, opens the pull
+request and merges it once its checks pass. So end your turn only when the
+work is done or you wait on an answer. Marking such a card done with
+`board_update` keeps it in progress until it lands. If its checks fail, a
+message from `Auto` asks you once to fix them.
+
 ## shell: The same operations from a shell
 
 Every tool here is also a CLI verb, which is useful inside a task or a script:
