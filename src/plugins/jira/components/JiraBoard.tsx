@@ -5,6 +5,7 @@ import { ContextMenu, EmptyState, IconRefresh, SkeletonRows, type ContextMenuIte
 import { failureMessage, jiraApi, type JiraBoardView, type JiraColumn, type JiraIssueSummary } from "../api";
 import { boardPeople, matchingCards, pickKey, unassignedCount } from "../boardFilter";
 import { jiraBoardR } from "../resources";
+import { JiraFace } from "./JiraFace";
 
 /** Where each card sits after the moves still on their way to Jira, by issue key and column index. */
 export function withMoves(board: JiraBoardView, moves: Record<string, number>): JiraColumn[] {
@@ -161,7 +162,7 @@ export function JiraBoard({
                                 aria-label={person.name}
                                 aria-pressed={picked.has(person.accountId)}
                                 onClick={() => toggle(person.accountId)}>
-                                {initials(person.name)}
+                                <JiraFace person={person} />
                             </button>
                         ))}
                     </span>
@@ -232,7 +233,7 @@ export function JiraBoard({
                                         <span className="jira-grow" />
                                         {issue.assignee && (
                                             <span className="jira-avatar" title={issue.assignee.name}>
-                                                {initials(issue.assignee.name)}
+                                                <JiraFace person={issue.assignee} />
                                             </span>
                                         )}
                                     </span>
@@ -245,13 +246,4 @@ export function JiraBoard({
             {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
         </section>
     );
-}
-
-function initials(name: string): string {
-    return name
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => part[0]?.toUpperCase() ?? "")
-        .join("");
 }

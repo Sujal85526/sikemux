@@ -36,7 +36,7 @@ const summary = {
     status: "In Progress",
     statusCategory: "indeterminate" as const,
     priority: "High",
-    assignee: { accountId: "a1", name: "Ana" },
+    assignee: { accountId: "a1", name: "Ana", avatarUrl: null },
     issueType: "Bug",
     sprint: "Sprint 5",
     updated: null,
@@ -46,7 +46,7 @@ const summary = {
 const detail: JiraIssue = {
     ...summary,
     project: "ABC",
-    reporter: { accountId: "r1", name: "Raj" },
+    reporter: { accountId: "r1", name: "Raj", avatarUrl: null },
     labels: ["auth"],
     created: null,
     description: "Steps: **open** the app",
@@ -131,7 +131,7 @@ describe("JiraPane", () => {
     });
 
     it("narrows a board to the people picked through Jira, and to typed words on the cards shown", async () => {
-        const kiran = { ...summary, key: "ABC-20", summary: "Dossier chart", assignee: { accountId: "k1", name: "Kiran Rao" } };
+        const kiran = { ...summary, key: "ABC-20", summary: "Dossier chart", assignee: { accountId: "k1", name: "Kiran Rao", avatarUrl: null } };
         const loose = { ...summary, key: "ABC-21", summary: "Dossier picker", assignee: null };
         const columns = (issues: JiraIssueSummary[]) => [{ name: "In Progress", statusIds: ["3"], issues }];
         api.board.mockImplementation(async (_id: number, _site: string | undefined, picked: string[] = []) => ({

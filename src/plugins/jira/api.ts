@@ -24,6 +24,7 @@ export interface JiraStatus {
 export interface JiraPerson {
     accountId: string;
     name: string;
+    avatarUrl: string | null;
 }
 
 export type StatusCategory = "new" | "indeterminate" | "done" | "";
@@ -114,6 +115,8 @@ export interface JiraBoardView {
     truncated: boolean;
 }
 
+const avatars = new Map<string, Promise<string>>();
+
 export const jiraApi = {
     status: () => backend.call<JiraStatus>("status"),
     signIn: (site: string, email: string, token: string) => backend.call<JiraStatus>("signIn", { site, email, token }),
@@ -146,4 +149,13 @@ export const jiraApi = {
     moveIssue: (key: string, column: JiraColumn, site?: string) =>
         backend.call<void>("moveIssue", { key, statusIds: column.statusIds, column: column.name, site }),
     keys: (text: string) => backend.call<string[]>("keys", { text }),
+    /** A person's picture as a `data:` address, since the window cannot load Atlassian's images itself. */
+    avatar(url: string): Promise<string> {
+        const known = avatars.get(url);
+        if (known) return known;
+        const fetched = backend.call<string>("image", { url });
+        avatars.set(url, fetched);
+        fetched.catch(() => avatars.delete(url));
+        return fetched;
+    },
 };

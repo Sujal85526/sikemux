@@ -27,6 +27,7 @@ pub(crate) const SUMMARY_FIELDS: &str = "summary,status,priority,assignee,issuet
 pub struct Person {
     pub account_id: String,
     pub name: String,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -89,6 +90,7 @@ fn person(value: Option<&Value>) -> Option<Person> {
     Some(Person {
         account_id: text(value.get("accountId")).unwrap_or_default(),
         name: text(value.get("displayName")).unwrap_or_else(|| "someone".into()),
+        avatar_url: text(value.pointer("/avatarUrls/48x48")),
     })
 }
 
@@ -1158,7 +1160,8 @@ mod tests {
                 priority: Some("High".into()),
                 assignee: Some(Person {
                     account_id: "a1".into(),
-                    name: "Ana".into()
+                    name: "Ana".into(),
+                    avatar_url: None,
                 }),
                 issue_type: Some("Bug".into()),
                 sprint: Some("Sprint 5".into()),

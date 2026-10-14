@@ -3,6 +3,7 @@ import type { JiraBoardView, JiraColumn } from "./api";
 export interface BoardPerson {
     accountId: string;
     name: string;
+    avatarUrl: string | null;
     count: number;
 }
 
