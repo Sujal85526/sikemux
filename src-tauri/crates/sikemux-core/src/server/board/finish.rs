@@ -279,11 +279,11 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
     }
     let origin = origin.ok_or("the project has no origin remote to open a pull request on")?;
     let host = codehost::find(&origin).await?;
-    let (branch, replace) = (step.run.branch.clone(), step.run.rebased);
+    let (branch, pushed) = (step.run.branch.clone(), step.run.head.clone());
     let head = {
         let tree = tree.clone();
         blocking(move || {
-            git::push(&tree, &branch, replace)?;
+            git::push(&tree, &branch, pushed.as_deref())?;
             git::head(&tree).map_err(Into::into)
         })
         .await
@@ -485,11 +485,12 @@ async fn merge(core: &Arc<Core>, step: &Step, pull: &super::auto::Pull, head: &s
         return;
     }
     let (tree, base, branch) = (step.tree(), step.run.base.clone(), step.run.branch.clone());
+    let pushed = head.to_owned();
     let rebased = blocking(move || {
         if !git::rebase(&tree, &base)? {
             return Ok(None);
         }
-        git::push(&tree, &branch, true)?;
+        git::push(&tree, &branch, Some(&pushed))?;
         git::head(&tree).map(Some).map_err(Into::into)
     })
     .await;

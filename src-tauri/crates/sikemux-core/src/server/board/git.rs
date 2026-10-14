@@ -240,11 +240,14 @@ pub(super) fn origin(repo: &Path) -> Option<String> {
         .filter(|url| !url.is_empty())
 }
 
-pub(super) fn push(tree: &Path, branch: &str, replace: bool) -> Result<(), String> {
+/// Pushes the worktree's branch. `pushed` is the commit Auto last put there,
+/// which a rebase may replace, but nothing someone else pushed since.
+pub(super) fn push(tree: &Path, branch: &str, pushed: Option<&str>) -> Result<(), String> {
     let refspec = format!("HEAD:refs/heads/{branch}");
+    let lease = pushed.map(|sha| format!("--force-with-lease=refs/heads/{branch}:{sha}"));
     let mut args = vec!["push", "--quiet"];
-    if replace {
-        args.push("--force-with-lease");
+    if let Some(lease) = &lease {
+        args.push(lease);
     }
     args.extend(["origin", &refspec]);
     git_in(tree, &args, SLOW).map(drop)
