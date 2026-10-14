@@ -9,7 +9,7 @@ use std::sync::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::protocol::{AgentGroup, ChatInfo, SessionId, SessionInfo};
+use crate::protocol::{AgentGroup, ChatInfo, PermissionChoices, SessionId, SessionInfo};
 
 use super::board::{self, Summary, Waits};
 use super::notify::clip;
@@ -134,6 +134,8 @@ pub(crate) struct Item {
     pub turn: Option<u64>,
     pub card: Option<CardLink>,
     pub request_id: Option<String>,
+    /// The options a permission is answered with.
+    pub choices: Option<PermissionChoices>,
     pub question_id: Option<String>,
     pub url: Option<String>,
     pub handoff: Option<Handoff>,
@@ -146,6 +148,8 @@ pub(crate) struct View {
     pub items: Vec<Item>,
     /// Agents at work now.
     pub working: usize,
+    /// The person is away from this host, so a client can tell when they return.
+    pub away: bool,
 }
 
 /// What happened while the person was away.
@@ -400,6 +404,7 @@ impl Item {
             turn: None,
             card: None,
             request_id: None,
+            choices: None,
             question_id: None,
             url: None,
             handoff: None,
@@ -525,12 +530,14 @@ fn needs(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Vec<Item> {
             attention.at,
         )
         .by(&attention.agent_id, find(&attention.agent_id));
-        let choices = attention.choices;
-        item.detail = choices
+        item.detail = attention
+            .choices
             .command
-            .or(choices.title)
+            .clone()
+            .or_else(|| attention.choices.title.clone())
             .map(|text| clip(&text, MAX_LINE_CHARS));
         item.request_id = Some(attention.id);
+        item.choices = Some(attention.choices);
         items.push(item);
     }
     let questions = core.harness.questions.for_person();
@@ -606,6 +613,7 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
     View {
         items: ranked(items),
         working,
+        away: core.notify.absence().1,
     }
 }
 
