@@ -217,7 +217,7 @@ export const IconContrast = makeSvgIcon(
     </>,
 );
 export const IconCommand = makeSvgIcon(<path d="M3 4.6 6 8l-3 3.4M7.6 11.4H13" />);
-export const IconFolder = makeSvgIcon(<path d="M2 4.4h4l1.6 2H14v7.2H2z" />);
+export const IconFolder = makeSvgIcon(<path d="M2 3.6h4l1.6 2H14v7.2H2z" />);
 export const IconInbox = makeSvgIcon(
     <>
         <path d="M2.4 9.4 4 3.4h8l1.6 6v3.2H2.4z" />

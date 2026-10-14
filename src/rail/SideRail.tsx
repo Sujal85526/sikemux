@@ -41,12 +41,16 @@ import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
 import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
 
+/* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
+const LINE_ICON_SIZE = 16;
+const LOGO_SIZE = 14;
+
 function kindIcon(kind: SessionKind): ReactNode {
-    if (kind === "project") return <IconFolder size={13} />;
-    if (kind === "ssh") return <IconServer size={13} />;
+    if (kind === "project") return <IconFolder size={LINE_ICON_SIZE} />;
+    if (kind === "ssh") return <IconServer size={LINE_ICON_SIZE} />;
     const surface = pluginSurface(kind);
-    if (surface) return surface.icon(15);
-    return <IconTerminal size={13} />;
+    if (surface) return surface.icon(LOGO_SIZE);
+    return <IconTerminal size={LINE_ICON_SIZE} />;
 }
 
 const MAX_BADGE_ICONS = 5;
@@ -263,7 +267,7 @@ function ProjectBlock({ s }: { s: Session }) {
                             onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
                             onClick={() => rail.selectProject(s.id)}>
                             <span className="proj-folder">
-                                <IconFolder size={12} />
+                                <IconFolder size={LINE_ICON_SIZE} />
                             </span>
                             <span className="proj-name">{s.name}</span>
                             {agentBadge}
@@ -293,7 +297,7 @@ function ProjectBlock({ s }: { s: Session }) {
                         onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
                         onClick={() => rail.selectProject(s.id)}>
                         <span className="proj-folder">
-                            <IconFolder size={12} />
+                            <IconFolder size={LINE_ICON_SIZE} />
                         </span>
                         <span className="proj-name">{s.name}</span>
                         {agentBadge}
@@ -740,7 +744,7 @@ export const SideRail = memo(function SideRail() {
                         actionTitle="Edit ~/.ssh/config"
                         emptyText="no SSH hosts"
                     />
-                    <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" className="rail-logos" />
+                    <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />
                 </div>
                 <UpdateChip />

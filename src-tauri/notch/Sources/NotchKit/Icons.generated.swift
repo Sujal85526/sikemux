@@ -10,7 +10,7 @@ enum Icons {
         IconShape(d: "M7.2 11.8h1.6", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
     ])
     static let folder = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
-        IconShape(d: "M2 4.4h4l1.6 2H14v7.2H2z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
+        IconShape(d: "M2 3.6h4l1.6 2H14v7.2H2z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),
     ])
     static let file = IconDef(viewBox: ViewBox(x: 0, y: 0, width: 16, height: 16), shapes: [
         IconShape(d: "M4 1.9h5l3.1 3.1V14H4z", style: .stroke, opacity: 1, evenOdd: false, translate: (0, 0)),

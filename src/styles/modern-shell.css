@@ -376,11 +376,6 @@ textarea:focus,
     --mark: 22px;
 }
 
-/* Provider logos read at the agents' glyph size, so they take the whole slot. */
-.rail-logos {
-    --mark: var(--row-slot);
-}
-
 .agent-row .agent-glyph,
 .proj-row .proj-folder,
 .sess-row .sess-icon,
