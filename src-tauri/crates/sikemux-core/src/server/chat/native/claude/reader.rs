@@ -1216,7 +1216,7 @@ impl Reader {
             None => "No answer from Anthropic".to_owned(),
         };
         let update = crate::acp::account::retrying("api_retry", category, attempt, &detail);
-        self.sink.update(&self.session_id, update);
+        self.sink.update(&self.data.session_id, update);
     }
 
     fn compacted(&mut self, status: &str, error: Option<String>) {
