@@ -987,6 +987,10 @@
 .agent-rail .agent-tree.runs-on .proj-child:last-child .proj-child-tick {
     background: var(--tree-tick);
 }
+.agent-all-projects {
+    display: contents;
+}
+
 .agent-row-wrap.chain::before,
 .agent-row-wrap.chain:not(.chain-last)::after,
 .agent-row-wrap.chain-head::after {
