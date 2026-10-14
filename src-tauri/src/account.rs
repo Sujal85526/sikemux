@@ -115,6 +115,16 @@ impl AccountStatus {
             picture: None,
         }
     }
+
+    /// A host signed in by code keeps no sign-in here, so only the core
+    /// knows its account, and only by id.
+    fn owned_by(owner: Option<String>) -> Self {
+        Self {
+            signed_in: owner.is_some(),
+            user_id: owner,
+            ..Self::signed_out()
+        }
+    }
 }
 
 fn profile_dir(app: &AppHandle) -> AppResult<PathBuf> {
@@ -229,55 +239,75 @@ pub async fn account_status(
     app: AppHandle,
     manager: State<'_, PtyManager>,
 ) -> AppResult<AccountStatus> {
-    let dir = profile_dir(&app)?;
-    let Some(saved) = read_saved().await? else {
-        return Ok(AccountStatus::signed_out());
-    };
     let remote = match manager.client().await {
         Ok(core) => core.remote_status().await.ok(),
         Err(_) => None,
     };
+    let owner = remote.as_ref().and_then(|remote| remote.owner.clone());
+    let Some(saved) = read_saved().await? else {
+        return Ok(AccountStatus::owned_by(owner));
+    };
     if remote.is_some_and(|remote| released(&remote, &saved.user_id)) {
         forget(&app, &saved).await?;
-        return Ok(AccountStatus::signed_out());
+        return Ok(AccountStatus::owned_by(owner));
     }
-    Ok(status_of(&dir, saved).await)
+    Ok(status_of(&profile_dir(&app)?, saved).await)
 }
 
-/// The core reported that the account let this host go, so the sign-in
-/// saved here goes too, and the app hears it is signed out.
+/// Follows the core's owner when it changes without the app asking: the
+/// account let this host go, or the host signed in or out by code.
 pub fn notice_remote(app: &AppHandle, remote: &RemoteStatus) {
-    let removed = remote.owner.is_none()
-        && remote
-            .account
-            .as_ref()
-            .is_some_and(|link| link.state == AccountLinkState::Removed);
-    if !removed {
+    static OWNER: Mutex<Option<Option<String>>> = Mutex::new(None);
+    if remote.core_id.is_empty() {
         return;
     }
-    let app = app.clone();
+    let changed = {
+        let mut last = OWNER
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let changed = last.as_ref().is_some_and(|last| *last != remote.owner);
+        *last = Some(remote.owner.clone());
+        changed
+    };
+    if !changed {
+        return;
+    }
+    let removed = remote
+        .account
+        .as_ref()
+        .is_some_and(|link| link.state == AccountLinkState::Removed);
+    let (app, owner) = (app.clone(), remote.owner.clone());
     tauri::async_runtime::spawn(async move {
-        let Ok(Some(saved)) = read_saved().await else {
+        let Ok(saved) = read_saved().await else {
             return;
         };
-        match forget(&app, &saved).await {
-            Ok(()) => {
-                let _ = app.emit(ACCOUNT_CHANGED_EVENT, AccountStatus::signed_out());
+        match (saved, &owner) {
+            (None, _) => {}
+            (Some(saved), Some(owner)) if saved.user_id == *owner => return,
+            (Some(_), None) if !removed => return,
+            (Some(saved), _) => {
+                if let Err(error) = forget(&app, &saved).await {
+                    eprintln!("sikemux: could not forget the account: {error}");
+                    return;
+                }
             }
-            Err(error) => eprintln!("sikemux: could not forget the account: {error}"),
         }
+        let _ = app.emit(ACCOUNT_CHANGED_EVENT, AccountStatus::owned_by(owner));
     });
 }
 
 /// Asks the account service for the name and picture again once the cached
 /// ones are a few hours old. Offline, the cached ones stay.
 #[tauri::command]
-pub async fn account_refresh_profile(app: AppHandle) -> AppResult<AccountStatus> {
+pub async fn account_refresh_profile(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+) -> AppResult<AccountStatus> {
     static LAST_TRY: tokio::sync::Mutex<Option<Instant>> = tokio::sync::Mutex::const_new(None);
     let dir = profile_dir(&app)?;
     let mut last_try = LAST_TRY.lock().await;
     let Some(saved) = read_saved().await? else {
-        return Ok(AccountStatus::signed_out());
+        return account_status(app, manager).await;
     };
     let stale = saved_profile(&dir, &saved.user_id)
         .await
@@ -397,17 +427,15 @@ pub async fn account_sign_in(
     })?;
     let core = manager.client().await?;
     register_host(&core, &tokens.access_token, &user_id).await?;
-    core.set_owner(Some(user_id.clone()))
-        .await
-        .map_err(core_error)?;
     let saved = Saved {
         user_id: user_id.clone(),
         email: email.clone(),
         refresh_token,
     };
-    if let Err(error) = write_saved(&saved).await {
-        let _ = core.set_owner(None).await;
-        return Err(error);
+    write_saved(&saved).await?;
+    if let Err(error) = core.set_owner(Some(user_id.clone())).await {
+        let _ = delete_saved().await;
+        return Err(core_error(error));
     }
     let dir = profile_dir(&app)?;
     let _ = profile::forget(&dir).await;
