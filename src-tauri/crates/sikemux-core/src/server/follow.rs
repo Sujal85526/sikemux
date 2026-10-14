@@ -1,0 +1,690 @@
+//! What `agent_read` and `agent_wait` answer: what another agent said, in
+//! short, and waiting until agents finish or need the person. What agents do
+//! is journaled beside the project's task events, so a wait from a cursor
+//! misses nothing that happened between two waits.
+
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+use serde_json::{json, Value};
+use tokio::time::Instant;
+
+use crate::cli::protocol::HarnessRequest;
+use crate::protocol::AgentStatus;
+
+use super::chat::feed::{Excerpt, Said};
+use super::connection::blocking;
+use super::messages::{self, Listed, Reach};
+use super::Core;
+
+const MAX_WAIT_MS: u64 = 30_000;
+const MAX_AGENTS: usize = 8;
+/// Turns read when no cursor says where to start.
+const RECENT_TURNS: usize = 3;
+/// About how much one read answers with.
+const MAX_READ_BYTES: usize = 32 * 1024;
+const MAX_ASKED_CHARS: usize = 600;
+const MAX_SAID_BYTES: usize = 2 * 1024;
+const MAX_ANSWER_BYTES: usize = 8 * 1024;
+const TOOL_TITLES: usize = 6;
+const MAX_TITLE_CHARS: usize = 80;
+const SCREEN_LINES: usize = 40;
+
+/// Something that happened to an agent.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Happened {
+    Working,
+    Done,
+    Stopped,
+    Failed,
+    NeedsYou,
+    Gone,
+}
+
+const HAPPENINGS: [Happened; 6] = [
+    Happened::Working,
+    Happened::Done,
+    Happened::Stopped,
+    Happened::Failed,
+    Happened::NeedsYou,
+    Happened::Gone,
+];
+
+impl Happened {
+    pub(crate) fn kind(self) -> &'static str {
+        match self {
+            Happened::Working => "agent.working",
+            Happened::Done => "agent.done",
+            Happened::Stopped => "agent.stopped",
+            Happened::Failed => "agent.failed",
+            Happened::NeedsYou => "agent.needs-you",
+            Happened::Gone => "agent.gone",
+        }
+    }
+
+    fn of(kind: &str) -> Option<Self> {
+        HAPPENINGS
+            .into_iter()
+            .find(|happened| happened.kind() == kind)
+    }
+
+    fn words(self) -> &'static str {
+        match self {
+            Happened::Working => "started working",
+            Happened::Done => "finished its turn",
+            Happened::Stopped => "was stopped mid-turn",
+            Happened::Failed => "ran into an error",
+            Happened::NeedsYou => "waits on the person",
+            Happened::Gone => "stopped running",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Until {
+    /// No longer at work, for any reason.
+    Idle,
+    /// Its turn ended, or it stopped running.
+    Done,
+    NeedsYou,
+    Any,
+}
+
+impl Until {
+    fn of(params: &Value) -> Result<Self, String> {
+        match params.get("until") {
+            None | Some(Value::Null) => Ok(Until::Idle),
+            Some(Value::String(until)) => match until.as_str() {
+                "idle" => Ok(Until::Idle),
+                "done" => Ok(Until::Done),
+                "needs_you" => Ok(Until::NeedsYou),
+                "any" => Ok(Until::Any),
+                other => Err(format!(
+                    "until must be idle, done, needs_you or any, not {other}"
+                )),
+            },
+            Some(_) => Err("until must be idle, done, needs_you or any".into()),
+        }
+    }
+
+    fn heard(self, happened: Happened) -> bool {
+        match self {
+            Until::Any => true,
+            Until::NeedsYou => happened == Happened::NeedsYou,
+            Until::Done => matches!(
+                happened,
+                Happened::Done | Happened::Stopped | Happened::Failed | Happened::Gone
+            ),
+            Until::Idle => happened != Happened::Working,
+        }
+    }
+
+    /// Whether an agent standing at `status` already is where the wait would
+    /// take it. `None` is an agent that is gone.
+    fn already(self, status: Option<AgentStatus>) -> bool {
+        let Some(status) = status else {
+            return self != Until::NeedsYou && self != Until::Any;
+        };
+        match self {
+            Until::Any => false,
+            Until::NeedsYou => status == AgentStatus::Blocked,
+            Until::Done => matches!(
+                status,
+                AgentStatus::Done | AgentStatus::Idle | AgentStatus::Asleep | AgentStatus::Stopped
+            ),
+            Until::Idle => !matches!(status, AgentStatus::Working | AgentStatus::Starting),
+        }
+    }
+}
+
+fn agent_param(params: &Value) -> Result<String, String> {
+    match params.get("agent") {
+        Some(Value::String(agent)) if !agent.trim().is_empty() && agent.len() <= 200 => {
+            Ok(agent.clone())
+        }
+        _ => Err("agent must be the agent's name or id".into()),
+    }
+}
+
+fn cursor_param(params: &Value) -> Result<Option<&str>, String> {
+    match params.get("cursor") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(cursor)) if !cursor.is_empty() && cursor.len() <= 200 => {
+            Ok(Some(cursor))
+        }
+        Some(_) => Err("cursor must be one an earlier call gave you".into()),
+    }
+}
+
+fn cut_bytes(text: &str, max: usize) -> String {
+    let text = text.trim();
+    if text.len() <= max {
+        return text.to_owned();
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{} […]", text[..end].trim_end())
+}
+
+fn cut_chars(text: &str, max: usize) -> String {
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if line.chars().count() <= max {
+        return line;
+    }
+    let kept: String = line.chars().take(max).collect();
+    format!("{}…", kept.trim_end())
+}
+
+/// Who sent a prompt and what it said, without the labels Sikemux wraps
+/// messages from agents and the person's answers in.
+fn asked(text: &str) -> Value {
+    let from = text
+        .trim_start()
+        .strip_prefix("<agent-message from=\"")
+        .and_then(|rest| rest.split_once('"'))
+        .map(|(name, _)| name.replace("&quot;", "\"").replace("&amp;", "&"));
+    let body: Vec<&str> = text
+        .lines()
+        .filter(|line| {
+            let line = line.trim();
+            !(line.starts_with("<agent-message ")
+                || line.starts_with("</agent-message>")
+                || line.starts_with("<question-answer ")
+                || line.starts_with("</question-answer>"))
+        })
+        .collect();
+    json!({
+        "from": from.unwrap_or_else(|| "the person".to_owned()),
+        "text": cut_chars(&body.join("\n"), MAX_ASKED_CHARS),
+    })
+}
+
+#[derive(PartialEq, Eq)]
+enum Last {
+    Nothing,
+    Message,
+    Other,
+}
+
+struct Turn {
+    start: u64,
+    asked: Vec<Value>,
+    said: Vec<String>,
+    tools: Vec<(String, Option<String>, bool)>,
+    ended: Option<Value>,
+    last: Last,
+}
+
+impl Turn {
+    fn new(start: u64) -> Self {
+        Self {
+            start,
+            asked: Vec::new(),
+            said: Vec::new(),
+            tools: Vec::new(),
+            ended: None,
+            last: Last::Nothing,
+        }
+    }
+
+    fn tools_line(&self) -> Option<String> {
+        if self.tools.is_empty() {
+            return None;
+        }
+        let count = self.tools.len();
+        let failed = self.tools.iter().filter(|(_, _, failed)| *failed).count();
+        let titles: Vec<String> = self
+            .tools
+            .iter()
+            .filter_map(|(_, title, _)| title.as_deref())
+            .filter(|title| !title.trim().is_empty())
+            .take(TOOL_TITLES)
+            .map(|title| cut_chars(title, MAX_TITLE_CHARS))
+            .collect();
+        let mut line = format!("{count} tool call{}", if count == 1 { "" } else { "s" });
+        if failed > 0 {
+            line.push_str(&format!(", {failed} failed"));
+        }
+        if !titles.is_empty() {
+            line.push_str(": ");
+            line.push_str(&titles.join("; "));
+            if count > titles.len() {
+                line.push_str(&format!("; and {} more", count - titles.len()));
+            }
+        }
+        Some(line)
+    }
+
+    fn view(mut self) -> Value {
+        let finished = self.ended.as_ref().and_then(Value::as_str) == Some("finished");
+        let answer = (finished && self.last == Last::Message)
+            .then(|| self.said.pop())
+            .flatten();
+        let tools = self.tools_line();
+        let mut turn = json!({
+            "state": self.ended.take().unwrap_or_else(|| "working".into()),
+        });
+        let fields = turn.as_object_mut().expect("a turn is an object");
+        if !self.asked.is_empty() {
+            fields.insert("asked".into(), self.asked.into());
+        }
+        if !self.said.is_empty() {
+            let said: Vec<String> = self
+                .said
+                .iter()
+                .map(|text| cut_bytes(text, MAX_SAID_BYTES))
+                .collect();
+            fields.insert("said".into(), said.into());
+        }
+        if let Some(tools) = tools {
+            fields.insert("tools".into(), tools.into());
+        }
+        if let Some(answer) = answer {
+            fields.insert("answer".into(), cut_bytes(&answer, MAX_ANSWER_BYTES).into());
+        }
+        turn
+    }
+}
+
+/// The excerpt as turns, as many as fit, and where the first that did not
+/// fit starts.
+fn turns(excerpt: Excerpt) -> (Vec<Value>, Option<u64>) {
+    let mut turns: Vec<Turn> = Vec::new();
+    for (index, starts, said) in excerpt.said {
+        let ended = turns.last().is_none_or(|turn| turn.ended.is_some());
+        if starts || ended {
+            turns.push(Turn::new(index));
+        }
+        let turn = turns.last_mut().expect("a turn was just made");
+        match said {
+            Said::Asked(text) => {
+                turn.asked.push(asked(&text));
+                turn.last = Last::Other;
+            }
+            Said::Message(text) => {
+                match turn.said.last_mut().filter(|_| turn.last == Last::Message) {
+                    Some(last) => last.push_str(&text),
+                    None => turn.said.push(text),
+                }
+                turn.last = Last::Message;
+            }
+            Said::Tool { id, title, failed } => {
+                match turn.tools.iter_mut().find(|(known, _, _)| *known == id) {
+                    Some((_, known_title, known_failed)) => {
+                        if title.is_some() {
+                            *known_title = title;
+                        }
+                        *known_failed = failed;
+                    }
+                    None => turn.tools.push((id, title, failed)),
+                }
+                turn.last = Last::Other;
+            }
+            Said::TurnStarted => {}
+            Said::TurnEnded { cancelled } => {
+                turn.ended = Some(if cancelled { "stopped" } else { "finished" }.into());
+            }
+            Said::Failed(message) => {
+                turn.ended = Some(format!("failed: {}", cut_chars(&message, 400)).into());
+            }
+        }
+    }
+    let mut views = Vec::new();
+    let mut bytes = 0;
+    for turn in turns {
+        if bytes >= MAX_READ_BYTES && !views.is_empty() {
+            return (views, Some(turn.start));
+        }
+        let start = turn.start;
+        let view = turn.view();
+        bytes += serde_json::to_vec(&view).map_or(0, |bytes| bytes.len());
+        if bytes > MAX_READ_BYTES && !views.is_empty() {
+            return (views, Some(start));
+        }
+        views.push(view);
+    }
+    (views, None)
+}
+
+fn read_cursor(feed: &str, index: u64) -> String {
+    format!("{feed}:{index}")
+}
+
+/// The agent's last turns, or what it said since `cursor`.
+fn read_chat(core: &Core, target: &Listed, cursor: Option<&str>) -> Result<Value, String> {
+    let chat = core
+        .chats
+        .get(&target.agent_id)
+        .ok_or("that agent is not running")?;
+    let name = target.name.as_deref().unwrap_or(&target.agent_id);
+    let from = cursor
+        .map(|cursor| {
+            cursor
+                .split_once(':')
+                .and_then(|(feed, index)| Some((feed, index.parse::<u64>().ok()?)))
+                .ok_or("cursor must be one agent_read gave you")
+        })
+        .transpose()?;
+    let mut notes = Vec::new();
+    let index = match from {
+        Some((feed, index)) if feed == chat.feed.id() => Some(index),
+        Some(_) => {
+            notes.push(format!(
+                "{name} started again since that cursor, so this begins at its last turns."
+            ));
+            None
+        }
+        None => None,
+    };
+    let excerpt = chat.feed.excerpt(index, RECENT_TURNS, MAX_READ_BYTES * 4);
+    if excerpt.skipped {
+        notes.push("Some of what it said after your cursor is no longer kept.".to_owned());
+    }
+    let feed = excerpt.feed.clone();
+    let next = excerpt.next;
+    let (turns, rest) = turns(excerpt);
+    if turns.is_empty() {
+        notes.push(format!("{name} has said nothing since your cursor."));
+    }
+    if rest.is_some() {
+        notes.push("There is more: read again with this cursor.".to_owned());
+    }
+    let mut answer = json!({
+        "turns": turns,
+        "cursor": read_cursor(&feed, rest.unwrap_or(next)),
+        "more": rest.is_some(),
+    });
+    if !notes.is_empty() {
+        answer["note"] = notes.join(" ").into();
+    }
+    Ok(answer)
+}
+
+/// The last lines of a terminal agent's screen.
+fn read_terminal(core: &Core, target: &Listed) -> Result<Value, String> {
+    let session = core
+        .agent_session(&target.agent_id)
+        .ok_or("that agent no longer has a terminal")?;
+    let (screen, _) = super::agent::screen_text(&session).unwrap_or_default();
+    let lines: Vec<&str> = screen
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .skip_while(|line| line.is_empty())
+        .take(SCREEN_LINES)
+        .collect();
+    let screen: Vec<&str> = lines.into_iter().rev().collect();
+    let name = target.name.as_deref().unwrap_or(&target.agent_id);
+    Ok(json!({
+        "screen": screen.join("\n"),
+        "note": format!("{name} runs in a terminal, so this is what its screen shows now, not a record of what it said, and there is no cursor."),
+    }))
+}
+
+pub(crate) async fn read(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
+    let caller = request
+        .agent_id
+        .clone()
+        .ok_or("agent_read needs the calling agent's id")?;
+    let agent = agent_param(&request.params)?;
+    let cursor = cursor_param(&request.params)?.map(str::to_owned);
+    let (core, request) = (core.clone(), request.clone());
+    blocking(move || {
+        let project = messages::caller_project(&core, &request);
+        let target = messages::resolve(&messages::listed(&core), &agent, &project, &caller)?;
+        if target.agent_id == caller {
+            return Err("That agent is you".into());
+        }
+        let name = target.name.clone().unwrap_or_else(|| target.agent_id.clone());
+        let mut answer = if core.chats.get(&target.agent_id).is_some() {
+            read_chat(&core, &target, cursor.as_deref())?
+        } else {
+            match target.reach {
+                Reach::Terminal => read_terminal(&core, &target)?,
+                Reach::Asleep => json!({
+                    "turns": [],
+                    "note": format!("{name} is asleep, so Sikemux has nothing of it to read until it runs again. A message with agent_send wakes it."),
+                }),
+                Reach::Chat | Reach::Stopped => json!({
+                    "turns": [],
+                    "note": format!("{name} has stopped, so Sikemux has nothing of it to read."),
+                }),
+            }
+        };
+        let fields = answer.as_object_mut().expect("an answer is an object");
+        fields.insert("name".into(), name.into());
+        fields.insert("agentId".into(), target.agent_id.clone().into());
+        fields.insert("cli".into(), target.cli.clone().into());
+        fields.insert(
+            "status".into(),
+            messages::status_word(target.status).into(),
+        );
+        Ok(answer)
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+/// An agent a wait is on. `status` is `None` once it is gone.
+struct Waited {
+    agent_id: String,
+    name: String,
+    project: String,
+    status: Option<AgentStatus>,
+}
+
+fn agents_param(params: &Value) -> Result<Vec<String>, String> {
+    let wrong = || format!("agents must list 1 to {MAX_AGENTS} agent names or ids");
+    let Some(Value::Array(agents)) = params.get("agents") else {
+        return Err(wrong());
+    };
+    if agents.is_empty() || agents.len() > MAX_AGENTS {
+        return Err(wrong());
+    }
+    agents
+        .iter()
+        .map(|agent| match agent {
+            Value::String(agent) if !agent.trim().is_empty() && agent.len() <= 200 => {
+                Ok(agent.clone())
+            }
+            _ => Err(wrong()),
+        })
+        .collect()
+}
+
+/// The agents `wanted` names, as they stand now. An agent id Sikemux named
+/// once but no longer runs is an agent that is gone.
+fn waited(
+    core: &Core,
+    request: &HarnessRequest,
+    wanted: &[String],
+    caller: &str,
+) -> Result<Vec<Waited>, String> {
+    let project = messages::caller_project(core, request);
+    let agents = messages::listed(core);
+    let mut found: Vec<Waited> = Vec::new();
+    for agent in wanted {
+        let waited = match messages::resolve(&agents, agent, &project, caller) {
+            Ok(target) => Waited {
+                name: target.name.unwrap_or_else(|| target.agent_id.clone()),
+                status: Some(target.status),
+                project: target.project,
+                agent_id: target.agent_id,
+            },
+            Err(error) => {
+                let named = core
+                    .names
+                    .get(agent.trim())
+                    .filter(|named| named.agent_id != caller)
+                    .ok_or(error)?;
+                Waited {
+                    agent_id: named.agent_id,
+                    name: named.name,
+                    project: named.project,
+                    status: None,
+                }
+            }
+        };
+        if waited.agent_id == caller {
+            return Err("You cannot wait on yourself".into());
+        }
+        if !found.iter().any(|known| known.agent_id == waited.agent_id) {
+            found.push(waited);
+        }
+    }
+    if found
+        .iter()
+        .any(|waited| waited.project != found[0].project)
+    {
+        return Err(
+            "agent_wait waits on agents of one project at a time; wait on each project's apart"
+                .into(),
+        );
+    }
+    Ok(found)
+}
+
+fn standing(waited: &Waited) -> Value {
+    json!({
+        "name": waited.name,
+        "agentId": waited.agent_id,
+        "status": waited.status.map_or("gone", messages::status_word),
+    })
+}
+
+pub(crate) async fn wait(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
+    let caller = request
+        .agent_id
+        .clone()
+        .ok_or("agent_wait needs the calling agent's id")?;
+    let params = &request.params;
+    let wanted = agents_param(params)?;
+    let until = Until::of(params)?;
+    let after = cursor_param(params)?
+        .map(|cursor| {
+            cursor
+                .parse::<u64>()
+                .map_err(|_| "cursor must be one agent_wait gave you".to_owned())
+        })
+        .transpose()?;
+    let timeout = match params.get("timeoutMs") {
+        None | Some(Value::Null) => MAX_WAIT_MS,
+        Some(value) => value
+            .as_u64()
+            .filter(|ms| *ms <= MAX_WAIT_MS)
+            .ok_or(format!(
+                "timeoutMs must be an integer between 0 and {MAX_WAIT_MS}"
+            ))?,
+    };
+    let harness = &core.harness;
+    let _slot = harness.wait_slot()?;
+    let deadline = Instant::now() + Duration::from_millis(timeout);
+    let look = {
+        let (core, request, caller) = (core.clone(), request.clone(), caller.clone());
+        move || waited(&core, &request, &wanted, &caller)
+    };
+    let first = {
+        let look = look.clone();
+        blocking(move || look().map_err(Into::into))
+            .await
+            .map_err(|error| error.to_string())?
+    };
+    let project = first[0].project.clone();
+    let ids: HashSet<String> = first.iter().map(|waited| waited.agent_id.clone()).collect();
+    let after = match after {
+        Some(after) => after,
+        None => {
+            let cursor = harness.journal_cursor(&project);
+            let already: Vec<Value> = first
+                .iter()
+                .filter(|waited| until.already(waited.status))
+                .map(|waited| {
+                    json!({
+                        "agent": waited.name,
+                        "agentId": waited.agent_id,
+                        "what": format!("is {} now", waited.status.map_or("gone", messages::status_word)),
+                    })
+                })
+                .collect();
+            if !already.is_empty() {
+                return Ok(answer(&first, already, cursor, false, false));
+            }
+            cursor
+        }
+    };
+    loop {
+        let mut changed = harness.subscribe();
+        let page = harness.journal_since(&project, after).map_err(|_| {
+            "cursor must be one agent_wait gave you for these agents' project".to_owned()
+        })?;
+        let heard: Vec<Value> = page
+            .events
+            .iter()
+            .filter_map(|entry| {
+                let agent_id = entry.agent_id.as_deref().filter(|id| ids.contains(*id))?;
+                let happened =
+                    Happened::of(&entry.kind).filter(|happened| until.heard(*happened))?;
+                let name = first
+                    .iter()
+                    .find(|waited| waited.agent_id == agent_id)
+                    .map_or(agent_id, |waited| waited.name.as_str());
+                Some(json!({
+                    "agent": name,
+                    "agentId": agent_id,
+                    "what": happened.words(),
+                    "cursor": entry.seq.to_string(),
+                }))
+            })
+            .collect();
+        let timed_out = Instant::now() >= deadline;
+        if !heard.is_empty() || page.truncated || timed_out {
+            let now = {
+                let look = look.clone();
+                blocking(move || look().map_err(Into::into))
+                    .await
+                    .map_err(|error| error.to_string())?
+            };
+            return Ok(answer(
+                &now,
+                heard,
+                page.cursor,
+                page.truncated,
+                timed_out && page.events.is_empty(),
+            ));
+        }
+        tokio::select! {
+            _ = changed.changed() => {}
+            _ = tokio::time::sleep_until(deadline) => {}
+        }
+    }
+}
+
+fn answer(
+    agents: &[Waited],
+    heard: Vec<Value>,
+    cursor: u64,
+    truncated: bool,
+    timed_out: bool,
+) -> Value {
+    let note = if heard.is_empty() {
+        "Nothing you wait for has happened yet. Wait again with this cursor, or carry on: an agent you started reports to you by itself."
+    } else {
+        "agent_read shows what an agent said. Wait again with this cursor for what comes next."
+    };
+    let mut answer = json!({
+        "events": heard,
+        "agents": agents.iter().map(standing).collect::<Vec<_>>(),
+        "cursor": cursor.to_string(),
+        "timedOut": timed_out && heard.is_empty(),
+        "note": note,
+    });
+    if truncated {
+        answer["truncated"] = true.into();
+    }
+    answer
+}

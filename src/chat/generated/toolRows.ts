@@ -80,6 +80,8 @@ export const TOOL_ROWS = {
     agent_list: { verb: "list", kind: "read", icon: "status", target: ["agents"] },
     agent_send: { verb: "message", kind: "edit", icon: "message", target: ["{to}"], detail: ["{text}"] },
     agent_spawn: { verb: "start", kind: "execute", icon: "square-plus", target: ["{cli} agent"], detail: ["{prompt}"] },
+    agent_read: { verb: "read", kind: "read", icon: "message", target: ["{agent}"] },
+    agent_wait: { verb: "wait", kind: "think", icon: "clock", target: ["for {agents}"], detail: ["{until}"] },
     ask: { verb: "ask", kind: "think", icon: "message", target: ["the person for {for}", "{question}"] },
     board_add: { verb: "add", kind: "edit", icon: "square-plus", target: ["card {title}"] },
     board_list: { verb: "list", kind: "read", icon: "dashboard", target: ["card #{card}", "the board"] },

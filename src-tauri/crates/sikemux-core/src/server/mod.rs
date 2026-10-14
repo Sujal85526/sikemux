@@ -9,6 +9,7 @@ mod chat;
 mod connection;
 mod display;
 mod entry;
+mod follow;
 mod handover;
 mod harness;
 mod host;

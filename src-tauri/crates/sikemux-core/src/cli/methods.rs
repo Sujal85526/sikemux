@@ -56,6 +56,8 @@ pub const HARNESS_METHODS: &[&str] = &[
     "agent.list",
     "agent.send",
     "agent.spawn",
+    "agent.read",
+    "agent.wait",
     "agent.ask",
     "board.add",
     "board.list",

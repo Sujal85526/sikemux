@@ -1,6 +1,7 @@
 //! What an agent just did, told once to both the person's unread marks and
 //! the phones' notifications, for chats and agents in terminals alike.
 
+use super::follow::Happened;
 use super::notify::Signal;
 use super::Core;
 
@@ -19,6 +20,17 @@ pub(crate) enum Activity<'a> {
 
 impl Core {
     pub(crate) fn note_activity(&self, agent_id: &str, activity: Activity<'_>) {
+        let happened = match activity {
+            Activity::Started => Some(Happened::Working),
+            Activity::Working => None,
+            Activity::Finished { cancelled: false } => Some(Happened::Done),
+            Activity::Finished { cancelled: true } => Some(Happened::Stopped),
+            Activity::NeedsYou => Some(Happened::NeedsYou),
+            Activity::Problem(_) => Some(Happened::Failed),
+        };
+        if let Some(happened) = happened {
+            self.journal_agent(agent_id, happened);
+        }
         let agent_id = agent_id.to_owned();
         match activity {
             Activity::Started => {
@@ -46,6 +58,18 @@ impl Core {
                     message: message.to_owned(),
                 });
             }
+        }
+    }
+
+    /// The agent stopped running, whether it ended by itself or was closed.
+    pub(crate) fn note_agent_gone(&self, agent_id: &str) {
+        self.journal_agent(agent_id, Happened::Gone);
+    }
+
+    fn journal_agent(&self, agent_id: &str, happened: Happened) {
+        if let Some(named) = self.names.get(agent_id) {
+            self.harness
+                .note_agent(&named.project, happened.kind(), agent_id);
         }
     }
 }

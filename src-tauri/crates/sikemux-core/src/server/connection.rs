@@ -787,7 +787,9 @@ async fn run_requests(
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::AcpStop { agent_id } => {
-                core.chats.stop(&agent_id);
+                if core.chats.stop(&agent_id) {
+                    core.note_agent_gone(&agent_id);
+                }
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::AcpSetPermissionMode { agent_id, mode } => {

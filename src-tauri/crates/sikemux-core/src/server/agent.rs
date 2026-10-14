@@ -306,7 +306,7 @@ fn detection_input<'a>(recent: &'a str, title: &'a str) -> DetectionInput<'a> {
     }
 }
 
-fn screen_text(session: &Session) -> Option<(String, String)> {
+pub(crate) fn screen_text(session: &Session) -> Option<(String, String)> {
     let parser = session.parser.lock().ok()?;
     Some((
         parser.screen().contents(),

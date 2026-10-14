@@ -996,15 +996,18 @@ impl Chats {
         }
     }
 
-    fn remove_if_current(&self, chat: &Chat) {
-        if let Ok(mut chats) = self.chats.lock() {
-            if chats
-                .get(chat.agent_id())
-                .is_some_and(|current| current.generation == chat.generation)
-            {
-                chats.remove(chat.agent_id());
-            }
+    /// Whether `chat` was the agent's current one, which this removes.
+    fn remove_if_current(&self, chat: &Chat) -> bool {
+        let Ok(mut chats) = self.chats.lock() else {
+            return false;
+        };
+        let current = chats
+            .get(chat.agent_id())
+            .is_some_and(|current| current.generation == chat.generation);
+        if current {
+            chats.remove(chat.agent_id());
         }
+        current
     }
 
     fn take(&self, agent_id: &str) -> Option<Arc<Chat>> {
@@ -1029,10 +1032,13 @@ impl Chats {
         Some(task)
     }
 
-    pub(crate) fn stop(&self, agent_id: &str) {
-        if let Some(chat) = self.take(agent_id) {
-            Self::halt(&chat);
-        }
+    /// Whether the agent had a chat to stop.
+    pub(crate) fn stop(&self, agent_id: &str) -> bool {
+        let Some(chat) = self.take(agent_id) else {
+            return false;
+        };
+        Self::halt(&chat);
+        true
     }
 
     pub(crate) fn stop_all(&self) {
@@ -1214,7 +1220,9 @@ fn launch(
             );
         }
         ending.end(result.err());
-        owner.chats.remove_if_current(&ending);
+        if owner.chats.remove_if_current(&ending) {
+            owner.note_agent_gone(ending.agent_id());
+        }
         ending.cancel_permissions();
     });
     if let Ok(mut slot) = chat.task.lock() {
@@ -1292,7 +1300,9 @@ pub(crate) async fn until_started(core: &Arc<Core>, chat: Arc<Chat>) -> CoreResu
     match tokio::time::timeout(START_TIMEOUT, chat.until_ready()).await {
         Ok(result) => result.map_err(CoreError::from),
         Err(_) => {
-            core.chats.remove_if_current(&chat);
+            if core.chats.remove_if_current(&chat) {
+                core.note_agent_gone(chat.agent_id());
+            }
             Chats::halt(&chat);
             Err("ACP adapter did not become ready within 150 seconds".into())
         }

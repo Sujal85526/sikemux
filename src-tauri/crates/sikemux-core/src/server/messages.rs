@@ -279,7 +279,7 @@ pub(crate) async fn hand_task(
 
 /// How an agent can be reached.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Reach {
+pub(crate) enum Reach {
     Chat,
     Asleep,
     Terminal,
@@ -287,22 +287,22 @@ enum Reach {
 }
 
 #[derive(Clone)]
-struct Listed {
-    agent_id: String,
-    name: Option<String>,
-    project: String,
-    cli: String,
+pub(crate) struct Listed {
+    pub agent_id: String,
+    pub name: Option<String>,
+    pub project: String,
+    pub cli: String,
     title: Option<String>,
-    status: AgentStatus,
+    pub status: AgentStatus,
     parent: Option<String>,
     active_at: Option<u64>,
     rank: u32,
-    reach: Reach,
+    pub reach: Reach,
 }
 
 /// Every agent the core runs or the app holds, in the order the device view
 /// puts them. Reads the disk to place agents in projects.
-fn listed(core: &Core) -> Vec<Listed> {
+pub(crate) fn listed(core: &Core) -> Vec<Listed> {
     let (chats, sessions) = core.ranked_infos();
     let projects = core.workspaces.project_paths();
     let place = |agent_id: &str, cwd: Option<&std::path::Path>| {
@@ -374,7 +374,7 @@ fn since(at: Option<u64>, now: u64) -> Option<String> {
     })
 }
 
-fn status_word(status: AgentStatus) -> &'static str {
+pub(crate) fn status_word(status: AgentStatus) -> &'static str {
     match status {
         AgentStatus::Blocked => "waiting on the person",
         AgentStatus::Working => "working",
@@ -387,7 +387,7 @@ fn status_word(status: AgentStatus) -> &'static str {
 }
 
 /// The project the calling agent belongs to.
-fn caller_project(core: &Core, request: &HarnessRequest) -> String {
+pub(crate) fn caller_project(core: &Core, request: &HarnessRequest) -> String {
     request
         .agent_id
         .as_deref()
@@ -471,7 +471,12 @@ fn message_text(params: &Value) -> Result<String, String> {
 
 /// The agent `to` names: an agent id, or a name, preferring the caller's
 /// project.
-fn resolve(agents: &[Listed], to: &str, project: &str, caller: &str) -> Result<Listed, String> {
+pub(crate) fn resolve(
+    agents: &[Listed],
+    to: &str,
+    project: &str,
+    caller: &str,
+) -> Result<Listed, String> {
     let wanted = to.trim().trim_start_matches('@');
     if let Some(agent) = agents.iter().find(|agent| agent.agent_id == wanted) {
         return Ok(agent.clone());

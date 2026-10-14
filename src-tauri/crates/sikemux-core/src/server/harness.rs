@@ -19,7 +19,7 @@ use crate::cli::protocol::{
     PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
 };
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
-use crate::harness::journal::{JournalRecord, Journals};
+use crate::harness::journal::{EventsPage, JournalRecord, Journals};
 use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs, RunsRecord};
 use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 
@@ -27,7 +27,7 @@ use super::connection::blocking;
 use super::messages::{self, Mailbox, MailboxRecord};
 use super::questions::{self, Questions, QuestionsRecord};
 use super::window::{self, Call};
-use super::{board, spawn};
+use super::{board, follow, spawn};
 use super::{session, Core};
 use crate::skills;
 
@@ -55,6 +55,8 @@ const TOOL_CALLS_FILE: &str = "agent-tool-calls.json";
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
 /// Tools only an agent that proves who it is may call.
 const AGENT_METHODS: [&str; 2] = ["agent.", "board."];
+/// What agents do goes in the same journal as tasks, for `agent_wait` alone.
+pub(crate) const AGENT_EVENT: &str = "agent.";
 
 const WINDOW_CLOSED_NOTE: &str = "Sikemux's window is closed, so this lists only the runs you started and the event cursor. Panes, the tasks in sikemux.json and listening ports need the window open.";
 const AWAITING_TRUST_NOTE: &str = "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.";
@@ -266,6 +268,36 @@ impl Harness {
         });
     }
 
+    /// One of the few waits the core holds open at once, or an error when
+    /// they are all taken.
+    pub(crate) fn wait_slot(&self) -> Result<WaitSlot<'_>, String> {
+        if self.waits.fetch_add(1, Ordering::AcqRel) >= MAX_WAITS {
+            self.waits.fetch_sub(1, Ordering::AcqRel);
+            return Err("Too many event waits".into());
+        }
+        Ok(WaitSlot(&self.waits))
+    }
+
+    /// Changes whenever a project's journal does.
+    pub(crate) fn subscribe(&self) -> watch::Receiver<u64> {
+        self.changes.subscribe()
+    }
+
+    pub(crate) fn journal_cursor(&self, project: &str) -> u64 {
+        self.read(|state| state.journals.cursor(project))
+    }
+
+    pub(crate) fn journal_since(&self, project: &str, after: u64) -> Result<EventsPage, String> {
+        self.read(|state| state.journals.since(project, after, None))
+    }
+
+    /// Something happened to an agent, which `agent_wait` hears of.
+    pub(crate) fn note_agent(&self, project: &str, kind: &str, agent_id: &str) {
+        self.change(|state| {
+            state.journals.append_agent(project, kind, agent_id);
+        });
+    }
+
     pub(crate) fn awaiting_trust(&self, execution_id: &str) {
         self.change(|state| {
             if state
@@ -453,6 +485,8 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "agent.send" => messages::send(core, &request).await,
         "agent.spawn" => spawn::spawn(core, &request).await,
         "agent.ask" => questions::ask(core, &request).await,
+        "agent.read" => follow::read(core, &request).await,
+        "agent.wait" => follow::wait(core, &request).await,
         "board.add" => board::add(core, &request).await,
         "board.list" => board::list(core, &request).await,
         "board.claim" => board::claim(core, &request).await,
@@ -621,7 +655,7 @@ async fn task_read(core: &Core, request: &HarnessRequest) -> Result<Value, Strin
     Ok(with_fields(&run, fields))
 }
 
-struct WaitSlot<'a>(&'a AtomicUsize);
+pub(crate) struct WaitSlot<'a>(&'a AtomicUsize);
 
 impl Drop for WaitSlot<'_> {
     fn drop(&mut self) {
@@ -641,16 +675,14 @@ async fn events_wait(core: &Core, request: &HarnessRequest) -> Result<Value, Str
     let timeout = integer(params, "timeoutMs", MAX_WAIT_MS, MAX_WAIT_MS, 0)?;
     let execution_id = text(params, "executionId")?;
     let harness = &core.harness;
-    if harness.waits.fetch_add(1, Ordering::AcqRel) >= MAX_WAITS {
-        harness.waits.fetch_sub(1, Ordering::AcqRel);
-        return Err("Too many event waits".into());
-    }
-    let _slot = WaitSlot(&harness.waits);
+    let _slot = harness.wait_slot()?;
     let deadline = Instant::now() + Duration::from_millis(timeout);
     loop {
         let mut changed = harness.changes.subscribe();
-        let page =
+        let mut page =
             harness.read(|state| state.journals.since(&request.project, after, execution_id))?;
+        page.events
+            .retain(|entry| !entry.kind.starts_with(AGENT_EVENT));
         if !page.events.is_empty() || page.truncated || Instant::now() >= deadline {
             let events: Vec<Value> = page
                 .events

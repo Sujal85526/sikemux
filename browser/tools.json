@@ -469,7 +469,7 @@
       "name": "browser_evaluate",
       "row": {"verb": "eval", "kind": "execute", "icon": "code", "target": ["{script}"]},
       "method": "browser.evaluate",
-      "description": "Run JavaScript in the page, given as script; returns JSON.",
+      "description": "Run a script in the page; returns JSON.",
       "properties": {
         "script": {
           "type": "string",
@@ -490,7 +490,7 @@
       "name": "browser_network",
       "row": {"verb": "network", "kind": "read", "icon": "network", "target": ["“{filter}”", "request {id}", "recent requests"], "detail": ["{method}"]},
       "method": "browser.network",
-      "description": "List page loads and fetch/XHR calls with status and body.",
+      "description": "List the page's requests with status and body.",
       "properties": {
         "limit": {
           "type": "integer",
@@ -1220,7 +1220,7 @@
       "name": "task_read",
       "row": {"verb": "read", "kind": "read", "icon": "log-lines", "target": ["{taskId}", "{executionId}"], "detail": ["“{search}”"]},
       "method": "task.read",
-      "description": "Read a task's status and output by cursor, tail or search.",
+      "description": "Read a task's output by cursor, tail or search.",
       "properties": {
         "executionId": {
           "type": "string"
@@ -1358,7 +1358,7 @@
       "name": "events_wait",
       "row": {"verb": "wait", "kind": "think", "icon": "clock", "target": ["for {executionId}", "for events"]},
       "method": "events.wait",
-      "description": "Wait for task or UI events after an event cursor.",
+      "description": "Wait for task or UI events after a cursor.",
       "properties": {
         "cursor": {
           "type": "string"
@@ -1438,6 +1438,67 @@
       "required": [
         "cli",
         "prompt"
+      ]
+    },
+    {
+      "name": "agent_read",
+      "row": {"verb": "read", "kind": "read", "icon": "message", "target": ["{agent}"]},
+      "method": "agent.read",
+      "description": "Read what an agent said.",
+      "properties": {
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "agent"
+      ]
+    },
+    {
+      "name": "agent_wait",
+      "row": {"verb": "wait", "kind": "think", "icon": "clock", "target": ["for {agents}"], "detail": ["{until}"]},
+      "method": "agent.wait",
+      "description": "Wait for agents to stop working.",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "until": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "done",
+            "needs_you",
+            "any"
+          ]
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30000
+        }
+      },
+      "required": [
+        "agents"
       ]
     },
     {
@@ -1641,7 +1702,7 @@
       "name": "app_console",
       "row": {"verb": "read", "kind": "read", "icon": "terminal", "target": ["the app console"]},
       "method": "app.console",
-      "description": "Read the Sikemux app's own console and errors.",
+      "description": "Read the Sikemux app's console and errors.",
       "properties": {
         "limit": {
           "type": "integer",

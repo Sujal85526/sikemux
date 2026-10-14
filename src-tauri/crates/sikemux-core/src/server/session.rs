@@ -761,6 +761,7 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
                 super::activity::Activity::Problem(&reason),
             );
         }
+        core.note_agent_gone(agent.agent_id());
     }
     if let Some(exited_at) = exited_at {
         core.reclaim_exited_sessions(exited_at);

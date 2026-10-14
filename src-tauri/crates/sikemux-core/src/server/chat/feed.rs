@@ -105,6 +105,76 @@ pub(crate) struct Replay {
     work: Work,
 }
 
+/// One thing said or done in a chat, as another agent reads it.
+pub(crate) enum Said {
+    /// What the agent was sent: by the person, or another agent's message.
+    Asked(String),
+    /// Text the agent wrote.
+    Message(String),
+    Tool {
+        id: String,
+        title: Option<String>,
+        failed: bool,
+    },
+    TurnStarted,
+    TurnEnded {
+        cancelled: bool,
+    },
+    Failed(String),
+}
+
+impl Said {
+    fn of(event: &ChatEvent) -> Option<Self> {
+        let text = |pointer: &str| {
+            event
+                .payload
+                .pointer(pointer)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+        match event.kind {
+            ChatEventKind::Prompt => text("/text").map(Said::Asked),
+            ChatEventKind::TurnStarted => Some(Said::TurnStarted),
+            ChatEventKind::TurnCompleted => Some(Said::TurnEnded {
+                cancelled: text("/stopReason").as_deref() == Some("cancelled"),
+            }),
+            ChatEventKind::Error => Some(Said::Failed(text("/message").unwrap_or_default())),
+            ChatEventKind::SessionUpdate => match session_update_kind(&event.payload)? {
+                "agent_message_chunk" => text("/update/content/text").map(Said::Message),
+                "user_message_chunk" => text("/update/content/text").map(Said::Asked),
+                "tool_call" | "tool_call_update" => Some(Said::Tool {
+                    id: text("/update/toolCallId")?,
+                    title: text("/update/title"),
+                    failed: text("/update/status").as_deref() == Some("failed"),
+                }),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn bytes(&self) -> usize {
+        match self {
+            Said::Asked(text) | Said::Message(text) | Said::Failed(text) => text.len(),
+            Said::Tool { id, title, .. } => id.len() + title.as_ref().map_or(0, String::len),
+            Said::TurnStarted | Said::TurnEnded { .. } => 0,
+        }
+    }
+}
+
+/// What a chat said from one point on, without its thinking, its subagents'
+/// work or what its tools returned.
+pub(crate) struct Excerpt {
+    /// Names this run of the chat; its indexes start over in the next.
+    pub feed: String,
+    /// Each with its index, and whether a turn starts there.
+    pub said: Vec<(u64, bool, Said)>,
+    /// Some of what came after the point asked for is no longer kept.
+    pub skipped: bool,
+    /// Where reading on starts.
+    pub next: u64,
+}
+
 /// A streamed piece of a message that can be joined to the piece before it.
 struct Chunk<'a> {
     session_id: &'a Value,
@@ -590,6 +660,51 @@ impl Replay {
         let answer: String = pieces.into_iter().rev().collect();
         let answer = answer.trim();
         (!answer.is_empty()).then(|| answer.to_owned())
+    }
+
+    /// What the chat said from index `from` on, or over its last `turns`
+    /// turns, stopping at a turn once past `max_bytes`. A message still
+    /// streaming in is left for the next read.
+    fn excerpt(
+        &self,
+        from: Option<u64>,
+        turns: usize,
+        max_bytes: usize,
+    ) -> (Vec<(u64, bool, Said)>, bool, u64) {
+        let start = match from {
+            Some(from) => self.entries.partition_point(|entry| entry.index < from),
+            None => self
+                .entries
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|(_, entry)| entry.starts_turn)
+                .take(turns)
+                .last()
+                .map_or(0, |(position, _)| position),
+        };
+        let skipped =
+            from.is_some_and(|from| self.entries.front().is_some_and(|first| first.index > from));
+        let mut said = Vec::new();
+        let mut bytes = 0;
+        for (position, entry) in self.entries.iter().enumerate().skip(start) {
+            if bytes >= max_bytes && entry.starts_turn && !said.is_empty() {
+                return (said, skipped, entry.index);
+            }
+            if self.work.in_subagent(&entry.event.payload) {
+                continue;
+            }
+            let Some(item) = Said::of(&entry.event) else {
+                continue;
+            };
+            let streaming = position + 1 == self.entries.len() && self.in_turn;
+            if streaming && matches!(item, Said::Message(_)) {
+                return (said, skipped, entry.index);
+            }
+            bytes += item.bytes();
+            said.push((entry.index, entry.starts_turn, item));
+        }
+        (said, skipped, self.next_index)
     }
 
     /// The last turns, as many as fit, and whatever set how the chat stands
@@ -1189,6 +1304,21 @@ impl Feed {
     /// What the agent last called this session, as the host's rail shows it.
     pub(crate) fn title(&self) -> Option<String> {
         self.inner.lock().ok()?.title.clone()
+    }
+
+    /// What the chat said from index `from` on, or over its last `turns`.
+    pub(crate) fn excerpt(&self, from: Option<u64>, turns: usize, max_bytes: usize) -> Excerpt {
+        let (said, skipped, next) = self
+            .inner
+            .lock()
+            .map(|inner| inner.replay.excerpt(from, turns, max_bytes))
+            .unwrap_or_default();
+        Excerpt {
+            feed: self.id.clone(),
+            said,
+            skipped,
+            next,
+        }
     }
 
     /// What the agent wrote last in its latest turn.
