@@ -320,7 +320,7 @@ struct AskHeader: View {
             if let agent {
                 AgentMark(provider: agent.provider, size: 20).matchedGeometryEffect(id: agent.id, in: marks)
             }
-            Text(agent.map { $0.question?.name ?? agentName($0.provider) } ?? "").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
+            Text(agent.map { $0.question?.name ?? $0.name ?? agentName($0.provider) } ?? "").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
         } trailing: {
             Text("Needs you").font(Theme.ui(12, .semibold)).foregroundStyle(Theme.warn)
             StateMark(state: .blocked)

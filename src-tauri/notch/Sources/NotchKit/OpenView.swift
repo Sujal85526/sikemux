@@ -189,9 +189,7 @@ struct RowLine: View {
     var body: some View {
         HStack(spacing: 10) {
             AgentMark(provider: agent.provider, size: 20).matchedGeometryEffect(id: agent.id, in: marks)
-            Text(agent.title)
-                .font(Theme.ui(13, .semibold))
-                .foregroundStyle(Theme.ink)
+            NamedTitle(agent: agent)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if agent.subagents > 0 { SubagentCount(count: agent.subagents) }
@@ -203,6 +201,21 @@ struct RowLine: View {
             } else if let word = agent.status.word {
                 Text(word).font(Theme.ui(11.5)).foregroundStyle(Theme.inkFaint)
             }
+        }
+    }
+}
+
+/// The agent's name, then its task in the dimmer ink, as the app's rail reads.
+struct NamedTitle: View {
+    let agent: AgentItem
+
+    var body: some View {
+        if let name = agent.name {
+            Text(name).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
+                + Text(" · ").font(Theme.ui(13)).foregroundStyle(Theme.inkFaint)
+                + Text(agent.title).font(Theme.ui(13, .medium)).foregroundStyle(Theme.inkDim)
+        } else {
+            Text(agent.title).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
         }
     }
 }

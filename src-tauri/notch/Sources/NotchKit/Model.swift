@@ -35,6 +35,8 @@ struct SessionInfo: Decodable, Equatable {
     let running: Bool
     let project: String?
     let agentId: String?
+    /// What the core calls the agent, such as Otter.
+    let agentName: String?
     let agentType: String?
     let agentState: String?
     let title: String?
@@ -47,6 +49,8 @@ struct SessionInfo: Decodable, Equatable {
 
 struct ChatInfo: Decodable, Equatable {
     let agentId: String
+    /// What the core calls the agent, such as Otter.
+    let name: String?
     let provider: String
     let title: String?
     let cwd: String
@@ -140,6 +144,8 @@ struct QuestionChoice: Decodable, Equatable {
 /// One row of the island: an agent and what it needs from the person.
 struct AgentItem: Identifiable, Equatable {
     let id: String
+    /// What the core calls it, such as Otter; none before the core named it.
+    let name: String?
     let provider: String
     let title: String
     let project: String
@@ -178,6 +184,7 @@ extension DeviceView {
         for chat in chats {
             items.append((AgentItem(
                 id: chat.agentId,
+                name: chat.name,
                 provider: chat.provider,
                 title: chat.title ?? "New \(agentName(chat.provider)) chat",
                 project: projectName(chat.cwd),
@@ -196,6 +203,7 @@ extension DeviceView {
             let provider = session.agentType ?? "agent"
             items.append((AgentItem(
                 id: agentId,
+                name: session.agentName,
                 provider: provider,
                 title: session.title ?? agentName(provider),
                 project: projectName(session.project),
