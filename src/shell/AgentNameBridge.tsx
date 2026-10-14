@@ -54,7 +54,7 @@ export function AgentNameBridge() {
             told.current
                 .then(() => agentNamesApi.name(request))
                 .then(
-                    (named) => cmd.setAgentName(request.agentId, named.name),
+                    (named) => cmd.setAgentName(request.agentId, named.name, named.parent),
                     (error: unknown) => {
                         asked.current.delete(request.agentId);
                         swallow("name an agent")(error);

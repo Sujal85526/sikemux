@@ -65,7 +65,7 @@ export interface AcpChat {
     state: "starting" | "ready" | "stopped";
     running: boolean;
     pendingPermissions: string[];
-    /** The paired device that started it; null when this app did. */
+    /** The paired device, or the agent by id, that started it; null when this app did. */
     startedBy: string | null;
     /** The app's launcher a device started it with. */
     launcher: string | null;

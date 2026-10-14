@@ -193,8 +193,8 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
 }
 
 /**
- * Shows a chat a paired device started among its project's agents, so the host
- * can follow it. Leaves the screen where it is: the phone started it, not you.
+ * Shows a chat a paired device or another agent started among its project's agents, so the host can follow it.
+ * Leaves the screen where it is: the person did not start it.
  */
 export function adoptChat(chat: AcpChat): boolean {
     const type = chat.provider;
@@ -204,7 +204,8 @@ export function adoptChat(chat: AcpChat): boolean {
         if (d.agents[chat.agentId]) return;
         const sessionId = projectSessionInBackground(d as unknown as StoreState, chat.cwd);
         const permissionMode = normalizePermissionMode(type, chat.permissionMode as AgentPermissionMode);
-        const profileId = profileOfLauncher(chat.launcher, d.providerProfiles, type);
+        const lead = chat.startedBy ? d.agents[chat.startedBy] : undefined;
+        const profileId = profileOfLauncher(chat.launcher, d.providerProfiles, type) ?? (lead?.type === type ? lead.profileId : undefined);
         const profile = profileOf(d, { profileId, type });
         const model = chat.model ?? undefined;
         const effort = (chat.effort ?? undefined) as AgentEffort | undefined;
@@ -213,6 +214,7 @@ export function adoptChat(chat: AcpChat): boolean {
             id: chat.agentId,
             type,
             ...(chat.name ? { name: chat.name } : {}),
+            ...(lead ? { lead: lead.id } : {}),
             title: type,
             ...relaunchSpec(d, { type, resumeId, permissionMode, profileId, executablePath: profile?.executablePath, model, effort }),
             resumeId,
@@ -353,18 +355,21 @@ export function moveAgentToProject(id: string, cwd: string): void {
     });
 }
 
-/** Takes up the name the core gave the agent. */
-export function setAgentName(id: string, name: string): void {
+/** Takes up the name the core gave the agent, and the agent that started it, if one did. */
+export function setAgentName(id: string, name: string, lead: string | null = null): void {
     mutate((d) => {
         const agent = d.agents[id];
-        if (agent && agent.name !== name) agent.name = name;
+        if (!agent) return;
+        if (agent.name !== name) agent.name = name;
+        if (lead && agent.lead !== lead) agent.lead = lead;
+        else if (!lead && agent.lead) delete agent.lead;
     });
 }
 
 /** The person's own name for the agent. The core refuses one another open agent of the project already has. */
 export async function changeAgentName(id: string, name: string): Promise<void> {
     const named = await agentNamesApi.rename(id, name.trim());
-    setAgentName(id, named.name);
+    setAgentName(id, named.name, named.parent);
 }
 
 export function setAgentTitle(id: string, title: string): void {

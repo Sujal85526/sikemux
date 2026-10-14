@@ -28,6 +28,7 @@ export type PersistedAgent = Pick<
     | "id"
     | "type"
     | "name"
+    | "lead"
     | "title"
     | "resumeId"
     | "permissionMode"

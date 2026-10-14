@@ -101,6 +101,8 @@ export interface Agent {
     type: AgentType;
     /** What the core calls this agent, such as Otter: the word the person and other agents address it by. */
     name?: string;
+    /** The agent that started this one, by id, when an agent did rather than the person. */
+    lead?: string;
     title: string;
     startup: string;
     /** Runtime-only structured launch; avoids shell parsing and argv prompt exposure. */
