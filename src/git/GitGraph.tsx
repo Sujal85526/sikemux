@@ -328,63 +328,65 @@ export const GitGraph = memo(function GitGraph({
         <div className="git-graph" style={{ position: "relative" }} ref={wrapRef}>
             <canvas ref={canvasRef} className="git-graph-canvas" aria-hidden />
             <canvas ref={selectionCanvasRef} className="git-graph-canvas" aria-hidden />
-            {commits.map((c, i) => {
-                const sel = focused && selectedIndex === i;
-                const inRange = range !== null && i >= range[0] && i <= range[1];
-                // The lane's ringed node already marks HEAD; the branch it points at is the ref worth reading.
-                const refs = c.refs.filter((r) => r !== "HEAD").map((r) => r.replace(/^HEAD -> /, ""));
-                return (
-                    <div
-                        key={c.full_hash || c.hash}
-                        ref={sel ? selRef : undefined}
-                        role="button"
-                        tabIndex={selectedIndex === i ? 0 : -1}
-                        aria-label={`${c.hash} ${c.subject}`}
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                onSelect(i);
-                                onActivate();
-                            }
-                            if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                const next =
-                                    event.key === "Home"
-                                        ? 0
-                                        : event.key === "End"
-                                          ? commits.length - 1
-                                          : Math.max(0, Math.min(commits.length - 1, i + (event.key === "ArrowDown" ? 1 : -1)));
-                                onSelect(next);
-                                wrapRef.current?.querySelectorAll<HTMLElement>(".gg-row")[next]?.focus();
-                            }
-                        }}
-                        className={`gg-row${sel ? " sel" : ""}${inRange ? " ranged" : ""}`}
-                        style={{ height: ROW_H, paddingLeft: gutter }}
-                        onClick={() => onSelect(i)}
-                        onDoubleClick={onActivate}
-                        title={`${c.subject} — ${c.hash} · ${c.author}${c.agents?.length ? ` · written by ${c.agents.join(", ")}` : ""}${c.refs.length ? ` · ${c.refs.join(", ")}` : ""}`}>
-                        <AuthorAvatar name={c.author} email={c.author_email} />
-                        {refs.length > 0 && (
-                            <span className="gg-refs">
-                                {refs.slice(0, MAX_ROW_REFS).map((r) => (
-                                    <RefBadge key={r} label={r} />
-                                ))}
-                                {refs.length > MAX_ROW_REFS && (
-                                    <span className="gg-ref more" title={refs.slice(MAX_ROW_REFS).join(", ")}>
-                                        +{refs.length - MAX_ROW_REFS}
-                                    </span>
-                                )}
-                            </span>
-                        )}
-                        <span className="gg-subj">{withoutScope(c.subject)}</span>
-                        {c.agents?.length ? <span className="gg-agents">{c.agents.join(", ")}</span> : null}
-                        <span className="gg-hash">{c.hash}</span>
-                        <span className="gg-when">{c.date}</span>
-                    </div>
-                );
-            })}
+            <div className="gg-rows">
+                {commits.map((c, i) => {
+                    const sel = focused && selectedIndex === i;
+                    const inRange = range !== null && i >= range[0] && i <= range[1];
+                    // The lane's ringed node already marks HEAD; the branch it points at is the ref worth reading.
+                    const refs = c.refs.filter((r) => r !== "HEAD").map((r) => r.replace(/^HEAD -> /, ""));
+                    return (
+                        <div
+                            key={c.full_hash || c.hash}
+                            ref={sel ? selRef : undefined}
+                            role="button"
+                            tabIndex={selectedIndex === i ? 0 : -1}
+                            aria-label={`${c.hash} ${c.subject}`}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onSelect(i);
+                                    onActivate();
+                                }
+                                if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    const next =
+                                        event.key === "Home"
+                                            ? 0
+                                            : event.key === "End"
+                                              ? commits.length - 1
+                                              : Math.max(0, Math.min(commits.length - 1, i + (event.key === "ArrowDown" ? 1 : -1)));
+                                    onSelect(next);
+                                    wrapRef.current?.querySelectorAll<HTMLElement>(".gg-row")[next]?.focus();
+                                }
+                            }}
+                            className={`gg-row${sel ? " sel" : ""}${inRange ? " ranged" : ""}`}
+                            style={{ height: ROW_H, paddingLeft: gutter }}
+                            onClick={() => onSelect(i)}
+                            onDoubleClick={onActivate}
+                            title={`${c.subject} — ${c.hash} · ${c.author}${c.agents?.length ? ` · written by ${c.agents.join(", ")}` : ""}${c.refs.length ? ` · ${c.refs.join(", ")}` : ""}`}>
+                            <AuthorAvatar name={c.author} email={c.author_email} />
+                            {refs.length > 0 && (
+                                <span className="gg-refs">
+                                    {refs.slice(0, MAX_ROW_REFS).map((r) => (
+                                        <RefBadge key={r} label={r} />
+                                    ))}
+                                    {refs.length > MAX_ROW_REFS && (
+                                        <span className="gg-ref more" title={refs.slice(MAX_ROW_REFS).join(", ")}>
+                                            +{refs.length - MAX_ROW_REFS}
+                                        </span>
+                                    )}
+                                </span>
+                            )}
+                            <span className="gg-subj">{withoutScope(c.subject)}</span>
+                            {c.agents?.length ? <span className="gg-agents">{c.agents.join(", ")}</span> : null}
+                            <span className="gg-hash">{c.hash}</span>
+                            <span className="gg-when">{c.date}</span>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 });

@@ -9,6 +9,12 @@
     pointer-events: none;
     z-index: 0;
 }
+/* The rows sit over the graph as one layer. Raised one by one, each row over the
+   graph's canvas became a layer of its own, and the screen took twice as long to show. */
+.gg-rows {
+    position: relative;
+    z-index: 1;
+}
 .gg-row {
     display: flex;
     align-items: center;
@@ -17,8 +23,6 @@
     font-size: 12.5px;
     color: var(--text-secondary);
     cursor: pointer;
-    position: relative;
-    z-index: 1;
     white-space: nowrap;
     transition: background 0.1s;
 }
