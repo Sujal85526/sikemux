@@ -35,8 +35,8 @@ import { ContextMark } from "./ContextChip";
 import { contextChip } from "./promptContext";
 import { mentionContext, useMates, type Mate } from "./agentMentions";
 import type { EarlierChat } from "./earlierChats";
-import type { MenuKeys, MenuPick } from "./ComposerMenu";
-import { ComposerMenu, DictationPreview } from "./chatParts";
+import ComposerMenu, { type MenuKeys, type MenuPick } from "./ComposerMenu";
+import DictationPreview from "./DictationPreview";
 
 /** Puts the caret at `at` once the next frame has the new draft in the box. */
 function caretTo(editor: RefObject<HTMLTextAreaElement | null>, at: number) {
@@ -466,7 +466,7 @@ export function ChatComposer({
                 </Suspense>
             )}
             {token && (
-                <ComposerMenu.Part
+                <ComposerMenu
                     token={token}
                     agentId={agent.id}
                     cwd={cwd}
@@ -603,7 +603,7 @@ export function ChatComposer({
                         }
                     }}
                 />
-                {heard && <DictationPreview.Part draft={draft} caret={caret} heard={heard} editor={editorRef} />}
+                {heard && <DictationPreview draft={draft} caret={caret} heard={heard} editor={editorRef} />}
             </div>
             {error && <div className="chat-composer-error">{error}</div>}
             <div className="chat-composer-bar">

@@ -14,7 +14,6 @@ import { ContextMark } from "./ContextChip";
 import { earlierUri, useEarlierChats, type EarlierChat } from "./earlierChats";
 import type { TrackedMatches } from "./TrackedSource";
 import type { AcpAvailableCommand } from "./types";
-import "../styles/chat/composer-menu.css";
 
 function matchMates(mates: readonly Mate[], needle: string, limit: number): Mate[] {
     const wanted = needle.toLowerCase();

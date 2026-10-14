@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import type { TerminalPane } from "../terminal/TerminalPane";
 import * as cmd from "../state/commands";
@@ -8,7 +8,6 @@ import { acpApi } from "../api/acp";
 import { Workspace, WorkspaceTabs } from "./Workspace";
 import { agentIdsOf, agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
-import { loadChatParts } from "../chat/chatParts";
 import { acceptDialog, useDialogs } from "../state/dialog";
 
 vi.mock("../api/acp", () => ({
@@ -38,10 +37,6 @@ const Stage = () => (
         <Workspace />
     </>
 );
-
-beforeAll(async () => {
-    await loadChatParts();
-});
 
 beforeEach(() => {
     vi.clearAllMocks();

@@ -3,7 +3,6 @@ import { viaNote, type AgentQuestion } from "../agents/agentQuestions";
 import { IconCheck } from "../ui/Icons";
 import { AnsweredQuestion, AskedBy } from "./AgentQuestions";
 import type { ChatQuestions } from "./useChatQuestions";
-import "../styles/chat/questions.css";
 
 /**
  * A question an agent put to the person: its words as prose, then the answers it offered as a numbered list. "Something

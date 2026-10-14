@@ -1,11 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acpApi, type AcpEvent } from "../api/acp";
 import { IS_MACOS } from "../lib/platform";
 import { dispatchPathDrop } from "../state/dropRegistry";
 import type { Agent } from "../state/types";
 import { AgentChatPane } from "./AgentChatPane";
-import { loadChatParts } from "./chatParts";
 import { shownImage } from "../state/imageViewer";
 import { forgetPathState } from "./pathExistence";
 
@@ -166,10 +165,6 @@ function fakeScroller(element: HTMLElement, clientHeight: number) {
         },
     };
 }
-
-beforeAll(async () => {
-    await loadChatParts();
-});
 
 beforeEach(() => {
     vi.clearAllMocks();

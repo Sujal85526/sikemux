@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComposerPickers } from "./ComposerPickers";
-import { loadChatParts } from "./chatParts";
 import { effortConfig, sessionConfigs } from "./sessionConfig";
 import { getState, setState } from "../state/store";
 
@@ -22,10 +21,6 @@ afterEach(() => {
     cleanup();
     setState(initial, true);
     vi.clearAllMocks();
-});
-
-beforeAll(async () => {
-    await loadChatParts();
 });
 
 describe("composer pickers", () => {

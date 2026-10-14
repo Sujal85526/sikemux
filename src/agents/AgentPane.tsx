@@ -4,10 +4,7 @@ import * as cmd from "../state/commands";
 import { profileOf } from "../state/commands/agentLaunchCommand";
 import { useStore } from "../state/store";
 
-/* A chat draws whole from its first frame, so the parts it loads apart arrive with it. */
-const AgentSurface = lazy(() =>
-    import("../chat/AgentSurface").then((module) => module.loadChatParts().then(() => ({ default: module.AgentSurface }))),
-);
+const AgentSurface = lazy(() => import("../chat/AgentSurface").then((module) => ({ default: module.AgentSurface })));
 
 /** An agent's pane. The pane's id is the agent's id, so the record is looked up by it. */
 export function AgentPane({ paneId, session, visible }: { paneId: string; session: Session; visible: boolean }) {

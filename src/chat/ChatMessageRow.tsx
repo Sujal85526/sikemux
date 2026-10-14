@@ -44,7 +44,7 @@ import {
 import type { AccountMove, AcpSubagent, AcpTaskNotice, AgentNotice, ChatMessage, ChatPart } from "./types";
 import { ContextChipLabel } from "./ContextChip";
 import { Shimmer } from "./Shimmer";
-import { MessageEditor } from "./chatParts";
+import { MessageEditor } from "./MessageEditor";
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;
@@ -332,7 +332,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         return (
             <article className={`chat-message ${message.role}`}>
                 <div className="chat-message-content">
-                    <MessageEditor.Part
+                    <MessageEditor
                         initial={written}
                         onCancel={() => setEditing(false)}
                         onSend={(text) => {

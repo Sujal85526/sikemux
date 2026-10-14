@@ -32,7 +32,9 @@ import type { AgentQuestion } from "../agents/agentQuestions";
 import type { OutgoingMessage } from "./queuedMessages";
 import { useChatQuestions } from "./useChatQuestions";
 import { ResumeActions } from "./ResumeActions";
-import { ChatFailureActions, LiveStack, QuestionRows } from "./chatParts";
+import { ChatFailureActions } from "./ChatFailureActions";
+import LiveStack from "./LiveStack";
+import QuestionRows from "./QuestionRows";
 
 /* Reading a whole transcript is one round trip to the parser, so this waits
    at most this long before showing it anyway. */
@@ -420,12 +422,12 @@ export function AgentChatPane({
                                                 <IconWarning size={14} />
                                                 <span>{displayState.error}</span>
                                                 {displayState.failure && profile && (
-                                                    <ChatFailureActions.Part agent={agent} profile={profile} failure={displayState.failure} />
+                                                    <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
                                                 )}
                                             </div>
                                         )}
                                         {(questions.open.length > 0 || questions.assumed.length > 0 || questions.answered.length > 0) && (
-                                            <QuestionRows.Part
+                                            <QuestionRows
                                                 questions={questions}
                                                 active={active}
                                                 paneRef={paneRef}
@@ -452,7 +454,7 @@ export function AgentChatPane({
                                     </button>
                                 )}
                                 {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
-                                    <LiveStack.Part
+                                    <LiveStack
                                         subagents={subagents}
                                         tasks={displayState.tasks}
                                         folds={liveFolds}

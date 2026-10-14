@@ -1,7 +1,7 @@
 import "./styles/restored-rails.css";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invokeCommand as invoke } from "./api/invoke";
-import { whenIdle } from "./lib/lazyPart";
+import { whenIdle } from "./lib/idle";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate, UPDATES_IN_APP } from "./api/updater";
@@ -846,7 +846,8 @@ export default function App() {
 
     useEffect(() => watchTerminalAgentExits(), []);
     useEffect(() => watchFocusForAgentStatus(), []);
-    useEffect(() => whenIdle(() => void import("./chat/AgentSurface").then(({ loadChatParts }) => loadChatParts())), []);
+    /* Fetched ahead so the first chat opened draws at once; a failure here leaves opening one to fetch it again. */
+    useEffect(() => whenIdle(() => void import("./chat/AgentSurface").catch(() => undefined)), []);
 
     useEffect(() => {
         let disposed = false;

@@ -2,8 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, IconChevron } from "../ui/Icons";
 import type { ChatAgentType } from "../agents/agentLaunch";
 import type { Agent, ProviderProfile } from "../state/types";
-import type { AgentChoicesProps, Choice } from "./PickerMenu";
-import { PickerMenu } from "./chatParts";
+import PickerMenu, { type AgentChoicesProps, type Choice } from "./PickerMenu";
 import { currentLabel, pickerSlots, sessionConfigs, type SessionConfig } from "./sessionConfig";
 
 function Picker({
@@ -82,7 +81,7 @@ function Picker({
                 <IconChevron size={10} />
             </button>
             {shown && (
-                <PickerMenu.Part
+                <PickerMenu
                     name={name}
                     value={value}
                     options={options}
