@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useRef, type RefObject } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { usePaneImageState } from "../lib/paneImage";
 import { useShaderField } from "../hooks/useShaderField";
 import { reviveShaderField, type ShaderFieldPreset } from "../lib/shaderField";
+import { whenStageStill } from "../state/nativeViews";
 
 /**
  * An empty element for a Paper Shaders field to paint into.
@@ -49,8 +50,12 @@ export const PanePaintedContext = createContext(true);
 export function PaneField({ enabled }: { enabled: boolean }) {
     const { image, loading } = usePaneImageState();
     const painted = useContext(PanePaintedContext);
-    const shown = useRef(false);
-    if (painted) shown.current = true;
+    // Starting a field stalls a frame, so a screen's first slide onto the stage goes without it until the slide lands.
+    const [shown, setShown] = useState(false);
+    useEffect(() => {
+        if (!painted || shown) return;
+        return whenStageStill(() => setShown(true));
+    }, [painted, shown]);
     const field = image ? "image" : "ambient";
     const host = useRef<HTMLDivElement | null>(null);
     useEffect(() => {
@@ -61,7 +66,7 @@ export function PaneField({ enabled }: { enabled: boolean }) {
             hostRef={host}
             preset={field}
             className={`pane-field pane-field-${field}`}
-            enabled={enabled && shown.current && !loading}
+            enabled={enabled && shown && !loading}
             image={image}
         />
     );
