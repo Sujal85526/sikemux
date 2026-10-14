@@ -204,9 +204,10 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const openLive = () => setShowLive(true);
   const openRecent = () => setRecent(true);
   useEffect(() => dismissCardsFor(core, agentId), [core, agentId]);
+  const name = info?.name ?? agentLabel(provider);
   useArrivals(state.running, request?.requestId, {
-    done: `${agentLabel(provider)} finished`,
-    asks: request ? `${agentLabel(provider)} asks: ${askTitle(request)}` : '',
+    done: `${name} finished`,
+    asks: request ? `${name} asks: ${askTitle(request)}` : '',
   });
   const list = useRef<FlashListRef<ChatMessage>>(null);
   const [away, setAway] = useState(false);
@@ -297,7 +298,15 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
           <>
             <AgentIcon provider={provider} size={17} />
             <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
-              {title}
+              {info?.name ? (
+                <>
+                  {info.name}
+                  <Text style={styles.titleDot}> · </Text>
+                  <Text style={styles.titleAfterName}>{title}</Text>
+                </>
+              ) : (
+                title
+              )}
             </Text>
           </>
         }
@@ -505,7 +514,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
         onClose={() => setMenu(false)}
         core={core}
         agentId={agentId}
-        agentName={agentLabel(provider)}
+        agentName={name}
         hostName={hostName}
         onRecent={recalls ? openRecent : undefined}
         onStop={
@@ -526,6 +535,8 @@ const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
     title: { fontFamily: fonts.uiSemibold, fontSize: 16, letterSpacing: -0.25, color: colors.ink, flexShrink: 1 },
+    titleDot: { color: colors.inkFaint },
+    titleAfterName: { fontFamily: fonts.uiMedium, color: colors.tertiary },
     more: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     transcript: { flex: 1 },
     alone: { justifyContent: 'flex-end' },

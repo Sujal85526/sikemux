@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
+import { agentLabel } from '@mac/agents/catalog';
 import { formatAge } from '@mac/lib/format';
 import { AGENT_GROUPS, AGENT_LABELS, type AgentDisplay, type AgentGroup } from '@mac/state/agentStatus';
 import type { Attention, ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
@@ -241,6 +242,7 @@ function Agents({
 
 function terminalTitle(session: SessionInfo): string {
   if (session.task) return session.task.label;
+  if (session.agentName) return session.title ?? agentLabel(session.agentType ?? 'agent');
   return session.agentType ?? 'Terminal';
 }
 
@@ -269,6 +271,7 @@ const ChatRow = memo(function ChatRow({
   return (
     <Row
       mark={<AgentIcon provider={chat.provider} size={20} />}
+      name={chat.name}
       title={chatTitle(chat)}
       place={asking && attention ? undefined : place}
       detail={
@@ -327,6 +330,7 @@ const TerminalRow = memo(function TerminalRow({ session }: { session: SessionInf
           color={session.running ? colors.secondary : colors.tertiary}
         />
       }
+      name={session.task ? undefined : session.agentName}
       title={terminalTitle(session)}
       detail={<Text style={type.mono}>{terminalDetail(session)}</Text>}
       end={session.running ? session.task ? <Working /> : <View style={styles.liveDot} /> : null}

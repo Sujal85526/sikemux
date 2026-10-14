@@ -25,6 +25,7 @@ export function Rows({ children, style }: { children: ReactNode; style?: StylePr
 
 export function Row({
   mark,
+  name,
   title,
   detail,
   place,
@@ -33,6 +34,8 @@ export function Row({
   dim,
 }: {
   mark?: ReactNode;
+  /** The agent's name, set before its title as the Mac's rail does. */
+  name?: string;
   title: string;
   detail?: ReactNode;
   /** The project the row belongs to, marked with the folder the Mac's rail puts beside it. */
@@ -51,7 +54,15 @@ export function Row({
       {mark ? <View style={styles.mark}>{mark}</View> : null}
       <View style={styles.rowBody}>
         <Text style={[styles.rowTitle, { color: dim ? colors.tertiary : colors.ink }]} numberOfLines={1}>
-          {title}
+          {name ? (
+            <>
+              {name}
+              <Text style={styles.rowDot}> · </Text>
+              <Text style={styles.rowAfterName}>{title}</Text>
+            </>
+          ) : (
+            title
+          )}
         </Text>
         {place ? (
           <View style={styles.rowPlace}>
@@ -85,6 +96,8 @@ const makeStyles = (colors: Palette) => {
     mark: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
     rowBody: { flex: 1, minWidth: 0 },
     rowTitle: { ...type.row, fontSize: 14.5 },
+    rowDot: { color: colors.inkFaint },
+    rowAfterName: { fontFamily: fonts.ui, color: colors.tertiary },
     rowDetail: { ...type.meta, fontSize: 12, marginTop: 1 },
     rowPlace: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
     rowPlaceText: { flexShrink: 1, marginTop: 0 },

@@ -80,6 +80,8 @@ const MODELS: Record<string, unknown[]> = {
 
 export type DemoChat = {
   agentId: string;
+  /** What the host's core named the agent. */
+  name: string;
   provider: string;
   title: string;
   project: string;
@@ -94,6 +96,7 @@ export type DemoChat = {
 export const CHATS: DemoChat[] = [
   {
     agentId: 'chat-dark-mode',
+    name: 'Otter',
     provider: 'claude',
     title: 'Add dark mode to settings',
     project: 'p-shop',
@@ -113,6 +116,7 @@ export const CHATS: DemoChat[] = [
   },
   {
     agentId: 'chat-login',
+    name: 'Maple',
     provider: 'codex',
     title: 'Fix the login form on small screens',
     project: 'p-shop',
@@ -132,6 +136,7 @@ export const CHATS: DemoChat[] = [
   },
   {
     agentId: 'chat-release',
+    name: 'Birch',
     provider: 'hermes',
     title: 'Write the release notes',
     project: 'p-site',
@@ -147,6 +152,7 @@ export const CHATS: DemoChat[] = [
   },
   {
     agentId: 'chat-refunds',
+    name: 'Flint',
     provider: 'claude',
     title: 'Add refunds to the payments API',
     project: 'p-api',

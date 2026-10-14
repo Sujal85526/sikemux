@@ -52,6 +52,7 @@ function view() {
     })),
     chats: CHATS.map((chat) => ({
       agentId: chat.agentId,
+      name: chat.name,
       provider: chat.provider,
       title: chat.title,
       cwd: projectPath(chat.project),

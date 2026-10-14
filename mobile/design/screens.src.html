@@ -483,6 +483,9 @@
   .rows .row .s .place svg { display: inline-block; vertical-align: -1px; }
   .rows .row code { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
   .rows .row.ask { margin-top: 8px; }
+  .rows .row .t b, .nav .mid .named b { font-weight: inherit; color: var(--text-primary); }
+  .rows .row .t i, .nav .mid .named i { font-style: normal; color: var(--ink-faint); margin: 0 5px; }
+  .rows .row .t em, .nav .mid .named em { font-style: normal; color: var(--text-tertiary); }
   .rows .row.more { min-height: 40px; padding-left: 38px; }
   .rows .row.more .t { font-size: 13px; font-weight: 400; color: var(--text-tertiary); }
   .scope-sheet { top: auto; padding: 8px 16px 34px; }
@@ -1267,19 +1270,19 @@
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="glabel">Needs input</div>
-          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
+          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Working</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Running a command…</div></div><span class="subagents">{{IconAgent:11}}3</span><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Tighten the rail spacing</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Editing…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Running a command…</div></div><span class="subagents">{{IconAgent:11}}3</span><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Editing…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
           <div class="glabel">Done</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Download size on the hero</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Done</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Birch</b><i>·</i><em>Download size on the hero</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Done</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
           </div>
           <div class="glabel">Idle</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Watch the release build</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Idle</div></div><span class="shells">{{IconCommand:11}}2</span><span class="status-slot"></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Heron</b><i>·</i><em>Watch the release build</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Idle</div></div><span class="shells">{{IconCommand:11}}2</span><span class="status-slot"></span></div>
           </div>
           <div class="glabel">Recent</div>
           <div class="rows">
@@ -1291,7 +1294,7 @@
         <div class="fab">{{IconPlus:18}}New chat</div>
       </div>
       <div class="home-bar"></div></div>
-      <figcaption><b>Agents</b><div class="note">Open chats sit in the Mac rail's groups, under small-caps labels with a hairline running right and no boxes or dividers: Needs input first, with a white pulsing dot, then Working, Done and Idle, each with its state at the end. Only a running turn is Working: subagents and shells or monitors an agent left running show as counts, ✦ 3 and the terminal glyph with 2, and keep it in its own group. Then the saved chats the host's rail lists as recent, newest first, with their project while all projects are shown and their age at the end. The first ten show, and Show more brings the rest. Tapping a recent chat resumes it on the host and opens it, the squares standing in for its age while it starts; a phone that can only watch is told so under the list instead, as is why a resume failed. The project picker and the agent filter narrow both lists. The header scrolls with the list: once the name passes under the top bar, the bar takes it as its title and the Agents / Terminals row stays pinned beneath it, floating on the backdrop with no band of its own, and rows fade out as they slide under it. At the bottom they fade out into the home bar instead of ending on the screen's edge.</div></figcaption>
+      <figcaption><b>Agents</b><div class="note">Open chats sit in the Mac rail's groups, under small-caps labels with a hairline running right and no boxes or dividers: Needs input first, with a white pulsing dot, then Working, Done and Idle, each with its state at the end. A row reads as the Mac's rail does: the name Sikemux gave the agent, a faint dot, then its title in the dimmer ink, and its chat's header reads the same. Only a running turn is Working: subagents and shells or monitors an agent left running show as counts, ✦ 3 and the terminal glyph with 2, and keep it in its own group. Then the saved chats the host's rail lists as recent, newest first, with their project while all projects are shown and their age at the end. The first ten show, and Show more brings the rest. Tapping a recent chat resumes it on the host and opens it, the squares standing in for its age while it starts; a phone that can only watch is told so under the list instead, as is why a resume failed. The project picker and the agent filter narrow both lists. The header scrolls with the list: once the name passes under the top bar, the bar takes it as its title and the Agents / Terminals row stays pinned beneath it, floating on the backdrop with no band of its own, and rows fade out as they slide under it. At the bottom they fade out into the home bar instead of ending on the screen's edge.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
@@ -1353,10 +1356,10 @@
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow" style="opacity:.5">
           <div class="glabel">Needs input</div>
-          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
+          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Working</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
         </div>
       </div>
@@ -1397,18 +1400,18 @@
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="glabel">Needs input</div>
-          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Needs input</div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
+          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Needs input</div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Working</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux · Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
           <div class="glabel">Done</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Download size on the hero</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Done</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Birch</b><i>·</i><em>Download size on the hero</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Done</div></div><span class="status-slot"><span class="dot acc"></span></span></div>
           </div>
           <div class="glabel">Idle</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Release notes for v0.4.3</div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Sleeping</div></div><span class="status-slot"></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Willow</b><i>·</i><em>Release notes for v0.4.3</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>sikemux-front · Sleeping</div></div><span class="status-slot"></span></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
@@ -1449,10 +1452,10 @@
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="claude">{{IconClaude:14}}</span><span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="glabel">Needs input</div>
-          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
+          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Working</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Tighten the rail spacing</div><div class="s">Editing…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div><div class="s">Editing…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
@@ -1478,15 +1481,15 @@
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
           <div class="glabel">Needs input</div>
-          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Remote pairing screen</div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
+          <div class="rows"><div class="row ask"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Otter</b><i>·</i><em>Remote pairing screen</em></div><div class="s">Needs input · wants to run <code>pnpm test</code></div></div><span class="status-slot"><span class="dot warn"></span></span></div></div>
           <div class="glabel">Working</div>
           <div class="rows">
-            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Fix the flaky PTY replay test</div><div class="s">Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></div><div class="s">Running a command…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
           </div>
           <div class="glabel">Idle</div>
           <div class="rows">
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Tighten the rail spacing</div><div class="s">Idle</div></div><span class="status-slot"></span></div>
-            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">App naming</div><div class="s">Sleeping</div></div><span class="status-slot"></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Tighten the rail spacing</em></div><div class="s">Idle</div></div><span class="status-slot"></span></div>
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Juniper</b><i>·</i><em>App naming</em></div><div class="s">Sleeping</div></div><span class="status-slot"></span></div>
           </div>
         </div>
         <div class="fab">{{IconPlus:18}}New chat</div>
@@ -1507,7 +1510,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user"><code class="chip">usePty.test.tsx &gt; replays the snapshot once</code> fails about one run in ten on CI. Find out why and fix it without adding sleeps.</div>
           <div class="work"><span class="work-sum">Worked for 48s <span class="calls">· 1 tool call</span>{{IconChevron:11}}</span></div>
@@ -1546,7 +1549,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Remote pairing screen</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="prose">The pairing screen builds and the Devices page shows the waiting phone. Before I commit, I want the settings tests green.</div>
           <div class="tools">
@@ -1584,7 +1587,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -1618,7 +1621,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -1654,7 +1657,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -1686,7 +1689,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -1731,7 +1734,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="justify-content:flex-start">
           <div class="prose">The channel could deliver bytes already inside the attach snapshot, so the first write landed twice whenever the channel won the race.</div>
           <div class="msg-user">Good. Run the whole terminal suite, then commit it.</div>
@@ -1761,7 +1764,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="justify-content:flex-start">
           <div class="prose">All 214 terminal tests pass. The fix keeps channel output back until the snapshot is written, then lets it through in order.</div>
           <div class="letter-from"><span class="claude">{{IconClaude:13}}</span><span>Message from <b>Otter</b></span></div>
@@ -1791,7 +1794,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Move the ledger import</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Maple</b><i>·</i><em>Move the ledger import</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="justify-content:flex-start">
           <div class="letter-from"><span class="claude">{{IconClaude:13}}</span><span>Message from <b>Otter</b></span></div>
           <div class="prose">Take PROJ-12: move the ledger import onto the new amounts table. Ask me if anything about the data is unclear.</div>
@@ -1825,7 +1828,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Move the ledger import</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Maple</b><i>·</i><em>Move the ledger import</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="justify-content:flex-start">
           <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asked you</span></div>
           <div class="prose" style="margin-top:0">Which timezone should the ledger dates use?</div>
@@ -1860,7 +1863,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="justify-content:flex-start">
           <div class="earlier"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>Loading earlier messages…</div>
           <div class="msg-user"><code class="chip">usePty.test.tsx &gt; replays the snapshot once</code> fails about one run in ten on CI. Find out why and fix it without adding sleeps.</div>
@@ -1890,7 +1893,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -1921,7 +1924,7 @@
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="tools">
             <span class="tools-sum open">2 tool calls <span class="time">7s</span>{{IconChevron:11}}</span>
@@ -1962,7 +1965,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Remote pairing screen</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="prose">The pairing screen builds and the Devices page shows the waiting phone.</div>
         </div>
@@ -1993,7 +1996,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -2052,7 +2055,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="justify-content:flex-start">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -2076,7 +2079,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Remote pairing screen</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat" style="padding-bottom:34px">
           <p style="text-align:center;font-size:13px;color:var(--text-tertiary);margin-bottom:16px">This chat is no longer running on the host.</p>
           <div class="btn">Try again</div>
@@ -2090,7 +2093,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Wren</b><i>·</i><em>E2E suite on CI</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Get the e2e suite green on CI, and keep an eye on the preview deploy while you work.</div>
           <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">6 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
@@ -2127,7 +2130,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Wren</b><i>·</i><em>E2E suite on CI</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Get the e2e suite green on CI, and keep an eye on the preview deploy while you work.</div>
           <div class="sub"><div class="sub-head"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">6 calls</span><span class="st"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div></div>
@@ -2193,7 +2196,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Remote pairing screen</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Otter</b><i>·</i><em>Remote pairing screen</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="prose">The pairing screen builds. Three cleanups next, then the tests.</div>
           <div class="tools"><span class="tools-sum">4 tool calls <span class="time">2s</span>{{IconChevron:11}}</span></div>
@@ -2225,7 +2228,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="tools">
             <span class="tools-sum open">3 tool calls <span class="time">8s</span>{{IconChevron:11}}</span>
@@ -2271,7 +2274,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>E2E suite on CI</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Wren</b><i>·</i><em>E2E suite on CI</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="sub"><div class="sub-head open"><span class="chev">{{IconChevron:10}}</span><span class="claude">{{IconClaude:15}}</span><span class="nm">Explore</span><span class="tk">Find where the flaky checkout selector lives</span><span class="calls">3 calls</span><span class="st" style="color:var(--live)">{{IconCheck:13}}</span></div>
             <div class="sub-body">
@@ -2312,7 +2315,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Download size on the hero</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Birch</b><i>·</i><em>Download size on the hero</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Show the download size next to the button.</div>
           <div class="work"><span class="work-sum">Worked for 14s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -2344,7 +2347,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Atlassian MCP vs our plugin</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Moss</b><i>·</i><em>Atlassian MCP vs our plugin</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Why did it pick Atlassian's server?</div>
           <div class="work"><span class="work-sum">Worked for 41s <span class="calls">· 6 tool calls</span>{{IconChevron:11}}</span></div>
@@ -2385,7 +2388,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="msg-user">Good. Run the whole terminal suite, then commit it.</div>
           <div class="tools"><span class="tools-sum">3 tool calls <span class="time">7s</span>{{IconChevron:11}}</span></div>
@@ -2422,7 +2425,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span>Fix the flaky PTY replay test</span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Flint</b><i>·</i><em>Fix the flaky PTY replay test</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
         <div class="chat">
           <div class="prose">All 214 terminal tests pass, and the fix is committed.</div>
         </div>
@@ -2648,7 +2651,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Fix the share dialog flicker</span></span><span class="icon-btn" style="opacity:0"></span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Comet</b><i>·</i><em>Fix the share dialog flicker</em></span></span><span class="icon-btn" style="opacity:0"></span></div>
         <div class="chat">
           <div class="msg-user">Why does the share dialog flicker when I open it?</div>
           <div class="work"><span class="work-sum">Worked for 1m 0s <span class="calls">· 2 tool calls</span>{{IconChevron:11}}</span></div>
@@ -2675,7 +2678,7 @@ expected 1 write, got 2</div>
     <figure><div class="phone"><div class="island"></div>
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
-        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span>Fix the share dialog flicker</span></span><span class="icon-btn" style="opacity:0"></span></div>
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="claude">{{IconClaude:17}}</span><span class="named"><b>Comet</b><i>·</i><em>Fix the share dialog flicker</em></span></span><span class="icon-btn" style="opacity:0"></span></div>
         <div class="chat" style="padding-bottom:34px">
           <div class="prose">Tests pass. Committed as fix(share): keep the dialog mounted while it polls.</div>
           <p style="text-align:center;font-size:13px;color:var(--text-tertiary);margin-top:20px">Sharing this chat has stopped.</p>

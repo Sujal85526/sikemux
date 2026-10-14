@@ -50,6 +50,8 @@ export type SessionInfo = {
   project?: string;
   paneId?: string;
   agentId?: string;
+  /** What the core calls an agent terminal's agent, such as Otter. */
+  agentName?: string;
   agentType?: string;
   taskExecutionId?: string;
   agentState?: string;
@@ -66,8 +68,13 @@ export type SessionInfo = {
 
 export type ChatState = 'starting' | 'ready' | 'stopped';
 
+/** The group the core puts an agent in, most in need of the person first. */
+export type AgentGroup = 'blocked' | 'working' | 'done' | 'idle';
+
 export type ChatInfo = {
   agentId: string;
+  /** What the core calls the agent, such as Otter. */
+  name?: string;
   provider: string;
   title?: string;
   cwd: string;
@@ -88,6 +95,8 @@ export type ChatInfo = {
   /** It finished or asked for something nobody has looked at yet. */
   unread: boolean;
   activeAt?: number;
+  /** The core's group for it, which counts a question it waits on the person to answer. */
+  group?: AgentGroup;
 };
 
 /** An agent waiting on a person to answer a permission request. */
