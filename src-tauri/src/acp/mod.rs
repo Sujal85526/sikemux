@@ -15,7 +15,7 @@ use sikemux_core::client::{ClientError, CoreClient, Reply};
 use sikemux_core::launch::{self, AgentLaunch, AgentSpec};
 use sikemux_core::protocol::{
     ChatAccount, ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch,
-    ChatLauncher, ChatStart, Request, Response,
+    ChatStart, Request, Response,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -299,34 +299,6 @@ async fn chat_launch(
         .await;
     }
     Ok(launch)
-}
-
-/// One way to start a chat agent that the app offers paired devices.
-pub(crate) struct LauncherSpec {
-    pub id: String,
-    pub label: String,
-    pub agent: AgentSpec,
-    pub permission_mode: String,
-    /// The agent's status as the app last saw it, passed on to devices.
-    pub status: Option<String>,
-}
-
-/// What [`acp_start`] would run for `spec`, for the core to start without
-/// the window.
-pub(crate) async fn launcher(app: &AppHandle, spec: LauncherSpec) -> Result<ChatLauncher, String> {
-    let launch = chat_launch(app, None, &spec.agent).await?;
-    Ok(ChatLauncher {
-        id: spec.id,
-        provider: spec.agent.provider,
-        label: spec.label,
-        program: launch.program,
-        args: launch.args,
-        env: launch.env,
-        permission_mode: spec.permission_mode,
-        account: None,
-        fallbacks: Vec::new(),
-        status: spec.status,
-    })
 }
 
 #[allow(clippy::too_many_arguments)]

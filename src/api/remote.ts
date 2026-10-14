@@ -108,7 +108,7 @@ export interface PublishedRecent {
     readonly activeAt: number;
 }
 
-/** One chat agent the app offers paired devices; the app works out how to run it. */
+/** One chat agent the app offers paired devices; the core finds its program and keeps it. */
 export interface LauncherRequest {
     readonly id: string;
     readonly provider: string;

@@ -680,7 +680,7 @@ async fn run_requests(
             }
             Request::AcpWake { agent_id } => {
                 tokio::spawn(async move {
-                    let result = workspace::wake_chat(&core, agent_id).await;
+                    let result = workspace::wake_chat(&core, Some(&client), agent_id).await;
                     client.respond(request_id, result);
                 });
             }
@@ -787,6 +787,9 @@ async fn run_requests(
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::AcpStop { agent_id } => {
+                if let Some(chat) = core.chats.get(&agent_id) {
+                    core.workspaces.note_stopping(&chat);
+                }
                 if core.chats.stop(&agent_id) {
                     core.note_agent_gone(&agent_id);
                 }
@@ -825,13 +828,6 @@ async fn run_requests(
                         status: Box::new(status),
                     }),
                 );
-            }
-            Request::PublishWorkspace {
-                projects,
-                launchers,
-            } => {
-                let result = core.workspaces.publish(projects, launchers);
-                client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::PublishBackdrop { texture, image } => {
                 let result = core.workspaces.publish_backdrop(texture, image);

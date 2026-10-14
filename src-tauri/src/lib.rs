@@ -268,7 +268,6 @@ pub fn run() {
         .manage(harness::HarnessBroker::default())
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
-        .manage(remote::PublishedWorkspace::default())
         .manage(remote::PublishedAgents::default())
         .manage(remote::PublishedRecentChats::default())
         .manage(remote::PublishedOnScreen::default())

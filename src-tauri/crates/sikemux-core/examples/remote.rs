@@ -23,8 +23,8 @@ use iroh::{Endpoint, EndpointAddr, RelayMode};
 use sikemux_core::accounts::network;
 use sikemux_core::client::{ClientEvent, CoreClient};
 use sikemux_core::protocol::{
-    BackdropImage, ChatLaunch, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
-    PublishedChat, PublishedRecent, SpawnTarget, TerminalSpawn,
+    BackdropImage, ChatLaunch, DeviceAccess, Event, LaunchIdentity, PublishedChat, PublishedRecent,
+    SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 
@@ -97,26 +97,17 @@ fn fake_agent() -> Result<std::path::PathBuf, Failure> {
 
 async fn publish(socket: &Path) -> Result<(), Failure> {
     let (client, _events) = CoreClient::connect(socket).await?;
-    let launcher = ChatLauncher {
-        id: "opencode".into(),
-        provider: "opencode".into(),
-        label: "OpenCode".into(),
-        program: fake_agent()?,
-        args: vec!["acp".into()],
-        env: Default::default(),
-        permission_mode: "workspace-write".into(),
-        account: None,
-        fallbacks: Vec::new(),
-        status: None,
-    };
-    let project = ProjectInfo {
-        id: "tmp".into(),
-        name: "tmp".into(),
-        path: std::env::temp_dir(),
-    };
-    client
-        .publish_workspace(vec![project], vec![launcher])
-        .await?;
+    let workspace = serde_json::json!({
+        "projects": [{ "id": "tmp", "name": "tmp", "path": std::env::temp_dir() }],
+        "launchers": [{
+            "id": "opencode",
+            "provider": "opencode",
+            "label": "OpenCode",
+            "executablePath": fake_agent()?,
+            "permissionMode": "workspace-write",
+        }],
+    });
+    client.call("setWorkspace", workspace).await?;
     println!("published the fake agent");
     Ok(())
 }

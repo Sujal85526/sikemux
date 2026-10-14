@@ -782,7 +782,7 @@ async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Va
         Reach::Chat | Reach::Terminal => {}
         Reach::Asleep if !core.window.is_open() => held = Some("is asleep while Sikemux is closed"),
         Reach::Asleep => {
-            workspace::wake_chat(core, target.agent_id.clone())
+            workspace::wake_chat(core, None, target.agent_id.clone())
                 .await
                 .map_err(|error| format!("{name} is asleep and did not wake: {error}"))?;
             woke = " Sikemux woke it first.";
@@ -965,7 +965,10 @@ fn deliver_later(core: &Arc<Core>, agent_id: String, pending: Pending) {
                 }
             }
             Pending::Asleep => {
-                if workspace::wake_chat(&core, agent_id.clone()).await.is_err() {
+                if workspace::wake_chat(&core, None, agent_id.clone())
+                    .await
+                    .is_err()
+                {
                     mailbox
                         .lock()
                         .wake_failed

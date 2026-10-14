@@ -342,7 +342,7 @@ impl Core {
             chats: chat::Chats::new(data_dir.map(|dir| dir.join("chat-history"))),
             remote: remote::Remote::default(),
             shares: share::Shares::default(),
-            workspaces: workspace::Workspaces::default(),
+            workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
             names: names::Names::new(data_dir),
             boards: board::Boards::new(data_dir),
@@ -369,10 +369,6 @@ impl Core {
 
     pub(crate) fn manifest_dir(&self) -> Option<PathBuf> {
         self.manifest_dir.lock().ok().and_then(|dir| dir.clone())
-    }
-
-    pub(crate) fn has_local_client(&self) -> bool {
-        self.clients().iter().any(|client| client.peer.is_local())
     }
 
     fn clients(&self) -> Vec<Arc<ClientConn>> {

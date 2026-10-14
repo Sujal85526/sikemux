@@ -89,7 +89,6 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::AllowDevices { .. }
         | Request::SignRegistration { .. }
         | Request::SetOwner { .. }
-        | Request::PublishWorkspace { .. }
         | Request::PublishAgents { .. }
         | Request::PublishRecent { .. }
         | Request::PublishOnScreen { .. }

@@ -5,97 +5,58 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use serde::Deserialize;
+use serde_json::{json, Value};
 use sikemux_core::client::CoreClient;
-use sikemux_core::launch::AgentSpec;
 use sikemux_core::protocol::{
-    AllowedDevice, BackdropImage, ChatLauncher, DeviceAccess, ProjectInfo, PublishedChat,
-    PublishedRecent, RemoteStatus,
+    AllowedDevice, BackdropImage, DeviceAccess, PublishedChat, PublishedRecent, RemoteStatus,
 };
 use tauri::{AppHandle, Manager, State};
 
-use crate::acp::LauncherSpec;
 use crate::error::AppResult;
 use crate::login_item::{self, CoreLaunch};
 use crate::pty::{core_error, PtyManager};
 
-/// What the app last published, sent again to a core it reconnects to: the
-/// core keeps it in memory only.
-#[derive(Default)]
-pub struct PublishedWorkspace(Mutex<Option<(Vec<ProjectInfo>, Vec<ChatLauncher>)>>);
-
-/// The backdrop the app last published, sent again like the workspace.
+/// The backdrop the app last published, sent again to a core it reconnects
+/// to, which keeps it in memory only.
 #[derive(Default)]
 pub struct PublishedBackdrop(Mutex<Option<(bool, Option<BackdropImage>)>>);
 
-/// The theme colours the app last published, sent again like the workspace.
+/// The theme colours the app last published, sent again like the backdrop.
 #[derive(Default)]
 pub struct PublishedPalette(Mutex<BTreeMap<String, String>>);
 
 /// The chats the app lists, and the titles of its terminal agents by agent id.
 type AgentList = (Vec<PublishedChat>, BTreeMap<String, String>);
 
-/// The agents the app last listed, sent again like the workspace.
+/// The agents the app last listed, sent again like the backdrop.
 #[derive(Default)]
 pub struct PublishedAgents(Mutex<Option<AgentList>>);
 
-/// The recent chats the app last listed, sent again like the workspace.
+/// The recent chats the app last listed, sent again like the backdrop.
 #[derive(Default)]
 pub struct PublishedRecentChats(Mutex<Option<Vec<PublishedRecent>>>);
 
-/// The agents the app last showed, sent again like the workspace.
+/// The agents the app last showed, sent again like the backdrop.
 #[derive(Default)]
 pub struct PublishedOnScreen(Mutex<Vec<String>>);
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LauncherRequest {
-    id: String,
-    provider: String,
-    label: String,
-    config_path: Option<String>,
-    executable_path: Option<String>,
-    #[serde(default)]
-    environment_keys: Vec<String>,
-    permission_mode: String,
-    #[serde(default)]
-    status: Option<String>,
-}
-
+/// The projects the app has open and the agents it offers, which the core
+/// keeps and finds each agent's program for.
 #[tauri::command]
 pub async fn remote_publish_workspace(
-    app: tauri::AppHandle,
     manager: State<'_, PtyManager>,
-    published: State<'_, PublishedWorkspace>,
-    projects: Vec<ProjectInfo>,
-    launchers: Vec<LauncherRequest>,
+    projects: Value,
+    launchers: Value,
 ) -> AppResult<()> {
-    let mut ready = Vec::with_capacity(launchers.len());
-    for request in launchers {
-        let spec = LauncherSpec {
-            id: request.id,
-            label: request.label,
-            agent: AgentSpec {
-                provider: request.provider,
-                executable_path: request.executable_path,
-                config_path: request.config_path,
-                environment_keys: request.environment_keys,
-            },
-            permission_mode: request.permission_mode,
-            status: request.status,
-        };
-        if let Ok(launcher) = crate::acp::launcher(&app, spec).await {
-            ready.push(launcher);
-        }
-    }
-    if let Ok(mut last) = published.0.lock() {
-        *last = Some((projects.clone(), ready.clone()));
-    }
     let client = manager.client().await?;
     client
-        .publish_workspace(projects, ready)
+        .call(
+            "setWorkspace",
+            json!({ "projects": projects, "launchers": launchers }),
+        )
         .await
-        .map_err(core_error)
+        .map_err(core_error)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -181,14 +142,6 @@ pub(crate) async fn connected(
     launch: Option<&CoreLaunch>,
     client: &Arc<CoreClient>,
 ) {
-    let last = app
-        .try_state::<PublishedWorkspace>()
-        .and_then(|published| published.0.lock().ok().and_then(|last| last.clone()));
-    if let Some((projects, launchers)) = last {
-        if let Err(error) = client.publish_workspace(projects, launchers).await {
-            eprintln!("Sikemux could not tell its core which agents devices may start: {error}");
-        }
-    }
     let palette = app
         .try_state::<PublishedPalette>()
         .and_then(|published| published.0.lock().ok().map(|last| last.clone()))

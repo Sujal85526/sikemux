@@ -11,9 +11,8 @@ use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
-    ChatLaunch, ChatLauncher, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity,
-    ProjectInfo, PublishedChat, PublishedRecent, RemoteStatus, SessionId, SpawnTarget,
-    TerminalSpawn, MAX_ATTACHMENT_BYTES,
+    ChatLaunch, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, PublishedChat,
+    PublishedRecent, RemoteStatus, SessionId, SpawnTarget, TerminalSpawn, MAX_ATTACHMENT_BYTES,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
@@ -384,26 +383,17 @@ async fn publish_fake_agent(app: &CoreClient) {
 }
 
 async fn publish_fake_agent_asking(app: &CoreClient, permission_mode: &str) {
-    let launcher = ChatLauncher {
-        id: "opencode".into(),
-        provider: "opencode".into(),
-        label: "OpenCode".into(),
-        program: FAKE_AGENT.into(),
-        args: vec!["acp".into()],
-        env: [("SECRET_TOKEN".to_owned(), "do-not-share".to_owned())].into(),
-        permission_mode: permission_mode.into(),
-        account: None,
-        fallbacks: Vec::new(),
-        status: None,
-    };
-    let project = ProjectInfo {
-        id: "sess-tmp".into(),
-        name: "tmp".into(),
-        path: std::env::temp_dir(),
-    };
-    app.publish_workspace(vec![project], vec![launcher])
-        .await
-        .expect("publish");
+    let workspace = json!({
+        "projects": [{ "id": "sess-tmp", "name": "tmp", "path": std::env::temp_dir() }],
+        "launchers": [{
+            "id": "opencode",
+            "provider": "opencode",
+            "label": "OpenCode",
+            "executablePath": FAKE_AGENT,
+            "permissionMode": permission_mode,
+        }],
+    });
+    app.call("setWorkspace", workspace).await.expect("publish");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -571,6 +561,7 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     let phone = Device::new("Phone", DeviceAccess::Full);
     let core = start_core(&core_key, &[&phone]);
     let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    app.register_window().await.expect("the app opens its window");
     publish_fake_agent(&app).await;
     let status = listening(&app).await;
     let endpoint = phone.endpoint().await;
@@ -751,7 +742,7 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
     let workspace = client.workspace().await.expect("workspace");
     assert_eq!(workspace.projects[0].name, "tmp");
     assert_eq!(workspace.launchers[0].label, "OpenCode");
-    assert!(!format!("{workspace:?}").contains("do-not-share"));
+    assert!(!format!("{workspace:?}").contains(FAKE_AGENT));
 
     let (agent_id, start) = client
         .start_chat("opencode".into(), "sess-tmp".into(), None)
@@ -813,10 +804,12 @@ async fn a_watching_device_cannot_start_a_chat() {
         .start_chat("opencode".into(), "sess-tmp".into(), None)
         .await;
     assert!(refusal(refused).contains("watch"));
-    assert!(
-        refusal(client.publish_workspace(Vec::new(), Vec::new()).await)
-            .contains("only Sikemux on this host")
-    );
+    assert!(refusal(
+        client
+            .call("setWorkspace", json!({ "projects": [], "launchers": [] }))
+            .await
+    )
+    .contains("only Sikemux on this host"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -340,14 +340,6 @@ pub enum Request {
     AllowDevices {
         devices: Vec<AllowedDevice>,
     },
-    /// The projects the app has open and how it starts each chat agent,
-    /// replacing what it published before. Kept in memory only, since a
-    /// launcher's environment may hold secrets; the app publishes again
-    /// whenever it connects.
-    PublishWorkspace {
-        projects: Vec<ProjectInfo>,
-        launchers: Vec<ChatLauncher>,
-    },
     /// What the app draws behind its panes, so devices draw the same.
     /// Replaces what it published before.
     PublishBackdrop {
@@ -898,26 +890,6 @@ pub struct ProjectInfo {
     pub id: String,
     pub name: String,
     pub path: PathBuf,
-}
-
-/// How the app starts one kind of chat agent, short of the agent's own id.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatLauncher {
-    pub id: String,
-    pub provider: String,
-    pub label: String,
-    pub program: PathBuf,
-    pub args: Vec<String>,
-    pub env: BTreeMap<String, String>,
-    pub permission_mode: String,
-    #[serde(default)]
-    pub account: Option<ChatAccount>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub fallbacks: Vec<ChatAccount>,
-    /// Whether the agent is ready, signed out, missing or broken, as the app last saw it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
 }
 
 /// What a device learns about a launcher: never its program or environment.

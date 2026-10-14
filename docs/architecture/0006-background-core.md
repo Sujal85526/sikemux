@@ -22,6 +22,11 @@ an agent started should not depend on the window staying open.
   new executable in the bundle and never loads WebKit.
 - The app keeps its Tauri commands and page events unchanged and forwards them, so the
   frontend did not have to be rewritten.
+- How an agent launches (finding its program, its arguments, environment, account folder
+  and hosted providers' keys) is built in one place in the core crate, which the app and
+  the core both call. The core keeps the app's projects and agents in its data folder and
+  never their environment, so it can start a chat, or wake one the app put to sleep, with
+  no app running. While the app's window is open, it still wakes its own chats.
 - Quit (⌘Q) leaves everything running; Quit and Stop Everything (⌥⌘Q) stops it. People
   asked for both.
 - A newer app updates an older core in place with `exec`, keeping file descriptors and
@@ -43,6 +48,9 @@ an agent started should not depend on the window staying open.
   hand over to each other.
 - If the core itself dies, its shells die with it. Chats resume on their saved
   conversation; terminal agents show that they exited.
+- The app still tells the core which projects are open and which agents and accounts it
+  offers, since the window is where people set those up. Provider keys stay in the
+  Keychain; the core reads them as it launches.
 
 ## Alternatives considered
 

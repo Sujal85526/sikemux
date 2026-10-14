@@ -14,7 +14,7 @@ use super::attachments;
 use super::connection::{blocking, ClientConn};
 use super::edits::{Edit, Filter};
 use super::names::{project_of, AgentName};
-use super::workspace::AgentRun;
+use super::workspace::{self, AgentRun};
 use super::{board, plugins, questions, share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
@@ -39,6 +39,7 @@ pub(crate) async fn call(
         "renameAgent" => answer(rename_agent(&core, parse(params)?).await?),
         "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
         "agentNames" => answer(agent_names(&core).await?),
+        "setWorkspace" => answer(workspace::set_workspace(&core, parse(params)?).await?),
         "shareChat" => {
             let params: ShareChatParams = parse(params)?;
             answer(share::share_chat(
