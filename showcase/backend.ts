@@ -35,6 +35,7 @@ import {
 import { terminalReplay } from "./world/terminals";
 import { AGENTS, demoSnapshot } from "./world/workspace";
 import { DEMO_BOARD } from "./world/board";
+import type { BoardCard } from "../src/agents/agentBoard";
 
 type Args = Record<string, unknown>;
 type Handler = (args: Args) => unknown;
@@ -465,15 +466,11 @@ export class ShowcaseBackend implements IpcTransport {
     });
     let board = DEMO_BOARD;
     this.on("agent_board_call", ({ method, params }) => {
-      const {
-        id,
-        project: _project,
-        ...changes
-      } = (params ?? {}) as {
+      const { id, status } = (params ?? {}) as {
         id?: number;
-        project?: string;
-        status?: string;
+        status?: BoardCard["status"];
       };
+      const changes = status ? { status } : {};
       if (method === "boards") return [board];
       if (method === "boardUpdate")
         board = {
