@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { agentLabel } from "../agents/catalog";
 import type { PromptContext } from "../api/acp";
 import { MENTION_URI } from "./promptContext";
-import { agentDisplay } from "../state/agentStatus";
+import { agentDisplay, type AgentDisplay } from "../state/agentStatus";
 import { agentIdsOf, agentWindowId, ownerSessionId } from "../state/selectors";
 import { useStore } from "../state/store";
 import type { AgentType } from "../state/types";
@@ -13,7 +13,8 @@ export interface Mate {
     name: string;
     type: AgentType;
     title: string;
-    status: string;
+    /** How it is shown beside its name; none while it sleeps. */
+    display: AgentDisplay | null;
 }
 
 /** The project's other named agents, in strip order. */
@@ -30,8 +31,8 @@ export function useMates(agentId: string): Mate[] {
         return agentIdsOf({ windows, windowsBySession }, sessionId).flatMap((id) => {
             const agent = agents[id];
             if (!agent?.name || id === agentId) return [];
-            const status = agent.launchState === "dormant" ? "Asleep" : agentDisplay(activity[id]?.state).label;
-            return [{ id, name: agent.name, type: agent.type, title: agent.title, status }];
+            const display = agent.launchState === "dormant" ? null : agentDisplay(activity[id]?.state);
+            return [{ id, name: agent.name, type: agent.type, title: agent.title, display }];
         });
     }, [agentId, agents, windows, windowsBySession, sessionOrder, activity]);
 }
@@ -42,9 +43,9 @@ export function matchMates(mates: readonly Mate[], needle: string, limit: number
     return mates.filter((mate) => mate.name.toLowerCase().startsWith(wanted)).slice(0, limit);
 }
 
-/** What the agent is told of each agent the message names with `@`, so it knows who is meant and how to reach them. */
+/** What the agent is told of each agent the message names with `@`, so it knows who is meant. */
 export function mentionContext(text: string, mates: readonly Mate[]): PromptContext[] {
-    const named = new Set([...text.matchAll(/(?:^|\s)@([\p{L}][\p{L}\p{N}_-]*)/gu)].map((match) => match[1].toLowerCase()));
+    const named = new Set([...text.matchAll(/(?:^|\s)@([\p{L}][\p{L}\p{N}]*)/gu)].map((match) => match[1].toLowerCase()));
     return mates
         .filter((mate) => named.has(mate.name.toLowerCase()))
         .map((mate) => ({
@@ -54,9 +55,8 @@ export function mentionContext(text: string, mates: readonly Mate[]): PromptCont
                 `@${mate.name} is another agent in this project, not the person.`,
                 `Agent id: ${mate.id}`,
                 `CLI: ${agentLabel(mate.type)}`,
-                `Status: ${mate.status}`,
+                `Status: ${mate.display?.label ?? "Asleep"}`,
                 `Working on: ${mate.title}`,
-                `Reach it with Sikemux's agent tools (agent_send, agent_read, agent_wait) by its name or id.`,
             ].join("\n"),
         }));
 }

@@ -34,6 +34,7 @@ import type { TrackedMatches } from "./TrackedSource";
 import { ContextMark } from "./ContextChip";
 import { contextChip } from "./promptContext";
 import { matchMates, mentionContext, useMates, type Mate } from "./agentMentions";
+import { AgentStateIndicator } from "../agents/AgentStateIndicator";
 
 /** Draws the box's text with the words still being spoken dimmed at the caret, where they will be typed. */
 function DictationPreview({
@@ -433,7 +434,10 @@ export function ChatComposer({
                                         </span>
                                     </span>
                                     <code>@{mate.name}</code>
-                                    <span>{mate.status}</span>
+                                    <span className="chat-menu-mate">
+                                        <span>{mate.title}</span>
+                                        {mate.display && <AgentStateIndicator display={mate.display} />}
+                                    </span>
                                 </>
                             ),
                         })),

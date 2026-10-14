@@ -384,6 +384,19 @@
     white-space: nowrap;
 }
 
+.chat-slash-menu button > .chat-menu-mate {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.chat-menu-mate > span:first-child {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .chat-menu-mark {
     display: inline-flex;
     justify-content: center;
