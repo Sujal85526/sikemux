@@ -64,18 +64,22 @@ not with Sikemux today (section 11).
 - **Ops context agents can use:** Jira, Slack, SigNoz, AWS, Rundeck, DB client, three code hosts; iOS
   Simulator tools; notch island; on-device dictation; encrypted shared chats.
 - **Many agents in one checkout**, on purpose (both rivals default to worktrees).
-- **Named agents, @mentions, agent-to-agent** in progress (herdr has no parent/child tracking; T3 V2 has
-  `delegate_task` and lineage, so this lead is narrow).
+- **Named agents, @mentions, agent-to-agent** shipped (ADR 0012): spawn/send/read/wait, questions that go
+  to the lead first, a board per project, workers listed under their lead on the rail and phone. herdr has
+  no parent/child tracking; T3 V2 has `delegate_task` and lineage, so this lead is narrow.
 
 **Sikemux is behind on**
 
 - **Multiple machines.** herdr has `machine add` over SSH; Herdr UI has Devices, Smart Dispatch, Teleport
   (worktree + running commands + agent sessions moved between hosts), Coder/Daytona/Railway cloud
   devices; T3 has one server per machine with clients attaching to many, plus cross-machine
-  `delegate_task`. Sikemux has one host.
+  `delegate_task`. Sikemux's phone already keeps several hosts, but the Mac app talks only to its own
+  core.
 - **PR loop.** T3: multi-host PR pages, guided reviews, agents woken on checks/reviews/conflicts. Herdr UI:
-  orchestrator tab that dispatches issues to agents, reviews and merges PRs.
-- **Automations:** T3 has scheduled and webhook tasks and auto-resume after a usage-limit reset.
+  orchestrator tab that dispatches issues to agents, reviews and merges PRs. Sikemux's board Auto already
+  opens the PR, waits for CI, gets one fix from the agent and merges, but never feeds review comments back.
+- **Automations:** T3 has scheduled and webhook tasks and auto-resume after a usage-limit reset. Sikemux
+  moves a chat to another signed-in account at a limit, but has no schedules, webhooks or resume at reset.
 - **Outside agents driving it:** T3 exposes an MCP server with OAuth so ChatGPT or Claude can drive threads;
   herdr's whole CLI and socket API are scriptable, which is why it has ~1,700 community plugins.
 - **Distribution and openness:** herdr 43.8k stars (Apache-2.0, $6M seed from Bessemer/YC, one founder),
@@ -108,6 +112,15 @@ provider key vault, iroh, the shared checkout, the phone and notch.
 Run the core headless on Linux or a spare Mac mini, install with one command, join it to the account with
 a join ticket. The Mac app and the phone become clients of **several hosts**, each shown as a card with
 CPU/memory and its agents. Agents keep working when the lid closes.
+- **First blocker: the core can't start a chat on its own.** Launch commands and projects arrive only from
+  the Mac app's `PublishWorkspace` and live in memory; agent accounts are managed by the app; host
+  sign-in, owner setup and pairing approval are local-only. Move launchers, projects and agent accounts
+  into the core, add a sign-in and pairing approval that work without a window, then the Linux bits
+  (systemd unit in place of the Aqua-only LaunchAgent, `Platform::Linux`, host info, tests on Linux; the
+  core already passes `cargo check` on Ubuntu).
+- **Phone first.** The phone already pairs with several hosts and shows a card per host, so Host can ship
+  to phones before the Mac app becomes a multi-host client, which is the bigger job (one local socket
+  today, and git, previews and files assume a local disk).
 - iroh means no open ports, no Tailscale, no SSH config: simpler than herdr's `machine add`, and no
   environment cap like T3 Connect. Ship this before Herdr Cloud leaves its waitlist.
 - Agent logins happen **on the host**, with the login URL/code relayed to the Mac or phone. Never copy
@@ -123,7 +136,8 @@ open-model or local story. JetBrains Air supports local models through a hand-ed
 ties keys, coding plans and local models together and configures each harness for them. Sikemux already
 has half of it: `src-tauri/src/model_providers.rs` keeps keys for OpenRouter, Baseten, Together,
 Fireworks, Groq, Cerebras, DeepSeek, Moonshot, Mistral and Vercel in the Keychain and hands them to
-OpenCode, Pi and OMP.
+OpenCode, Pi and OMP as environment variables. The catalogue is a constant in code, nothing sets
+`ANTHROPIC_BASE_URL` or a Codex provider, and there are no coding plans or local runners yet.
 
 Ranked:
 1. **Connections that know each plan, per agent.** Add the coding plans (z.ai GLM Coding Plan, OpenCode Go,
@@ -152,7 +166,8 @@ plans pause sign-ups when GPUs run out, don't publish benchmark claims without y
 US/EU-hosted copies of Chinese weights for companies.
 
 ### 3. Many agents, one checkout, every line knows who wrote it
-Nobody has this. Anthropic's article leaves it open.
+Nobody has this. Anthropic's article leaves it open. Sikemux has none of it yet: the chat drivers parse
+Edit/Write/apply_patch only to draw tool rows, and the file watcher knows nothing about agents.
 - **Hunk attribution, live:** the core already sees every Edit/Write/apply_patch; add the file watcher for
   Bash edits (marked unattributed). The git panel shows a lane per agent.
 - **Safe commit tool:** commit only that agent's hunks through a private index, move `main` with a
@@ -171,6 +186,10 @@ Nobody has this. Anthropic's article leaves it open.
 Replace notification streams with a ranked queue: blocked/asking agents first, changes to review next,
 finished work, then progress. Batch on your schedule; show a work-in-progress count; write a handoff note
 when an agent stops. A "while you were away" digest on open.
+- Most inputs exist: unread and last-active (`seen.rs`), questions with assumptions, pending push items
+  with away detection, board cards with owners, and rail, notch and phone reading the same core state.
+  The queue is one more core view over them. `browser_record` saves to `~/Movies/Sikemux` and isn't
+  attached to any turn or card yet.
 - Review by **intent + evidence**, not lines: what was asked, what the agent says it did, risk class
   (comment/test-only vs logic vs migration/protocol/server), checks that ran, and the browser recording or
   before/after screenshot it took (browser_record already exists). Diff last.
@@ -179,9 +198,9 @@ when an agent stops. A "while you were away" digest on open.
 - T3 is investing heavily in PR review; the difference here is local attribution plus evidence, across
   harnesses, before anything is a PR.
 
-### 5. Finish agent-to-agent, then make review cross-vendor
-- Ship ADR 0012 (spawn/send/read/wait, board, ask-the-lead). T3 V2 already has `delegate_task` with
-  lineage, so this is now a race.
+### 5. Make review cross-vendor, on top of agent-to-agent
+- ADR 0012 has shipped. Left: Linear cards (only Jira feeds the board), and the adapter for agents outside
+  Sikemux, deferred on purpose. Agent-to-agent across hosts waits on focus 1.
 - One button: "Claude builds, a GPT or open model attacks it" with a rubric the builder never sees.
 - **Definition-of-done gates:** checks an agent must pass before its card can move (tests, `pnpm check`
   slices, hooks that reject and say why). Huntley: enforcement beats rules files.
@@ -189,9 +208,10 @@ when an agent stops. A "while you were away" digest on open.
   that agent. "Revert Otter's last commit" without touching anyone else.
 
 ### 6. Close the parity gaps against T3 and Herdr UI, cheaply
-- PR babysitter: an agent watches its PR's CI and review comments, fixes, replies, re-requests review
-  (code-host plumbing and the run watch loop already exist).
-- Routines/schedules and webhook triggers on your own host; auto-resume when a usage limit resets.
+- PR babysitter: board Auto already waits on CI and gets one fix; extend its reviewing step to feed review
+  comments to the agent, reply and re-request review.
+- Auto-resume when a usage limit resets (the usage meter already knows the reset time), then
+  routines/schedules and webhook triggers on your own host.
 - An MCP/CLI surface outside agents can drive (T3's `/mcp` with OAuth). Plugins stay compiled in
   (ADR 0002); this is about being drivable, not a marketplace.
 - Signals → board: Slack threads, Jira/Linear tickets, red CI become cards agents pick up.
@@ -330,8 +350,8 @@ moving single panes between devices.
 
 **The five moves that beat both:** Host over iroh before Herdr Cloud (focus 1); the model layer neither
 has (focus 2); native chat for every harness, kept fast and bounded on memory (their weakest points);
-attribution + inbox + evidence (focus 3–4) against T3's PR-centric review; agent-to-agent across hosts
-with lineage, shipped before T3 V2 reaches stable.
+attribution + inbox + evidence (focus 3–4) against T3's PR-centric review; agent-to-agent (already
+shipped on one host) extended across hosts with lineage, before T3 V2 reaches stable.
 
 ---
 
