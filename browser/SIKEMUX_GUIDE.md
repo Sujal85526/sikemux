@@ -931,22 +931,26 @@ parts others could do alongside you, not for every step of your own work.
 
 ### Claiming and finishing
 
-`board_claim` takes a card that is open, nobody owns and waits on nothing
-left undone; it is yours in one step, so two agents never take the same card.
-A refusal says who has it or what it waits on. Then do the work, and finish
-with `board_update`: `status: "done"` and a `result` saying what you did and
+`board_claim` takes a card nobody owns that waits on nothing left undone,
+whether it is open or the person moved it to In progress without an owner; it
+is yours in one step, so two agents never take the same card. A refusal says
+who has it or what it waits on. Then do the work, and finish with
+`board_update`: `status: "done"` and a `result` saying what you did and
 where, such as the files, commits or pull request. `status: "open"` gives a
-card back for someone else. You may change your own cards, cards the agents
-you started own, and cards nobody owns.
+card back for someone else, and `parent: 0` takes a card out from under
+another. You may change your own cards, cards the agents you started own, and
+cards nobody owns.
 
 When a card is done, the cards waiting on it are free to claim, and their
 owners are told. When you were started by another agent and sit idle, the
 board tells you of your team's open cards nobody has taken, once each: claim
 one and do it, or end your turn. Each time your turn ends, the report your lead
-gets names your card.
+gets names your card; a turn the board started, in which you did nothing on
+the board, sends no report.
 
-When the person moves or changes a card you own, a message from the board
-says so. Notes from the board come as messages from `Board`.
+When the person, or the agent that started you, moves or changes a card you
+are working on, a message from the board says so. Notes from the board come
+as messages from `Board`.
 
 ## shell: The same operations from a shell
 
