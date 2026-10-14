@@ -7,9 +7,10 @@ import { join } from "node:path";
 
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
-const INCREMENTAL_KEEP = 3;
-const INCREMENTAL_IDLE = 6 * HOUR;
+const COPIES_KEEP = 3;
+const COPY_IDLE = HOUR;
 const DEPS_IDLE = 3 * DAY;
+const PRUNE_EVERY = HOUR;
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -20,9 +21,9 @@ const now = Date.now();
 let freed = 0;
 
 const stamp = join(target, ".pruned");
-if (args.includes("--daily")) {
+if (args.includes("--throttled")) {
   const last = statSync(stamp, { throwIfNoEntry: false })?.mtimeMs ?? 0;
-  if (now - last < DAY) process.exit(0);
+  if (now - last < PRUNE_EVERY) process.exit(0);
   writeFileSync(stamp, "");
 }
 
@@ -75,27 +76,44 @@ function pruneIncremental(dir) {
   }
   for (const copies of byCrate.values()) {
     copies.sort((a, b) => b.mtime - a.mtime);
-    for (const { path, mtime } of copies.slice(INCREMENTAL_KEEP)) {
-      if (now - mtime > INCREMENTAL_IDLE) remove(path);
+    for (const { path, mtime } of copies.slice(COPIES_KEEP)) {
+      if (now - mtime > COPY_IDLE) remove(path);
     }
   }
 }
 
 // Every compile and link reads the outputs it depends on, which refreshes their
 // access time, so outputs left unread for days belong to no current build.
+// Workspace crates get a new `<crate>-<hash>` copy many times a day, so beyond
+// the few most recently read copies of a crate, an hour unread is enough.
 function pruneDeps(dir) {
   const byUnit = new Map();
   for (const entry of entries(dir)) {
-    const unit = entry.name.split(".")[0];
+    const unit = entry.name.split(".")[0].replace(/^lib/, "");
     const files = byUnit.get(unit) ?? [];
     files.push(join(dir, entry.name));
     byUnit.set(unit, files);
   }
-  for (const files of byUnit.values()) {
+  const byCrate = new Map();
+  for (const [unit, files] of byUnit) {
     const lastRead = Math.max(
       ...files.map((file) => lastTouched(file, "atimeMs")),
     );
-    if (now - lastRead > DEPS_IDLE) files.forEach(remove);
+    const crate = unit.includes("-")
+      ? unit.slice(0, unit.lastIndexOf("-"))
+      : unit;
+    const copies = byCrate.get(crate) ?? [];
+    copies.push({ files, lastRead });
+    byCrate.set(crate, copies);
+  }
+  for (const copies of byCrate.values()) {
+    copies.sort((a, b) => b.lastRead - a.lastRead);
+    copies.forEach(({ files, lastRead }, index) => {
+      const idle = now - lastRead;
+      if (idle > DEPS_IDLE || (index >= COPIES_KEEP && idle > COPY_IDLE)) {
+        files.forEach(remove);
+      }
+    });
   }
 }
 
