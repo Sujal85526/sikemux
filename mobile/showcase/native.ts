@@ -147,6 +147,10 @@ class Connection {
     return undefined;
   }
   async call(method: string): Promise<string> {
+    if (method === 'agentNames')
+      return JSON.stringify(
+        CHATS.map((chat) => ({ agentId: chat.agentId, name: chat.name, project: projectPath(chat.project), parent: chat.lead ?? null })),
+      );
     throw new Error(`the showcase host does not know ${method}`);
   }
   async callToFile(method: string): Promise<string> {

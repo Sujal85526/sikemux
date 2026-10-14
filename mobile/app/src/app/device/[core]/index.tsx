@@ -5,6 +5,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { agentLabel } from '@mac/agents/catalog';
+import { inTeams, type TeamLink } from '@mac/agents/teams';
 import { formatAge } from '@mac/lib/format';
 import { AGENT_GROUPS, AGENT_LABELS, type AgentDisplay, type AgentGroup } from '@mac/state/agentStatus';
 import type { Attention, ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
@@ -13,6 +14,7 @@ import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
 import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { asking as askingOf } from '@/devices/asking';
+import { useLeads } from '@/devices/leads';
 import { summary } from '@/devices/status';
 import { chatDisplay, chatState, chatTitle, folder } from '@/devices/words';
 import { Wants } from '@/screens/Wants';
@@ -200,14 +202,31 @@ function Agents({
   hostName: string;
 }) {
   const styles = useStyles(makeStyles);
+  const live = useLive(core);
+  const leads = useLeads(
+    live.status === 'open' ? live.connection : undefined,
+    snapshot.chats
+      .map((chat) => chat.agentId)
+      .sort()
+      .join(' '),
+  );
   const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
   const chats = scoped.filter((chat) => provider === 'all' || chat.provider === provider);
   const placeOf = (chat: ChatInfo) => (scope ? undefined : projectName(snapshot, chat.cwd));
   const attentionOf = (chat: ChatInfo) => snapshot.attentions.find((known) => known.agentId === chat.agentId && askingOf(known));
+  const listed = new Map(chats.map((chat) => [chat.agentId, chat]));
+  // A worker sits in its lead's group, unless it waits on the person itself.
+  const sectionOf = (chat: ChatInfo, depth = 0): AgentGroup => {
+    const own = chatDisplay(chat).group;
+    const lead = listed.get(leads.get(chat.agentId) ?? '');
+    if (own === 'blocked' || !lead || depth > listed.size) return own;
+    const theirs = sectionOf(lead, depth + 1);
+    return theirs === 'blocked' ? own : theirs;
+  };
   const groupOf = (group: AgentGroup) => {
-    const rows = chats.filter((chat) => chatDisplay(chat).group === group);
+    const rows = chats.filter((chat) => sectionOf(chat) === group);
     if (group === 'done' || group === 'idle') rows.sort((x, y) => (y.activeAt ?? 0) - (x.activeAt ?? 0));
-    return rows;
+    return inTeams(rows.map((chat) => ({ id: chat.agentId, lead: leads.get(chat.agentId), chat })));
   };
 
   return (
@@ -219,13 +238,14 @@ function Agents({
           <View key={group}>
             <SectionLabel>{AGENT_LABELS[group]}</SectionLabel>
             <Rows>
-              {rows.map((chat) => (
+              {rows.map(({ agent: { chat }, link }) => (
                 <ChatRow
                   key={chat.agentId}
                   core={core}
                   chat={chat}
                   place={placeOf(chat)}
                   attention={group === 'blocked' ? attentionOf(chat) : undefined}
+                  chain={link}
                 />
               ))}
             </Rows>
@@ -260,11 +280,13 @@ const ChatRow = memo(function ChatRow({
   chat,
   place,
   attention,
+  chain,
 }: {
   core: string;
   chat: ChatInfo;
   place?: string;
   attention?: Attention;
+  chain?: TeamLink;
 }) {
   const state = chatState(chat);
   const asking = chatDisplay(chat).group === 'blocked';
@@ -284,6 +306,7 @@ const ChatRow = memo(function ChatRow({
         )
       }
       end={<ChatEnd chat={chat} />}
+      chain={chain}
       onPress={() => router.push(`/device/${core}/chat/${chat.agentId}`)}
     />
   );

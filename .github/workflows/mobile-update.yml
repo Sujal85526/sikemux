@@ -28,6 +28,7 @@ on:
       - "src/agents/agentLaunch.ts"
       - "src/agents/agentQuestions.ts"
       - "src/agents/catalog.ts"
+      - "src/agents/teams.ts"
       - "src/agents/generated/**"
       - "src/agents/catalog.ts"
       - "src/agents/generated/**"

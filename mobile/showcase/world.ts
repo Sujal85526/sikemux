@@ -82,6 +82,8 @@ export type DemoChat = {
   agentId: string;
   /** What the host's core named the agent. */
   name: string;
+  /** The agent that started this one. */
+  lead?: string;
   provider: string;
   title: string;
   project: string;
@@ -132,6 +134,22 @@ export const CHATS: DemoChat[] = [
       say('The button fits now on a 375px wide screen. Running the tests before I commit.'),
       user('Great, commit it when the tests pass.'),
       tool('execute', 'pnpm test src/auth', 'in_progress'),
+    ],
+  },
+  {
+    agentId: 'chat-login-check',
+    name: 'Wren',
+    lead: 'chat-login',
+    provider: 'claude',
+    title: 'Check the login form at every phone size',
+    project: 'p-shop',
+    running: true,
+    permissionMode: 'bypass',
+    history: [
+      user('Open the login page at 320, 375 and 430 wide and tell me whether anything is cut off.'),
+      tool('fetch', 'Open the login page at 320px'),
+      say('At 320px the button fits, but the "Forgot password" link wraps under it. Checking 375 and 430 next.'),
+      tool('fetch', 'Open the login page at 375px', 'in_progress'),
     ],
   },
   {
