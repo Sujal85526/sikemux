@@ -1,15 +1,15 @@
-//! Hosted model providers a person pays for directly, such as Baseten or
-//! OpenRouter. OpenCode, Pi and OMP already know each one and turn it on
-//! when its key is in their environment, so connecting a provider is saving
-//! its key in the Keychain and handing it to those agents as they start.
+//! Where agents get models besides their makers' own accounts: pay-per-token APIs,
+//! coding plans and runners on this computer. The catalogue in `model-providers.json`
+//! holds every provider's facts. Connecting a keyed provider saves its key in the
+//! Keychain and hands it to OpenCode, Pi and OMP as they start.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
 use reqwest::{Client, StatusCode};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A development build keeps entries of its own, so it never spends or replaces the
 /// installed app's sign-in.
@@ -23,107 +23,85 @@ const KEY_SERVICE: &str = if cfg!(debug_assertions) {
 #[cfg(test)]
 const KEY_SERVICE: &str = "sikemux-model-provider-test";
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
+const RUNNER_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The agents that read these providers' keys from their environment.
 const READERS: &[&str] = &["opencode", "pi", "omp"];
 
-#[derive(Debug, PartialEq, Eq)]
-struct Preset {
-    id: &'static str,
-    label: &'static str,
-    env: &'static str,
+#[derive(Deserialize, Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum Kind {
+    Api,
+    Plan,
+    Local,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Provider {
+    id: String,
+    label: String,
+    kind: Kind,
+    sign_up_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<KeySpec>,
+    /// Base URL of its OpenAI-compatible API.
+    openai: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    anthropic: Option<AnthropicApi>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct KeySpec {
+    /// Every name an agent looks for this key under.
+    env: Vec<String>,
     /// Answers 401 or 403 to a key the provider does not know.
-    check_url: &'static str,
-    keys_url: &'static str,
+    check: String,
 }
 
-const PRESETS: &[Preset] = &[
-    Preset {
-        id: "openrouter",
-        label: "OpenRouter",
-        env: "OPENROUTER_API_KEY",
-        check_url: "https://openrouter.ai/api/v1/key",
-        keys_url: "https://openrouter.ai/settings/keys",
-    },
-    Preset {
-        id: "baseten",
-        label: "Baseten",
-        env: "BASETEN_API_KEY",
-        check_url: "https://inference.baseten.co/v1/models",
-        keys_url: "https://app.baseten.co/settings/api_keys",
-    },
-    Preset {
-        id: "together",
-        label: "Together AI",
-        env: "TOGETHER_API_KEY",
-        check_url: "https://api.together.xyz/v1/models",
-        keys_url: "https://api.together.ai/settings/api-keys",
-    },
-    Preset {
-        id: "fireworks",
-        label: "Fireworks",
-        env: "FIREWORKS_API_KEY",
-        check_url: "https://api.fireworks.ai/inference/v1/models",
-        keys_url: "https://fireworks.ai/account/api-keys",
-    },
-    Preset {
-        id: "groq",
-        label: "Groq",
-        env: "GROQ_API_KEY",
-        check_url: "https://api.groq.com/openai/v1/models",
-        keys_url: "https://console.groq.com/keys",
-    },
-    Preset {
-        id: "cerebras",
-        label: "Cerebras",
-        env: "CEREBRAS_API_KEY",
-        check_url: "https://api.cerebras.ai/v1/models",
-        keys_url: "https://cloud.cerebras.ai",
-    },
-    Preset {
-        id: "deepseek",
-        label: "DeepSeek",
-        env: "DEEPSEEK_API_KEY",
-        check_url: "https://api.deepseek.com/models",
-        keys_url: "https://platform.deepseek.com/api_keys",
-    },
-    Preset {
-        id: "moonshot",
-        label: "Moonshot AI",
-        env: "MOONSHOT_API_KEY",
-        check_url: "https://api.moonshot.ai/v1/models",
-        keys_url: "https://platform.moonshot.ai/console/api-keys",
-    },
-    Preset {
-        id: "mistral",
-        label: "Mistral",
-        env: "MISTRAL_API_KEY",
-        check_url: "https://api.mistral.ai/v1/models",
-        keys_url: "https://console.mistral.ai/api-keys",
-    },
-    Preset {
-        id: "vercel",
-        label: "Vercel AI Gateway",
-        env: "AI_GATEWAY_API_KEY",
-        check_url: "https://ai-gateway.vercel.sh/v1/models",
-        keys_url: "https://vercel.com/dashboard/ai-gateway/api-keys",
-    },
-];
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AnthropicApi {
+    url: String,
+    auth: AnthropicAuth,
+}
 
-fn preset(id: &str) -> Result<&'static Preset, String> {
-    PRESETS
+/// How the Anthropic-compatible API wants the key: Claude Code sends
+/// `ANTHROPIC_AUTH_TOKEN` as a bearer token and `ANTHROPIC_API_KEY` as `x-api-key`.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum AnthropicAuth {
+    Bearer,
+    XApiKey,
+}
+
+static CATALOGUE: LazyLock<Vec<Provider>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../model-providers.json"))
+        .expect("model-providers.json is a valid catalogue")
+});
+
+fn keyed(id: &str) -> Result<(&'static Provider, &'static KeySpec), String> {
+    let provider = CATALOGUE
         .iter()
-        .find(|preset| preset.id == id)
-        .ok_or_else(|| format!("Sikemux does not know a provider called {id}"))
+        .find(|provider| provider.id == id)
+        .ok_or_else(|| format!("Sikemux does not know a provider called {id}"))?;
+    let key = provider
+        .key
+        .as_ref()
+        .ok_or_else(|| format!("{} runs on this computer and needs no key", provider.label))?;
+    Ok((provider, key))
 }
 
-#[derive(Serialize, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize)]
 pub struct ModelProvider {
-    id: &'static str,
-    label: &'static str,
-    keys_url: &'static str,
+    #[serde(flatten)]
+    provider: &'static Provider,
+    /// A keyed provider has its key saved; a local runner is answering.
     connected: bool,
+    /// What a running local runner has installed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    models: Option<Vec<String>>,
 }
 
 /// Which providers have a key saved, and the keys themselves once read, so
@@ -153,7 +131,7 @@ impl Store {
             .and_then(|bytes| serde_json::from_slice::<BTreeSet<String>>(&bytes).ok())
             .unwrap_or_default()
             .into_iter()
-            .filter(|id| preset(id).is_ok())
+            .filter(|id| keyed(id).is_ok())
             .collect();
         Self {
             path,
@@ -231,10 +209,8 @@ pub async fn environment(agent: &str) -> BTreeMap<String, String> {
     tokio::task::spawn_blocking(move || {
         connected
             .iter()
-            .filter_map(|id| {
-                let preset = preset(id).ok()?;
-                Some((preset.env.to_owned(), store.key(id)?))
-            })
+            .filter_map(|id| Some((keyed(id).ok()?.1, store.key(id)?)))
+            .flat_map(|(spec, key)| spec.env.iter().map(move |name| (name.clone(), key.clone())))
             .collect()
     })
     .await
@@ -264,63 +240,94 @@ fn check_failure(label: &str, status: StatusCode) -> Option<String> {
     }
 }
 
-async fn check_key(preset: &Preset, key: &str) -> Result<(), String> {
+async fn check_key(provider: &Provider, spec: &KeySpec, key: &str) -> Result<(), String> {
     let response = client()
-        .get(preset.check_url)
+        .get(&spec.check)
         .bearer_auth(key)
         .send()
         .await
-        .map_err(|_| format!("Could not reach {} to check the key", preset.label))?;
-    match check_failure(preset.label, response.status()) {
+        .map_err(|_| format!("Could not reach {} to check the key", provider.label))?;
+    match check_failure(&provider.label, response.status()) {
         Some(failure) => Err(failure),
         None => Ok(()),
     }
 }
 
+#[derive(Deserialize)]
+struct ModelList {
+    data: Vec<ListedModel>,
+}
+
+#[derive(Deserialize)]
+struct ListedModel {
+    id: String,
+}
+
+/// `None` when nothing answers at the runner's address.
+async fn local_models(provider: &Provider) -> Option<Vec<String>> {
+    let response = client()
+        .get(format!("{}/models", provider.openai))
+        .timeout(RUNNER_TIMEOUT)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    let list: ModelList = response.json().await.ok()?;
+    Some(list.data.into_iter().map(|model| model.id).collect())
+}
+
+/// Local runners are asked what they have on every call, so only when settings ask.
 #[tauri::command]
-pub fn model_providers() -> Vec<ModelProvider> {
-    let connected = store().map(Store::connected).unwrap_or_default();
-    PRESETS
-        .iter()
-        .map(|preset| ModelProvider {
-            id: preset.id,
-            label: preset.label,
-            keys_url: preset.keys_url,
-            connected: connected.contains(preset.id),
-        })
-        .collect()
+pub async fn model_providers() -> Vec<ModelProvider> {
+    let saved = store().map(Store::connected).unwrap_or_default();
+    futures::future::join_all(CATALOGUE.iter().map(|provider| {
+        let saved = &saved;
+        async move {
+            let models = match provider.kind {
+                Kind::Local => local_models(provider).await,
+                Kind::Api | Kind::Plan => None,
+            };
+            ModelProvider {
+                provider,
+                connected: models.is_some() || saved.contains(&provider.id),
+                models,
+            }
+        }
+    }))
+    .await
 }
 
 /// Saves the key once the provider accepts it. Agents already running keep
 /// the environment they started with.
 #[tauri::command]
 pub async fn model_provider_connect(id: String, key: String) -> Result<(), String> {
-    let preset = preset(&id)?;
+    let (provider, spec) = keyed(&id)?;
     let store = store()?;
     let key = key.trim().to_owned();
     if key.is_empty() {
         return Err("Paste the key first".into());
     }
-    check_key(preset, &key).await?;
+    check_key(provider, spec, &key).await?;
     let saved = key.clone();
-    tokio::task::spawn_blocking(move || sikemux_keychain::write(KEY_SERVICE, preset.id, &saved))
+    tokio::task::spawn_blocking(move || sikemux_keychain::write(KEY_SERVICE, &provider.id, &saved))
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())?;
-    store.remember_key(preset.id, Some(key));
-    store.set_connected(preset.id, true)
+    store.remember_key(&provider.id, Some(key));
+    store.set_connected(&provider.id, true)
 }
 
 #[tauri::command]
 pub async fn model_provider_disconnect(id: String) -> Result<(), String> {
-    let preset = preset(&id)?;
+    let (provider, _) = keyed(&id)?;
     let store = store()?;
-    tokio::task::spawn_blocking(move || sikemux_keychain::delete(KEY_SERVICE, preset.id))
+    tokio::task::spawn_blocking(move || sikemux_keychain::delete(KEY_SERVICE, &provider.id))
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())?;
-    store.remember_key(preset.id, None);
-    store.set_connected(preset.id, false)
+    store.remember_key(&provider.id, None);
+    store.set_connected(&provider.id, false)
 }
 
 #[cfg(test)]
@@ -328,14 +335,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_preset_has_its_own_id_and_key_name() {
-        let ids: BTreeSet<_> = PRESETS.iter().map(|preset| preset.id).collect();
-        let envs: BTreeSet<_> = PRESETS.iter().map(|preset| preset.env).collect();
-        assert_eq!(ids.len(), PRESETS.len());
-        assert_eq!(envs.len(), PRESETS.len());
-        for preset in PRESETS {
-            assert!(preset.check_url.starts_with("https://"), "{}", preset.id);
-            assert!(preset.keys_url.starts_with("https://"), "{}", preset.id);
+    fn every_provider_has_its_own_id_and_key_names() {
+        let ids: BTreeSet<_> = CATALOGUE.iter().map(|provider| &provider.id).collect();
+        assert_eq!(ids.len(), CATALOGUE.len());
+        let envs: Vec<_> = CATALOGUE
+            .iter()
+            .filter_map(|provider| provider.key.as_ref())
+            .flat_map(|spec| &spec.env)
+            .collect();
+        assert_eq!(envs.iter().collect::<BTreeSet<_>>().len(), envs.len());
+        for provider in CATALOGUE.iter() {
+            assert_eq!(
+                provider.key.is_none(),
+                provider.kind == Kind::Local,
+                "{}",
+                provider.id
+            );
+            assert!(
+                provider.sign_up_url.starts_with("https://"),
+                "{}",
+                provider.id
+            );
+            if let Some(spec) = &provider.key {
+                assert!(spec.check.starts_with("https://"), "{}", provider.id);
+                assert!(!spec.env.is_empty(), "{}", provider.id);
+            }
         }
     }
 

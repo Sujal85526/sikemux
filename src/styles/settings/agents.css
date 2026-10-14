@@ -167,6 +167,9 @@
 .model-provider-failure {
     color: var(--danger);
 }
+.model-provider-models {
+    font-family: var(--mono);
+}
 
 /* An account row: its initial, its name, and which one new chats start on. */
 .account-row-label {

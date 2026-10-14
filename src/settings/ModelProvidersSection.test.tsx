@@ -16,8 +16,22 @@ function row(label: string): HTMLElement {
 
 beforeEach(() => {
     providers = [
-        { id: "openrouter", label: "OpenRouter", keysUrl: "https://openrouter.ai/settings/keys", connected: false },
-        { id: "baseten", label: "Baseten", keysUrl: "https://app.baseten.co/settings/api_keys", connected: false },
+        {
+            id: "openrouter",
+            label: "OpenRouter",
+            kind: "api",
+            signUpUrl: "https://openrouter.ai/settings/keys",
+            openai: "https://openrouter.ai/api/v1",
+            connected: false,
+        },
+        {
+            id: "baseten",
+            label: "Baseten",
+            kind: "api",
+            signUpUrl: "https://app.baseten.co/settings/api_keys",
+            openai: "https://inference.baseten.co/v1",
+            connected: false,
+        },
     ];
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);

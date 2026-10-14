@@ -1,12 +1,21 @@
 import { invokeCommand as invoke } from "./invoke";
 
-/** A hosted model provider OpenCode, Pi and OMP turn on when its key is saved. */
+/** `api` bills per token, `plan` is a monthly coding subscription, `local` runs on this computer. */
+export type ModelProviderKind = "api" | "plan" | "local";
+
+/** One entry of `src-tauri/model-providers.json`, with what Sikemux knows of it now. */
 export interface ModelProvider {
     id: string;
     label: string;
-    /** Where the person makes a key. */
-    keysUrl: string;
+    kind: ModelProviderKind;
+    /** Where the person makes a key, or downloads a local runner. */
+    signUpUrl: string;
+    /** Base URL of its OpenAI-compatible API. */
+    openai: string;
+    /** A keyed provider has its key saved; a local runner is answering. */
     connected: boolean;
+    /** What a running local runner has installed. */
+    models?: string[];
 }
 
 export const modelProvidersApi = {
