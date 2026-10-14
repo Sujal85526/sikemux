@@ -2,6 +2,7 @@
 //! the window, agents and the board share one set of sign-ins and what the
 //! board does on code hosts and trackers goes on while the app is closed.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -42,6 +43,10 @@ impl Plugins for InCore {
 
     fn offers_agent_tools(&self, plugin: &str) -> bool {
         self.0.offers_agent_tools(plugin)
+    }
+
+    fn agent_environment(&self, project: &Path) -> BTreeMap<String, String> {
+        self.0.agent_environment(project)
     }
 
     fn call<'a>(&'a self, plugin: &'a str, method: &'a str, params: Value) -> Answer<'a, Value> {

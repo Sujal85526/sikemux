@@ -45,7 +45,10 @@ pub fn user_environment() -> UserEnvironment {
     if let Some(path) = user_path() {
         variables.insert("PATH".to_string(), path);
     }
-    UserEnvironment { variables }
+    UserEnvironment {
+        variables,
+        shell: shell.clone(),
+    }
 }
 
 #[cfg(unix)]

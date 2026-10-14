@@ -165,6 +165,15 @@ impl PluginHost {
             .collect()
     }
 
+    /// What the enabled plugins set for an agent or terminal started in `project`.
+    pub fn agent_environment(&self, project: &Path) -> BTreeMap<String, String> {
+        self.plugins
+            .iter()
+            .filter(|(id, _)| self.is_enabled(id))
+            .flat_map(|(_, loaded)| loaded.plugin.agent_environment(&loaded.context, project))
+            .collect()
+    }
+
     pub fn manifests(&self) -> Vec<Manifest> {
         self.plugins
             .values()

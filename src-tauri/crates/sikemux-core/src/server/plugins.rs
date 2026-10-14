@@ -4,6 +4,7 @@
 //! hosts and trackers while the app is closed. Without them, as in tests, every
 //! call says they are missing.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -62,6 +63,8 @@ pub trait Plugins: Send + Sync {
     fn manifests(&self) -> Vec<Value>;
     fn set_disabled(&self, ids: Vec<String>);
     fn offers_agent_tools(&self, plugin: &str) -> bool;
+    /// What the plugins set for an agent or terminal started in `project`.
+    fn agent_environment(&self, project: &Path) -> BTreeMap<String, String>;
     fn call<'a>(&'a self, plugin: &'a str, method: &'a str, params: Value) -> Answer<'a, Value>;
     /// Runs until the stream ends. Dropping the answer stops it.
     fn stream<'a>(
@@ -91,6 +94,16 @@ fn plugins(plugin: &str) -> Result<&'static dyn Plugins, Failure> {
             format!("Sikemux's {plugin} plugin is not available to its background process"),
         )
     })
+}
+
+/// What the plugins set for an agent, terminal or task started in `cwd`,
+/// asked of the project that holds it.
+pub(crate) fn agent_environment(core: &Core, cwd: &Path) -> BTreeMap<String, String> {
+    let Some(plugins) = PLUGINS.get() else {
+        return BTreeMap::new();
+    };
+    let project = super::names::project_of(cwd, &core.workspaces.project_paths());
+    plugins.agent_environment(Path::new(&project))
 }
 
 pub(crate) async fn call(plugin: &str, method: &str, params: Value) -> Result<Value, String> {

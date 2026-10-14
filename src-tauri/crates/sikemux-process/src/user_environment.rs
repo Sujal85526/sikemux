@@ -11,6 +11,8 @@ use std::sync::{Arc, OnceLock, RwLock};
 #[derive(Default)]
 pub struct UserEnvironment {
     pub variables: HashMap<String, String>,
+    /// Everything the person's login shell sets, children given it or not.
+    pub shell: HashMap<String, String>,
 }
 
 struct Source {
@@ -76,6 +78,17 @@ pub fn var(name: &str) -> Option<String> {
         .get(name)
         .cloned()
         .or_else(|| std::env::var(name).ok())
+}
+
+/// A variable as the person's own login shell sets it, else as this process
+/// has it, whether or not children are given it.
+pub fn shell_var(name: &str) -> Option<String> {
+    environment()
+        .shell
+        .get(name)
+        .cloned()
+        .or_else(|| std::env::var(name).ok())
+        .filter(|value| !value.is_empty())
 }
 
 /// Like `var`, but for values that may not be valid UTF-8, such as paths.

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -1062,11 +1062,19 @@ async fn spawn(
 ) -> CoreResult<PendingStart> {
     blocking(move || {
         let mut prepared = match *target {
-            SpawnTarget::Terminal(spawn) => {
-                let cwd = spawn.cwd.clone();
+            SpawnTarget::Terminal(mut spawn) => {
+                let folder = spawn.cwd.clone().or_else(|| {
+                    spawn
+                        .context
+                        .as_ref()
+                        .and_then(|context| context.project.clone())
+                        .filter(|project| !project.is_empty())
+                });
+                if let Some(folder) = &folder {
+                    give_agent_environment(&core, folder, &mut spawn.env);
+                }
                 let prepared = prepare_terminal(&launch, spawn)?;
                 let owner = &prepared.owner;
-                let folder = cwd.or_else(|| owner.project.clone());
                 if let (Some(agent_id), Some(folder)) = (&owner.agent_id, folder) {
                     core.name_agent(
                         agent_id,
@@ -1077,12 +1085,22 @@ async fn spawn(
                 }
                 prepared
             }
-            SpawnTarget::Task { request } => prepare_task(&launch, request)?,
+            SpawnTarget::Task { mut request } => {
+                give_agent_environment(&core, &request.cwd, &mut request.env);
+                prepare_task(&launch, request)?
+            }
         };
         prepared.owner.started_by = started_by;
         session::spawn_session(&core, prepared)
     })
     .await
+}
+
+fn give_agent_environment(core: &Core, folder: &str, env: &mut HashMap<String, String>) {
+    let given = super::plugins::agent_environment(core, std::path::Path::new(folder));
+    for (key, value) in given {
+        env.entry(key).or_insert(value);
+    }
 }
 
 async fn shutdown(core: Arc<Core>, client: Arc<ClientConn>, request_id: RequestId, stop_all: bool) {

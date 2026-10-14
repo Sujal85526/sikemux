@@ -1282,10 +1282,13 @@ pub(crate) fn begin_worker(
 
 fn start(
     core: &Arc<Core>,
-    launch_spec: ChatLaunch,
+    mut launch_spec: ChatLaunch,
     origin: Origin,
     subscriber: Option<&Arc<ClientConn>>,
 ) -> CoreResult<Arc<Chat>> {
+    for (key, value) in super::plugins::agent_environment(core, &launch_spec.cwd) {
+        launch_spec.env.entry(key).or_insert(value);
+    }
     validate(&launch_spec)?;
     let resume_id = launch_spec.resume_id.clone();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;

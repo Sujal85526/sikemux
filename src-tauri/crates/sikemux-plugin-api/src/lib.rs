@@ -6,6 +6,7 @@ mod error;
 mod manifest;
 pub mod watch;
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -49,6 +50,13 @@ pub trait Plugin: Send + Sync {
         _remotes: &'a [String],
     ) -> PluginFuture<'a, bool> {
         Box::pin(async { Ok(true) })
+    }
+
+    /// Variables every agent and terminal started in `project` gets, unless
+    /// its launch sets them already. Asked as each one starts, so it must
+    /// answer at once.
+    fn agent_environment(&self, _ctx: &PluginContext, _project: &Path) -> BTreeMap<String, String> {
+        BTreeMap::new()
     }
 
     fn diagnostics(&self) -> Value {
