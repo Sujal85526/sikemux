@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { git, type GitBranch, type GitCommit, type GitFile, type GitRemote, type GitRemoteBranch, type GitStash } from "../api/git";
+import { remoteRepoR } from "../codehost/project";
 import { gitChangeOwnersR, gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
 import { getState, setState } from "../state/store";
 import { useGitWorkbench } from "../state/gitWorkbench";
@@ -29,6 +30,7 @@ vi.mock("../state/resources", async (original) => ({
         if (definition === gitStashesR) return h.stashes;
         if (definition === gitRemoteBranchesR) return h.remoteBranches;
         if (definition === gitChangeOwnersR) return h.owners;
+        if (definition === remoteRepoR) return { status: "ok", data: null, refresh: vi.fn() };
         return h.empty;
     },
 }));

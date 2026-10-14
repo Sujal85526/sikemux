@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { currentBranch, git, gitOverviewR } from "../plugin-api/host";
-import { resource, useResourceEnabled } from "../plugin-api/resources";
+import { resource, useCachedResourceEnabled, useResourceEnabled } from "../plugin-api/resources";
 import { isOwnBranch } from "./checkout";
 import { enabledCodeHosts, type CodeHost } from "./registry";
 import { accountForR, hostStatusR, pullsR } from "./resources";
@@ -49,15 +49,15 @@ export interface HostRepo {
 const NO_REPO: RepoRef = { provider: "", owner: "", name: "" };
 
 export function useHostRepo(cwd: string | null, enabled: boolean): HostRepo {
-    const fromRemote = useResourceEnabled(enabled && !!cwd, remoteRepoR, cwd ?? "");
-    const overview = useResourceEnabled(enabled && !!cwd, gitOverviewR, cwd ?? "");
+    const fromRemote = useCachedResourceEnabled(enabled && !!cwd, remoteRepoR, cwd ?? "");
+    const overview = useCachedResourceEnabled(enabled && !!cwd, gitOverviewR, cwd ?? "");
     const remote = fromRemote.data ?? null;
     const provider = remote?.provider ?? "";
     const chosen = hostSettings(provider).useSelect((settings) => (cwd && provider ? (settings.repoByProject[cwd] ?? null) : null));
     const pickedAccount = hostSettings(provider).useSelect((settings) => (cwd && provider ? (settings.accountByProject[cwd] ?? null) : null));
     const overridden = useMemo(() => (chosen ? refOf(provider, chosen) : null), [chosen, provider]);
     const shown = overridden ?? remote;
-    const found = useResourceEnabled(enabled && !!shown && !pickedAccount, accountForR, shown ?? NO_REPO);
+    const found = useCachedResourceEnabled(enabled && !!shown && !pickedAccount, accountForR, shown ?? NO_REPO);
     const account = pickedAccount ?? found.data ?? null;
     const findingAccount = !!shown && !pickedAccount && found.status === "loading" && found.data === undefined;
     // Held back until its account is known, so nothing is asked of the host as the wrong account first.

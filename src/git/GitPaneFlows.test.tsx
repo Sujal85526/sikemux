@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GitPane } from "./GitPane";
+import { remoteRepoR } from "../codehost/project";
 import { gitChangeOwnersR, gitOverviewR } from "../state/resources.defs";
 import { getState, setState } from "../state/store";
 import { useGitWorkbench } from "../state/gitWorkbench";
@@ -25,6 +26,7 @@ vi.mock("../state/resources", async (original) => ({
     ...(await original<typeof import("../state/resources")>()),
     useCachedResourceEnabled: (enabled: boolean, definition: unknown) => {
         if (definition === gitChangeOwnersR) return resources.owners;
+        if (definition === remoteRepoR) return { status: "ok", data: null, refresh: vi.fn() };
         if (definition !== gitOverviewR) return resources.empty;
         resources.overviewEnabled = enabled;
         return resources.overview;

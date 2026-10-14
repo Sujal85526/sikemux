@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import * as cmd from "../state/commands";
-import { useResourceEnabled } from "../state/resources";
+import { useCachedResourceEnabled } from "../state/resources";
 import { gitOverviewR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
@@ -8,8 +8,8 @@ import { CommitReview } from "./CommitReview";
 import { MergeReview } from "./MergeReview";
 import { invalidateDiffContentCache } from "./DiffEditor";
 
-export function DiffPane({ cwd, active }: { cwd: string; active: boolean }) {
-    const overview = useResourceEnabled(active && !!cwd, gitOverviewR, cwd || "");
+export function DiffPane({ cwd, visible }: { cwd: string; visible: boolean }) {
+    const overview = useCachedResourceEnabled(visible && !!cwd, gitOverviewR, cwd || "");
     const target = useStore((s) => s.diffTarget[cwd] ?? null);
     const files = useMemo(() => overview.data?.status.files ?? [], [overview.data]);
 

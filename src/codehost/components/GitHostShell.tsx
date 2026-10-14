@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AuthorPicturesProvider, type AuthorPictures } from "../../git/AuthorAvatar";
-import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
+import { invalidate, useCachedResourceEnabled } from "../../plugin-api/resources";
 import { subscribe } from "../../state/bus";
 import { SkeletonRows } from "../../plugin-api/ui";
 import type { GitArea } from "../../state/types";
@@ -20,6 +20,8 @@ interface Props {
     cwd: string;
     area: GitArea;
     active: boolean;
+    /** Whether the pane is on screen and settled, so its host data may be read. */
+    fetching: boolean;
     onArea: (area: GitArea) => void;
     /** The local workbench's screens, which head the navigation. */
     local: readonly NavItem[];
@@ -33,13 +35,13 @@ interface Props {
  * The git pane's header and whatever it has open. The code host the folder's remote lives on adds its sections to the
  * header; a folder on no known host, or on one whose plugin is switched off, gets the local screens alone.
  */
-export function GitHostShell({ paneId, cwd, area, active, onArea, local, tools, children }: Props) {
-    const found = useHostRepo(cwd, active);
+export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, local, tools, children }: Props) {
+    const found = useHostRepo(cwd, fetching);
     const host = found.repo ? codeHost(found.repo.provider) : undefined;
     const [picking, setPicking] = useState(false);
     const [adding, setAdding] = useState(false);
     const hosted = !!host;
-    const pictures = useAuthorPictures(host, found.repo, active);
+    const pictures = useAuthorPictures(host, found.repo, fetching);
 
     // A push, pull or commit changes what the host has to say about this repository's branches and pull requests.
     useEffect(() => {
@@ -58,42 +60,36 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, tools, 
         });
     }, [cwd, hosted]);
 
-    if (!host || !found.repo) {
-        return (
-            <div className="git-shell">
-                <GitNav local={local} tools={tools} />
-                <div className="git-shell-main">{children}</div>
-            </div>
-        );
-    }
-    const repo = found.repo;
+    const repo = host ? found.repo : null;
     const added = (account: string | null) => {
-        if (account) setProjectAccount(host.id, cwd, account);
+        if (host && account) setProjectAccount(host.id, cwd, account);
         setAdding(false);
         invalidate((kind) => kind.startsWith("host."));
     };
 
     return (
-        <HostProvider value={host}>
-            <AccountProvider value={repo.account ?? null}>
+        <HostProvider value={host && repo ? host : null}>
+            <AccountProvider value={repo?.account ?? null}>
                 <div className="git-shell">
                     <GitNav
                         local={local}
-                        host={<HostNavItems area={area} onArea={onArea} />}
-                        tools={area === "local" && !adding ? tools : null}
+                        host={host && repo ? <HostNavItems area={area} onArea={onArea} /> : undefined}
+                        tools={!repo || (area === "local" && !adding) ? tools : null}
                         account={
-                            <HostAccountButton
-                                slug={slugOf(repo)}
-                                cwd={cwd}
-                                active={active}
-                                onSignIn={() => onArea("pulls")}
-                                onPickRepo={() => setPicking(true)}
-                                onAddAccount={() => setAdding(true)}
-                            />
+                            host && repo ? (
+                                <HostAccountButton
+                                    slug={slugOf(repo)}
+                                    cwd={cwd}
+                                    active={active}
+                                    onSignIn={() => onArea("pulls")}
+                                    onPickRepo={() => setPicking(true)}
+                                    onAddAccount={() => setAdding(true)}
+                                />
+                            ) : undefined
                         }
                     />
                     <div className="git-shell-main">
-                        {adding ? (
+                        {host && repo && adding ? (
                             <div className="gha-pane" data-active={active ? "1" : "0"}>
                                 <div className="gha-callout gha-add-account">
                                     <span>Add another {host.name} account. This project switches to it once it signs in.</span>
@@ -103,7 +99,7 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, tools, 
                                 </div>
                                 <host.SignIn onSignedIn={added} />
                             </div>
-                        ) : area === "local" ? (
+                        ) : !host || !repo || area === "local" ? (
                             <AuthorPicturesProvider value={pictures}>{children}</AuthorPicturesProvider>
                         ) : (
                             <Suspense fallback={<SkeletonRows rows={8} label={`Loading ${host.name}`} />}>
@@ -119,7 +115,7 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, tools, 
                         )}
                     </div>
                 </div>
-                {picking && (
+                {host && repo && picking && (
                     <Suspense fallback={null}>
                         <RepoPicker
                             current={repo}
@@ -136,12 +132,12 @@ export function GitHostShell({ paneId, cwd, area, active, onArea, local, tools, 
 }
 
 /** The host's pictures for the emails in local commits, once someone is signed in to it. */
-function useAuthorPictures(host: CodeHost | undefined, repo: RepoRef | null, active: boolean): AuthorPictures | null {
+function useAuthorPictures(host: CodeHost | undefined, repo: RepoRef | null, fetching: boolean): AuthorPictures | null {
     const provider = repo?.provider ?? "";
-    const status = useResourceEnabled(active && !!host, hostStatusR, provider, repo?.account ?? null);
+    const status = useCachedResourceEnabled(fetching && !!host, hostStatusR, provider, repo?.account ?? null);
     const signedIn = !!status.data?.ok;
-    const authors = useResourceEnabled(
-        active && signedIn && !!host?.api.commitAuthors,
+    const authors = useCachedResourceEnabled(
+        fetching && signedIn && !!host?.api.commitAuthors,
         commitAuthorsR,
         repo ?? { provider, owner: "", name: "" },
         null,

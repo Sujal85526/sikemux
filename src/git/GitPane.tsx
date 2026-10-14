@@ -1656,6 +1656,7 @@ function GitWorkbench({
                 cwd={repo}
                 area={view.area}
                 active={active}
+                fetching={fetching}
                 onArea={(area) => cmd.setGitView(paneId, { area })}
                 local={[
                     {

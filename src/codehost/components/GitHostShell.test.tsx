@@ -74,7 +74,7 @@ function shell(area: GitArea, children = <div>local workbench</div>) {
     const onArea = vi.fn();
     const local = [{ id: "changes", label: "Changes", icon: null, on: area === "local", onSelect: vi.fn() }];
     const view = render(
-        <GitHostShell paneId="p-git" cwd={CWD} area={area} active onArea={onArea} local={local}>
+        <GitHostShell paneId="p-git" cwd={CWD} area={area} active fetching onArea={onArea} local={local}>
             {children}
         </GitHostShell>,
     );
