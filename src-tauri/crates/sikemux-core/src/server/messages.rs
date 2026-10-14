@@ -119,11 +119,12 @@ impl Mailbox {
             .iter()
             .filter(|sent| sent.from == letter.from_id && sent.to == to)
             .collect();
-        if let Some(repeat) = pair
+        let repeat = pair
             .iter()
             .rev()
-            .find(|sent| sent.digest == digest && now.saturating_sub(sent.at) < REPEAT_WINDOW_MS)
-        {
+            .find(|sent| sent.digest == digest && now.saturating_sub(sent.at) < REPEAT_WINDOW_MS);
+        // Each answer closes a question of its own, however alike two answers read.
+        if let Some(repeat) = repeat.filter(|_| letter.answers.is_none()) {
             return Ok(Admitted::Repeat {
                 seconds_ago: now.saturating_sub(repeat.at) / 1000,
             });
@@ -594,6 +595,18 @@ pub(crate) async fn answer(
     deliver(core, &target, letter).await
 }
 
+/// Drops the messages holding `mark` that still wait for the agent.
+pub(crate) fn withdraw(core: &Core, agent_id: &str, mark: &str) {
+    let mut state = core.harness.mailbox.lock();
+    let Some(waiting) = state.waiting.get_mut(agent_id) else {
+        return;
+    };
+    waiting.retain(|text| !text.contains(mark));
+    if waiting.is_empty() {
+        state.waiting.remove(agent_id);
+    }
+}
+
 /// Whether a message holding `mark` still waits for the agent's turn to end.
 pub(crate) fn is_waiting(core: &Core, agent_id: &str, mark: &str) -> bool {
     core.harness
@@ -684,6 +697,7 @@ async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Va
                 .map_err(|error| format!("{name} is asleep and did not wake: {error}"))?;
             woke = " Sikemux woke it first.";
         }
+        Reach::Stopped if letter.answers.is_some() => held = Some("has stopped"),
         Reach::Stopped => {
             return Err(format!(
                 "{name} has stopped; it gets messages again once the person opens it"

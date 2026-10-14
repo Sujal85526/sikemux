@@ -318,7 +318,7 @@ fn apply(core: &Core, signal: Signal, now: u64) {
             let started = core.notify.lock().turns.remove(&agent_id);
             let long =
                 started.is_some_and(|started| now.saturating_sub(started) >= FINISHED_AFTER_MS);
-            if long && !cancelled {
+            if long && !cancelled && !core.harness.questions.waits_on_answer(&agent_id) {
                 if let Some(draft) = finished(core, &agent_id, now) {
                     alert_all(core, &draft, now);
                 }

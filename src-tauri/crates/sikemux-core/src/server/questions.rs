@@ -175,6 +175,14 @@ impl Questions {
         })
     }
 
+    /// Whether the agent stopped to wait for the answer to a question.
+    pub(crate) fn waits_on_answer(&self, agent_id: &str) -> bool {
+        self.lock()
+            .open
+            .iter()
+            .any(|question| question.agent_id == agent_id && question.blocked)
+    }
+
     /// A lead's message to its agent answers what that agent asked it.
     pub(crate) fn lead_replied(&self, lead: &str, agent_id: &str) {
         let mut state = self.lock();
@@ -291,11 +299,22 @@ fn choices(value: Option<&Value>) -> Result<Vec<Choice>, String> {
         .collect()
 }
 
-/// Whether the agent still runs here or waits asleep in the app.
-fn alive(core: &Core, agent_id: &str) -> bool {
-    core.chats.get(agent_id).is_some()
-        || core.agent_session(agent_id).is_some()
-        || core.workspaces.published(agent_id).is_some()
+fn running(core: &Core, agent_id: &str) -> bool {
+    core.chats.get(agent_id).is_some() || core.agent_session(agent_id).is_some()
+}
+
+/// Whether the person closed the agent, so its questions go with it.
+fn gone(core: &Core, agent_id: &str) -> bool {
+    !running(core, agent_id) && core.workspaces.closed(agent_id)
+}
+
+/// Whether a message reaches the agent now: it runs, or it sleeps in an open
+/// window that wakes it. The window may not have said yet which chats it holds.
+fn reachable(core: &Core, agent_id: &str) -> bool {
+    running(core, agent_id)
+        || (core.window.is_open()
+            && !core.workspaces.closed(agent_id)
+            && core.workspaces.published(agent_id) != Some(false))
 }
 
 fn busy(core: &Core, agent_id: &str) -> bool {
@@ -318,14 +337,20 @@ fn cli_of(core: &Core, agent_id: &str) -> String {
         .unwrap_or_else(|| "agent".to_owned())
 }
 
-/// Opens a question from `agent_id`, put to its lead when it has one that
-/// runs, else to the person.
-fn open(core: &Core, agent_id: &str, project: &str, asked: Asked) -> Result<Question, String> {
+/// Opens the questions `agent_id` asked together, put to its lead when it
+/// has one a message reaches, else to the person. Opens none when they would
+/// leave the agent with too many waiting.
+fn open(
+    core: &Core,
+    agent_id: &str,
+    project: &str,
+    asked: Vec<Asked>,
+) -> Result<Vec<Question>, String> {
     let named = core.names.get(agent_id);
     let lead = named
         .as_ref()
         .and_then(|named| named.parent.clone())
-        .filter(|lead| alive(core, lead));
+        .filter(|lead| reachable(core, lead));
     let stage = match lead {
         Some(lead_id) => Stage::Lead {
             lead_name: core.names.name(&lead_id).unwrap_or_else(|| lead_id.clone()),
@@ -337,42 +362,49 @@ fn open(core: &Core, agent_id: &str, project: &str, asked: Asked) -> Result<Ques
             passed: false,
         },
     };
-    let question = Question {
-        id: format!("question-{}", uuid::Uuid::new_v4().simple()),
-        agent_id: agent_id.to_owned(),
-        name: named
-            .as_ref()
-            .map(|named| named.name.clone())
-            .unwrap_or_else(|| agent_id.to_owned()),
-        cli: cli_of(core, agent_id),
-        project: named.map(|named| named.project).unwrap_or_else(|| {
-            project_of(
-                std::path::Path::new(project),
-                &core.workspaces.project_paths(),
-            )
-        }),
-        asked: asked.text.clone(),
-        text: asked.text,
-        choices: asked.choices,
-        blocked: asked.blocked,
-        assumption: asked.assumption,
-        at: unix_ms(),
-        stage,
-    };
+    let name = named
+        .as_ref()
+        .map(|named| named.name.clone())
+        .unwrap_or_else(|| agent_id.to_owned());
+    let project = named.map(|named| named.project).unwrap_or_else(|| {
+        project_of(
+            std::path::Path::new(project),
+            &core.workspaces.project_paths(),
+        )
+    });
+    let cli = cli_of(core, agent_id);
+    let at = unix_ms();
+    let questions: Vec<Question> = asked
+        .into_iter()
+        .map(|asked| Question {
+            id: format!("question-{}", uuid::Uuid::new_v4().simple()),
+            agent_id: agent_id.to_owned(),
+            name: name.clone(),
+            cli: cli.clone(),
+            project: project.clone(),
+            asked: asked.text.clone(),
+            text: asked.text,
+            choices: asked.choices,
+            blocked: asked.blocked,
+            assumption: asked.assumption,
+            at,
+            stage: stage.clone(),
+        })
+        .collect();
     let mut state = core.harness.questions.lock();
     let open = state
         .open
         .iter()
         .filter(|open| open.agent_id == agent_id)
         .count();
-    if open >= MAX_OPEN_PER_AGENT {
+    if open + questions.len() > MAX_OPEN_PER_AGENT {
         return Err(format!(
-            "You already have {MAX_OPEN_PER_AGENT} questions waiting for answers; wait for those first"
+            "You would have more than {MAX_OPEN_PER_AGENT} questions waiting for answers; wait for those you asked first"
         ));
     }
-    state.open.push(question.clone());
+    state.open.extend(questions.iter().cloned());
     state.dirty = true;
-    Ok(question)
+    Ok(questions)
 }
 
 fn moves_on(question: &Question) -> String {
@@ -485,13 +517,14 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
         core,
         &agent_id,
         &request.project,
-        Asked {
+        vec![Asked {
             text,
             choices,
             blocked,
             assumption,
-        },
-    )?;
+        }],
+    )?
+    .remove(0);
     hand_to_lead(core, &question).await;
     let question = core
         .harness
@@ -599,13 +632,10 @@ pub(crate) fn ask_claude(core: &Arc<Core>, agent_id: &str, input: &Value) -> Str
         .get(agent_id)
         .map(|chat| chat.launch.cwd.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let mut opened = Vec::new();
-    for asked in asked {
-        match open(core, agent_id, &project, asked) {
-            Ok(question) => opened.push(question),
-            Err(error) => return error,
-        }
-    }
+    let opened = match open(core, agent_id, &project, asked) {
+        Ok(opened) => opened,
+        Err(error) => return error,
+    };
     let to = match opened.first().map(|question| &question.stage) {
         Some(Stage::Lead { lead_name, .. }) => format!("{lead_name}, your lead,"),
         _ => "the person".to_owned(),
@@ -756,12 +786,12 @@ pub(crate) fn tick(core: &Arc<Core>) {
     };
     let gone: HashSet<String> = askers
         .into_iter()
-        .filter(|agent_id| !alive(core, agent_id))
+        .filter(|agent_id| gone(core, agent_id))
         .collect();
     let leads: HashMap<String, (bool, bool)> = leads
         .into_iter()
         .map(|lead| {
-            let state = (alive(core, &lead), busy(core, &lead));
+            let state = (reachable(core, &lead), busy(core, &lead));
             (lead, state)
         })
         .collect();
@@ -777,6 +807,7 @@ pub(crate) fn tick(core: &Arc<Core>) {
             .collect()
     };
     let now = unix_ms();
+    let mut withdrawn = Vec::new();
     {
         let mut state = core.harness.questions.lock();
         let before = state.open.len();
@@ -793,17 +824,21 @@ pub(crate) fn tick(core: &Arc<Core>) {
             else {
                 continue;
             };
-            let (alive, busy) = leads
+            let (reachable, busy) = leads
                 .get(lead_id.as_str())
                 .copied()
                 .unwrap_or((false, false));
-            let passed_over = ended_at.is_some_and(|at| now.saturating_sub(at) >= LEAD_GRACE_MS)
-                && !unread.contains(&question.id);
+            let unread = unread.contains(&question.id);
+            let passed_over =
+                ended_at.is_some_and(|at| now.saturating_sub(at) >= LEAD_GRACE_MS) && !unread;
             if busy {
                 *ended_at = None;
-            } else if !alive || passed_over {
+            } else if !reachable || passed_over {
+                if unread {
+                    withdrawn.push((lead_id.clone(), question.id.clone()));
+                }
                 question.stage = Stage::Person {
-                    lead: alive.then(|| (lead_id.clone(), lead_name.clone())),
+                    lead: (!unread).then(|| (lead_id.clone(), lead_name.clone())),
                     passed: false,
                 };
                 changed = true;
@@ -812,6 +847,9 @@ pub(crate) fn tick(core: &Arc<Core>) {
         if changed {
             state.dirty = true;
         }
+    }
+    for (lead, question) in withdrawn {
+        messages::withdraw(core, &lead, &question);
     }
     tell_phones(core);
     tell_window(core);
