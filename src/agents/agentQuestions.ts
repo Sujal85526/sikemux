@@ -36,6 +36,10 @@ export const asksPerson = (question: AgentQuestion): boolean => question.lead ==
 export const blockingQuestion = (questions: readonly AgentQuestion[], agentId: string): AgentQuestion | undefined =>
     questions.find((question) => question.agentId === agentId && question.blocked && asksPerson(question));
 
+/** A question the agent went on without, on an assumption the person has not answered. */
+export const assumedQuestion = (questions: readonly AgentQuestion[], agentId: string): AgentQuestion | undefined =>
+    questions.find((question) => question.agentId === agentId && !question.blocked && asksPerson(question));
+
 export const waitsOnPerson = (questions: readonly AgentQuestion[], agentId: string): boolean => blockingQuestion(questions, agentId) !== undefined;
 
 /** Why a question reached the person rather than the lead it went to first. */

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
-import { AgentLabel } from "../agents/AgentLabel";
+import { blockingQuestion } from "../agents/agentQuestions";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { AGENT_GROUPS, AGENT_LABELS, lastWorkedAt, type AgentDisplay } from "../state/agentStatus";
@@ -9,6 +9,7 @@ import type { Agent } from "../state/types";
 import { AgentIcon, IconClose } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
+import { AgentAskingLabel } from "./AgentAskingLabel";
 import { AgentRowTree } from "./AgentRowTree";
 
 interface OpenAgentRow {
@@ -28,6 +29,7 @@ export function AllProjectsAgents() {
     const agentActivity = useStore((s) => s.agentActivity);
     const agentTasks = useStore((s) => s.agentTasks);
     const agentSubagents = useStore((s) => s.agentSubagents);
+    const questions = useStore((s) => s.agentQuestions);
     const shownAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
 
     const open = useMemo(() => {
@@ -54,37 +56,38 @@ export function AllProjectsAgents() {
                 return (
                     <Panel key={id} variant="group" className={`agent-group${id === "blocked" ? " agent-attention" : ""}`}>
                         <PanelHeader label={`${AGENT_LABELS[id]} ${rows.length}`} rule />
-                        {rows.map(({ agent, display, sessionName, sessionId }) => (
-                            <div key={agent.id} className="agent-row-wrap">
-                                <button
-                                    className={`agent-row${agent.id === shownAgentId ? " active" : ""}`}
-                                    title={`${sessionName} — ${agent.title}`}
-                                    onClick={() => cmd.revealAgent(agent.id)}>
-                                    <span className={`agent-glyph ${agent.type}`}>
-                                        <AgentIcon type={agent.type} size={20} />
-                                    </span>
-                                    <span className="agent-title">
-                                        <AgentLabel agent={agent} />
-                                    </span>
-                                    <BackgroundCounts display={display} />
-                                </button>
-                                {showsAgentState(display) && (
-                                    <span className="row-status">
-                                        <AgentStateIndicator display={display} />
-                                    </span>
-                                )}
-                                <Tooltip label={`Close ${agent.title}`}>
+                        {rows.map(({ agent, display, sessionName, sessionId }) => {
+                            const question = id === "blocked" ? blockingQuestion(questions, agent.id) : undefined;
+                            return (
+                                <div key={agent.id} className="agent-row-wrap">
                                     <button
-                                        type="button"
-                                        className="row-x"
-                                        aria-label={`Close ${agent.title}`}
-                                        onClick={() => cmd.closeAgent(agent.id)}>
-                                        <IconClose size={11} />
+                                        className={`agent-row${question ? " asking" : ""}${agent.id === shownAgentId ? " active" : ""}`}
+                                        title={`${sessionName} — ${agent.title}${question ? `: ${question.text}` : ""}`}
+                                        onClick={() => cmd.revealAgent(agent.id)}>
+                                        <span className={`agent-glyph ${agent.type}`}>
+                                            <AgentIcon type={agent.type} size={20} />
+                                        </span>
+                                        <AgentAskingLabel agent={agent} line={question?.text ?? null} />
+                                        <BackgroundCounts display={display} />
                                     </button>
-                                </Tooltip>
-                                <AgentRowTree agentId={agent.id} project={{ name: sessionName, sessionId }} worktree={agent.worktree} />
-                            </div>
-                        ))}
+                                    {showsAgentState(display) && (
+                                        <span className="row-status">
+                                            <AgentStateIndicator display={display} />
+                                        </span>
+                                    )}
+                                    <Tooltip label={`Close ${agent.title}`}>
+                                        <button
+                                            type="button"
+                                            className="row-x"
+                                            aria-label={`Close ${agent.title}`}
+                                            onClick={() => cmd.closeAgent(agent.id)}>
+                                            <IconClose size={11} />
+                                        </button>
+                                    </Tooltip>
+                                    <AgentRowTree agentId={agent.id} project={{ name: sessionName, sessionId }} worktree={agent.worktree} />
+                                </div>
+                            );
+                        })}
                     </Panel>
                 );
             })}

@@ -903,17 +903,15 @@
 .agent-row.attention .agent-title {
     min-width: 0;
 }
-/* An agent asking the person something: its question under its name, clamped
-   to two lines, so the row says what it wants without opening it. */
-.agent-row.attention.asking {
+.agent-row.asking {
     height: auto;
     min-height: 28px;
     align-items: flex-start;
     padding-top: 6px;
     padding-bottom: 7px;
 }
-.agent-row.attention.asking > .agent-glyph,
-.agent-row.attention.asking > .agent-activity {
+.agent-row.asking > .agent-glyph,
+.agent-row.asking > .agent-activity {
     height: 18px;
     align-items: center;
 }
@@ -936,6 +934,13 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     overflow-wrap: anywhere;
+}
+.agent-row.seen .agent-question {
+    color: var(--text-tertiary);
+}
+.agent-row-wrap:has(> .agent-row.asking) > .row-status,
+.agent-row-wrap:has(> .agent-row.asking) > .row-x {
+    top: 15px;
 }
 /* Shrinks by `min-width: 0` rather than a percentage cap. A percentage
    max-width on a flex item makes the row resolve its intrinsic width, which

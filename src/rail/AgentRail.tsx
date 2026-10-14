@@ -9,12 +9,12 @@ import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import { activeAgentId, agentDisplayOf, agentIdsOf, agentsAwaitingInput } from "../state/selectors";
+import { activeAgentId, agentDisplayOf, agentIdsOf, agentsAwaitingInput, openAgents } from "../state/selectors";
 import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
-import { blockingQuestion } from "../agents/agentQuestions";
+import { assumedQuestion, blockingQuestion } from "../agents/agentQuestions";
 import { AgentLabel } from "../agents/AgentLabel";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { AGENT_LABELS, agentDisplay, sortByAttention } from "../state/agentStatus";
@@ -26,6 +26,7 @@ import { RailToggle } from "./RailToggle";
 import { AgentAccountsPanel } from "./AgentAccounts";
 import { planLabel, usagePeak } from "./usageFormat";
 import { AgentRailStats } from "./AgentRailStats";
+import { AgentAskingLabel } from "./AgentAskingLabel";
 import { AgentRowTree } from "./AgentRowTree";
 import { AllProjectsAgents } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
@@ -503,39 +504,36 @@ function AgentAttentionGroup() {
     const agentActivity = useStore((s) => s.agentActivity);
     const activeSessionId = useStore((s) => s.activeSessionId);
     const questions = useStore((s) => s.agentQuestions);
-    const waiting = useMemo(
-        () => agentsAwaitingInput({ sessionOrder, sessions, windows, windowsBySession, agents, agentActivity }),
-        [sessionOrder, sessions, windows, windowsBySession, agents, agentActivity],
-    );
+    const waiting = useMemo(() => {
+        const open = { sessionOrder, sessions, windows, windowsBySession, agents, agentActivity };
+        const blocked = agentsAwaitingInput(open);
+        const assuming = [...openAgents(open)].filter(
+            ({ agentId }) => !blocked.some((row) => row.agentId === agentId) && assumedQuestion(questions, agentId),
+        );
+        return [...blocked, ...assuming];
+    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentActivity, questions]);
     if (waiting.length === 0) return null;
     return (
         <Panel variant="group" className="agent-group agent-attention">
             <PanelHeader label={`${AGENT_LABELS.blocked} ${waiting.length}`} rule />
             {waiting.map(({ agentId, agent, session }) => {
                 const question = blockingQuestion(questions, agentId);
+                const assumed = question ? undefined : assumedQuestion(questions, agentId);
+                const line = question?.text ?? (assumed ? `Assumed ${assumed.assumption ?? ""}` : null);
+                const activity = agentActivity[agentId];
+                const seen = line !== null && activity?.unread === false;
                 return (
                     <button
                         key={agentId}
-                        className={`agent-row attention${question ? " asking" : ""}`}
-                        title={`${session.name} — ${agent.title}: ${question ? question.text : AGENT_LABELS.blocked}`}
+                        className={`agent-row attention${line ? " asking" : ""}${seen ? " seen" : ""}`}
+                        title={`${session.name} — ${agent.title}: ${line ?? AGENT_LABELS.blocked}`}
                         onClick={() => cmd.revealAgent(agentId)}>
                         <span className={`agent-glyph ${agent.type}`}>
                             <AgentIcon type={agent.type} size={20} />
                         </span>
-                        {question ? (
-                            <span className="agent-asking">
-                                <span className="agent-title">
-                                    <AgentLabel agent={agent} />
-                                </span>
-                                <span className="agent-question">{question.text}</span>
-                            </span>
-                        ) : (
-                            <span className="agent-title">
-                                <AgentLabel agent={agent} />
-                            </span>
-                        )}
+                        <AgentAskingLabel agent={agent} line={line} />
                         {session.id !== activeSessionId && <span className="agent-attention-project">{session.name}</span>}
-                        <AgentStateIndicator display={agentDisplay("blocked")} />
+                        <AgentStateIndicator display={agentDisplay(assumed ? activity?.state : "blocked")} />
                     </button>
                 );
             })}
