@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 /// Variables every child process gets on top of this process's own
 /// environment. Launched from the Dock, the app has none of the user's shell
@@ -66,9 +66,57 @@ fn environment() -> Arc<UserEnvironment> {
 /// the user's `PATH`.
 #[allow(clippy::disallowed_methods)]
 pub fn command(program: impl AsRef<OsStr>) -> Command {
-    let mut command = Command::new(program);
+    let program = program.as_ref();
+    let mut command = match git_program().filter(|_| program == "git") {
+        Some(git) => Command::new(git),
+        None => Command::new(program),
+    };
     command.envs(&environment().variables);
     command
+}
+
+/// The git a bare `git` runs on the user's `PATH`, found once per `PATH`.
+fn git_program() -> Option<PathBuf> {
+    static FOUND: Mutex<Option<(OsString, PathBuf)>> = Mutex::new(None);
+    let path = var_os("PATH").unwrap_or_default();
+    let mut found = FOUND.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((searched, git)) = found.as_ref() {
+        if *searched == path && git.is_file() {
+            return Some(git.clone());
+        }
+    }
+    let git = past_xcode_stub(find_executable("git")?);
+    *found = Some((path, git.clone()));
+    Some(git)
+}
+
+/// macOS's `/usr/bin/git` asks `xcrun` where the real git is on every run,
+/// which takes longer than most of the reads the app makes.
+#[cfg(target_os = "macos")]
+#[allow(clippy::disallowed_methods)]
+fn past_xcode_stub(git: PathBuf) -> PathBuf {
+    if git != std::path::Path::new("/usr/bin/git") {
+        return git;
+    }
+    let output = Command::new("/usr/bin/xcrun")
+        .args(["--find", "git"])
+        .envs(&environment().variables)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+    let real = output
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| PathBuf::from(String::from_utf8_lossy(&output.stdout).trim()));
+    match real {
+        Some(real) if real.is_absolute() && real.is_file() => real,
+        _ => git,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn past_xcode_stub(git: PathBuf) -> PathBuf {
+    git
 }
 
 /// Reads a variable the way a child process would see it.
