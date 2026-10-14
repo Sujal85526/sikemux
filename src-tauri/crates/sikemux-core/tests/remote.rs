@@ -561,7 +561,9 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     let phone = Device::new("Phone", DeviceAccess::Full);
     let core = start_core(&core_key, &[&phone]);
     let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
-    app.register_window().await.expect("the app opens its window");
+    app.register_window()
+        .await
+        .expect("the app opens its window");
     publish_fake_agent(&app).await;
     let status = listening(&app).await;
     let endpoint = phone.endpoint().await;

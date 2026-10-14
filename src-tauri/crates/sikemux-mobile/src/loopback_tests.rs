@@ -318,7 +318,9 @@ fn closing_a_connection_fails_what_waits_on_it_and_tells_the_app_nothing_more() 
     let core = start_core(&core_key, Some(&phone_key));
     block_on(async {
         let (app, _events) = CoreClient::connect(&core.socket).await.expect("app");
-        app.register_window().await.expect("the app opens its window");
+        app.register_window()
+            .await
+            .expect("the app opens its window");
         let addr = core_addr(&app).await;
         app.publish_agents(
             vec![sikemux_core::protocol::PublishedChat {
