@@ -15,8 +15,8 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::cli::protocol::{
-    is_browser_method, is_plugin_method, is_sim_method, validate_harness, HarnessRequest,
-    PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
+    is_browser_method, is_sim_method, validate_harness, HarnessRequest, PLUGINS_CHANGED_METHOD,
+    SIM_CANCEL_METHOD, SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
 };
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
 use crate::harness::journal::{EventsPage, JournalRecord, Journals};
@@ -382,7 +382,6 @@ fn purpose(method: &str) -> &'static str {
         "task.start" | "task.restart" => "start tasks",
         method if is_browser_method(method) => "use the browser",
         method if is_sim_method(method) => "drive the iOS Simulator",
-        method if is_plugin_method(method) => "use plugin tools",
         _ => "use this tool",
     }
 }
@@ -492,6 +491,8 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "board.claim" => board::claim(core, &request).await,
         "board.update" => board::update(core, &request).await,
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
+        "plugins.tools" => super::plugins::agent_tools(&request.project).await,
+        "plugins.call" => super::plugins::call_agent_tool(&request.params).await,
         "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,
         "task.restart" => task_start(core, &request, true).await,

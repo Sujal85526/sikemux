@@ -15,7 +15,7 @@ use super::connection::{blocking, ClientConn};
 use super::edits::{Edit, Filter};
 use super::names::{project_of, AgentName};
 use super::workspace::AgentRun;
-use super::{board, questions, share, Core, CoreError, CoreResult};
+use super::{board, plugins, questions, share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
@@ -63,7 +63,34 @@ pub(crate) async fn call(
         "boardSettings" => answer(board::person_settings(&core, params).await?),
         "boardRetry" => answer(board::person_retry(&core, params).await?),
         "edits" => answer(edits(&core, parse(params)?).await?),
+        "plugin" => {
+            only_window(&core, client)?;
+            answer(plugins::window_call(&core, parse(params)?).await)
+        }
+        "pluginManifests" => {
+            only_window(&core, client)?;
+            answer(plugins::manifests())
+        }
+        "pluginSetDisabled" => {
+            only_window(&core, client)?;
+            plugins::set_disabled(&core, parse(params)?);
+            answer(())
+        }
+        "pluginStream" => {
+            only_window(&core, client)?;
+            answer(plugins::stream_ticket(parse(params)?)?)
+        }
         _ => Err(format!("this host does not know {method}").into()),
+    }
+}
+
+/// Plugins act as the person through their sign-ins, so only the window's
+/// panes reach them directly; agents reach the methods offered as tools.
+fn only_window(core: &Core, client: &ClientConn) -> CoreResult<()> {
+    if core.window.is_window(client.id) {
+        Ok(())
+    } else {
+        Err("only Sikemux's window may call a plugin".into())
     }
 }
 

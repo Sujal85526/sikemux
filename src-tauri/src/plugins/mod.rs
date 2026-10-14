@@ -1,4 +1,3 @@
-pub mod agent;
 mod builtin;
 mod in_core;
 
@@ -177,10 +176,18 @@ impl PluginHost {
         self.keep_disabled(ids);
     }
 
-    fn offers_agents_tools(&self, id: &str) -> bool {
+    pub fn offers_agent_tools(&self, id: &str) -> bool {
         self.plugins
             .get(id)
             .is_some_and(|loaded| !loaded.plugin.manifest().tools.is_empty())
+    }
+
+    /// Every shell variable a loaded plugin reads.
+    pub fn shell_variables(&self) -> Vec<String> {
+        self.plugins
+            .values()
+            .flat_map(|loaded| loaded.plugin.manifest().environment.clone())
+            .collect()
     }
 
     pub fn manifests(&self) -> Vec<Manifest> {
@@ -283,6 +290,33 @@ impl PluginHost {
         })
     }
 
+    /// Runs a stream until it ends. Dropping the future stops it.
+    pub async fn stream(
+        &self,
+        id: &str,
+        method: &str,
+        params: Value,
+        sink: StreamSink,
+    ) -> AppResult<()> {
+        let loaded = self.get(id)?;
+        let plugin = Arc::clone(&loaded.plugin);
+        let context = Arc::clone(&loaded.context);
+        let method = method.to_owned();
+        let task = self
+            .spawner
+            .spawn(async move { plugin.stream(&context, &method, params, sink).await });
+        let _stopping = StopOnDrop(task.abort_handle());
+        let outcome = match task.await {
+            Ok(Err(error)) if error.category == PluginError::stream_closed().category => Ok(()),
+            Ok(result) => result,
+            Err(stopped) => Err(PluginError::new("stopped", stopped.to_string())),
+        };
+        outcome.map_err(|error| AppError::Plugin {
+            plugin: id.to_owned(),
+            error,
+        })
+    }
+
     pub fn start_stream(
         &self,
         id: &str,
@@ -336,6 +370,14 @@ impl PluginHost {
     }
 }
 
+struct StopOnDrop(tokio::task::AbortHandle);
+
+impl Drop for StopOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 impl Drop for PluginHost {
     fn drop(&mut self) {
         if let Some(runtime) = self.runtime.take() {
@@ -386,7 +428,7 @@ pub async fn plugin_call(
     params: Value,
 ) -> AppResult<Value> {
     let result = host.call(&plugin, &method, params).await;
-    if host.offers_agents_tools(&plugin) {
+    if host.offers_agent_tools(&plugin) {
         tell_agents(&manager);
     }
     result
