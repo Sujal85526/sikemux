@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use reqwest::{Client, StatusCode};
@@ -128,6 +128,11 @@ fn choices(provider: &Provider, feed: &Snapshot, served: Option<&[String]>) -> C
 }
 
 static STORE: OnceLock<Providers> = OnceLock::new();
+
+/// What models.dev says of every provider's models. Reads the disk, so it blocks.
+pub fn feed() -> Arc<Snapshot> {
+    store().map(Providers::feed).unwrap_or_default()
+}
 
 pub fn init(data_dir: &Path) {
     let _ = STORE.set(Providers::new(data_dir));
