@@ -42,8 +42,8 @@ import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
-const LINE_ICON_SIZE = 16;
-const LOGO_SIZE = 14;
+const LINE_ICON_SIZE = 12;
+const LOGO_SIZE = 10;
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={LINE_ICON_SIZE} />;
