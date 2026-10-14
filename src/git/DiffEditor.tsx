@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { git, type DiffRow } from "../api/git";
+import { git, isFixedRevision, type DiffRow } from "../api/git";
 import { fsapi } from "../api/fs";
 import { currentTheme, subscribeTheme } from "../themes/bus";
 import { errMessage, swallow } from "../state/toast";
@@ -14,8 +14,15 @@ const DiffMergeEditor = lazy(() => import("./DiffMergeEditor"));
 interface CachedDiffRead {
     promise: Promise<unknown>;
     settled: boolean;
+    value?: unknown;
     chars: number;
+    repo: string;
+    path: string;
+    /** Whether either side is the working tree, the index or a branch, which can change under it. */
+    moving: boolean;
 }
+
+type ReadScope = Pick<CachedDiffRead, "repo" | "path" | "moving">;
 
 const revisionReads = new Map<string, CachedDiffRead>();
 const DIFF_READ_CACHE_MAX_ENTRIES = 192;
@@ -32,7 +39,7 @@ function pruneRevisionReads(): void {
     }
 }
 
-function cachedRead<T>(key: string, load: () => Promise<T>, charsOf: (value: T) => number): Promise<T> {
+function cachedRead<T>(key: string, scope: ReadScope, load: () => Promise<T>, charsOf: (value: T) => number): Promise<T> {
     const existing = revisionReads.get(key);
     if (existing) {
         revisionReads.delete(key);
@@ -40,11 +47,12 @@ function cachedRead<T>(key: string, load: () => Promise<T>, charsOf: (value: T) 
         return existing.promise as Promise<T>;
     }
 
-    const entry: CachedDiffRead = { promise: Promise.resolve(), settled: false, chars: 0 };
+    const entry: CachedDiffRead = { ...scope, promise: Promise.resolve(), settled: false, chars: 0 };
     const pending = load().then(
         (value) => {
             if (revisionReads.get(key) === entry) {
                 entry.settled = true;
+                entry.value = value;
                 entry.chars = charsOf(value);
                 revisionReadChars += entry.chars;
                 pruneRevisionReads();
@@ -64,32 +72,48 @@ function cachedRead<T>(key: string, load: () => Promise<T>, charsOf: (value: T) 
 
 const textLength = (text: string) => text.length;
 const rowsLength = (rows: DiffRow[]) => rows.reduce((total, row) => total + row[2].length + 8, 0);
+const movingRevision = (rev: string | undefined) => !rev || !isFixedRevision(rev);
 
 function readRevision(repo: string, rev: string, path: string): Promise<string> {
-    return cachedRead(`${repo}\0${rev}\0${path}`, () => git.fileAt(repo, rev, path), textLength);
+    return cachedRead(`${repo}\0${rev}\0${path}`, { repo, path, moving: movingRevision(rev) }, () => git.fileAt(repo, rev, path), textLength);
+}
+
+function diffReadKey(repo: string, path: string, baseRev: string, headRev: string | undefined, full: boolean): string {
+    return `${repo}\0diff\0${baseRev}\0${headRev ?? ":worktree"}\0${path}\0${full ? "full" : "hunks"}`;
 }
 
 function readDiff(repo: string, path: string, baseRev: string, headRev: string | undefined, full: boolean): Promise<DiffRow[]> {
-    const key = `${repo}\0diff\0${baseRev}\0${headRev ?? ":worktree"}\0${path}\0${full ? "full" : "hunks"}`;
-    return cachedRead(key, () => git.fileDiff(repo, path, baseRev, headRev ?? null, full), rowsLength);
+    const scope = { repo, path, moving: movingRevision(baseRev) || movingRevision(headRev) };
+    return cachedRead(
+        diffReadKey(repo, path, baseRev, headRev, full),
+        scope,
+        () => git.fileDiff(repo, path, baseRev, headRev ?? null, full),
+        rowsLength,
+    );
 }
 
-export function invalidateDiffContentCache(repo?: string): void {
-    if (!repo) {
-        revisionReads.clear();
-        revisionReadChars = 0;
-        return;
-    }
-    const prefix = `${repo}\0`;
+/** The rows of a diff already read, so a diff scrolled back into view draws at once. */
+function readDiffNow(repo: string, path: string, baseRev: string, headRev: string | undefined): DiffRow[] | null {
+    const entry = revisionReads.get(diffReadKey(repo, path, baseRev, headRev, false));
+    return entry?.settled ? (entry.value as DiffRow[]) : null;
+}
+
+/**
+ * Forgets what was read from the repository that can have changed since: the
+ * working tree, the index and branches, for `paths` when given. Commits named by
+ * hash never change, so their reads stay.
+ */
+export function invalidateDiffContentCache(repo?: string, paths?: readonly string[]): void {
+    const changed = paths ? new Set(paths) : null;
     for (const [key, entry] of revisionReads) {
-        if (!key.startsWith(prefix)) continue;
+        if (!entry.moving || (repo && entry.repo !== repo) || (changed && !changed.has(entry.path))) continue;
         revisionReads.delete(key);
         if (entry.settled) revisionReadChars -= entry.chars;
     }
 }
 
 subscribe("fs-changed", (event) => {
-    invalidateDiffContentCache(event.repo || undefined);
+    invalidateDiffContentCache(event.repo || undefined, event.paths);
 });
 subscribe("git-refresh", (event) => {
     invalidateDiffContentCache(event.repo || undefined);
@@ -115,7 +139,7 @@ export function DiffEditor({
     owned?: OwnedFile;
     onSaved?: () => void;
 }) {
-    const [rows, setRows] = useState<DiffRow[] | null>(null);
+    const [rows, setRows] = useState<DiffRow[] | null>(() => (editable ? null : readDiffNow(repo, path, baseRev, headRev)));
     const [files, setFiles] = useState<{ base: string; head: string } | null>(null);
     const [expanded, setExpanded] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -151,10 +175,13 @@ export function DiffEditor({
 
     useEffect(() => subscribeTheme((theme) => setDark(theme.dark)), []);
 
+    const shownKey = useRef(diffKey);
     useEffect(() => {
-        setRows(null);
+        if (shownKey.current === diffKey) return;
+        shownKey.current = diffKey;
+        setRows(readDiffNow(repo, path, baseRev, headRev));
         setFiles(null);
-    }, [diffKey]);
+    }, [diffKey, repo, path, baseRev, headRev]);
 
     useEffect(() => {
         if (editable) return;
@@ -260,6 +287,7 @@ function looksBinaryText(value: string): boolean {
 async function readWorkingFile(repo: string, path: string, absPath: string): Promise<string> {
     return cachedRead(
         `${repo}\0:worktree\0${path}`,
+        { repo, path, moving: true },
         async () => {
             try {
                 return await fsapi.readTextFileLimited(absPath);

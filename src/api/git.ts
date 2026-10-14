@@ -167,6 +167,11 @@ let fileAtGeneration = 0;
 /** A revision that names a commit by hash always reads back the same bytes; HEAD, a branch and the index do not. */
 const SHA_RE = /^[0-9a-f]{7,}([~^][0-9]*)*$/i;
 
+/** A commit named by its hash, whose contents can never change. */
+export function isFixedRevision(rev: string): boolean {
+    return SHA_RE.test(rev);
+}
+
 function cacheKey(repo: string, rev: string, path: string) {
     return `${repo}\0${rev}\0${path}`;
 }
