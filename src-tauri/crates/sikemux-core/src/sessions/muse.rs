@@ -7,10 +7,11 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
+use super::apply_login_environment;
 use super::recent::{Found, Hit, Listed, PageScan};
-use crate::agents::config::muse_data_root;
-use crate::agents::executable::apply_login_environment;
-use crate::agents::AgentSession;
+use super::roots::muse_data_root;
+use super::search::Prose;
+use super::AgentSession;
 
 // ---- muse — `sessions` table in ~/.local/share/muse/session-index.db -----
 fn muse_db() -> Option<Connection> {
@@ -33,14 +34,18 @@ fn folders<'a>(projects: &[&'a str]) -> HashMap<String, &'a str> {
     folders
 }
 
-/// The person's own sessions that ran in any of these folders, newest first.
-/// Subagents' sessions and ones never prompted are left out.
-fn muse_sessions_in(conn: &Connection, projects: &[&str]) -> Vec<Found> {
-    let folders = folders(projects);
-    if folders.is_empty() {
-        return Vec::new();
-    }
-    let placeholders = vec!["?"; folders.len()].join(", ");
+/// The person's own sessions that ran in any of these folders, or in any folder at all,
+/// newest first. Subagents' sessions and ones never prompted are left out.
+fn muse_sessions_in(conn: &Connection, projects: Option<&[&str]>) -> Vec<Found> {
+    let folders = projects.map(folders);
+    let filter = match &folders {
+        Some(folders) if folders.is_empty() => return Vec::new(),
+        Some(folders) => format!(
+            "workspace_root IN ({})",
+            vec!["?"; folders.len()].join(", ")
+        ),
+        None => "workspace_root IS NOT NULL".to_owned(),
+    };
     let sql = format!(
         "SELECT session_id, \
          COALESCE(NULLIF(TRIM(session_name), ''), NULLIF(TRIM(effective_long_title), ''), \
@@ -48,14 +53,14 @@ fn muse_sessions_in(conn: &Connection, projects: &[&str]) -> Vec<Found> {
          CAST(COALESCE(updated_at_us, created_at_us, 0) / 1000000 AS INTEGER) AS mtime, \
          workspace_root \
          FROM sessions \
-         WHERE workspace_root IN ({placeholders}) \
+         WHERE {filter} \
            AND COALESCE(msp_kind, 'root') = 'root' AND prompt_count > 0 \
          ORDER BY updated_at_us DESC"
     );
     let Ok(mut stmt) = conn.prepare(&sql) else {
         return Vec::new();
     };
-    let keys: Vec<&String> = folders.keys().collect();
+    let keys: Vec<&String> = folders.iter().flat_map(|folders| folders.keys()).collect();
     let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(keys), |row| {
         let folder = row.get::<_, String>(3)?;
         Ok((
@@ -71,9 +76,14 @@ fn muse_sessions_in(conn: &Connection, projects: &[&str]) -> Vec<Found> {
     };
     rows.filter_map(Result::ok)
         .filter_map(|(folder, session)| {
+            let project = match &folders {
+                Some(folders) => (*folders.get(&folder)?).to_owned(),
+                None => folder,
+            };
             Some(Found {
-                project: (*folders.get(&folder)?).to_owned(),
+                project,
                 session,
+                place: None,
             })
         })
         .collect()
@@ -83,7 +93,7 @@ pub(super) fn muse_sessions(cwd: &str) -> Vec<AgentSession> {
     let Some(conn) = muse_db() else {
         return Vec::new();
     };
-    muse_sessions_in(&conn, &[cwd])
+    muse_sessions_in(&conn, Some(&[cwd]))
         .into_iter()
         .take(400)
         .map(|found| found.session)
@@ -94,8 +104,10 @@ pub(super) fn muse_recent(scan: &PageScan<'_>) -> Vec<Hit> {
     let Some(conn) = muse_db() else {
         return Vec::new();
     };
-    let projects: Vec<&str> = scan.projects().map(String::as_str).collect();
-    let listed = muse_sessions_in(&conn, &projects)
+    let projects: Option<Vec<&str>> = scan
+        .projects()
+        .map(|projects| projects.map(String::as_str).collect());
+    let listed = muse_sessions_in(&conn, projects.as_deref())
         .into_iter()
         .map(|found| Listed {
             at_ms: found.session.mtime * 1000,
@@ -186,4 +198,21 @@ pub(super) async fn rename_muse_session(
     let _ = child.kill().await;
     let _ = child.wait().await;
     answered.map_err(|_| "Muse took too long to rename the chat".to_string())?
+}
+
+/// The text Muse keeps for searching the session, its own fields one a line.
+pub(super) fn muse_prose(session_id: &str, prose: &mut Prose) {
+    let Some(conn) = muse_db() else {
+        return;
+    };
+    let text = conn.query_row(
+        "SELECT search_text FROM sessions WHERE session_id = ?1",
+        [session_id],
+        |row| row.get::<_, String>(0),
+    );
+    if let Ok(text) = text {
+        for field in text.split('\u{1f}') {
+            prose.push(field);
+        }
+    }
 }

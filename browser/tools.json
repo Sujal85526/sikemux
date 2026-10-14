@@ -1412,7 +1412,7 @@
     },
     {
       "name": "agent_spawn",
-      "row": {"verb": "start", "kind": "execute", "icon": "square-plus", "target": ["{cli} agent", "a helper"], "detail": ["{prompt}"]},
+      "row": {"verb": "start", "kind": "execute", "icon": "square-plus", "target": ["session {resume}", "{cli} agent", "a helper"], "detail": ["{prompt}"]},
       "method": "agent.spawn",
       "description": "Start a Sikemux agent.",
       "properties": {
@@ -1445,10 +1445,44 @@
             "chat",
             "terminal"
           ]
+        },
+        "resume": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
         }
       },
       "required": [
         "prompt"
+      ]
+    },
+    {
+      "name": "agent_sessions",
+      "row": {"verb": "find", "kind": "search", "icon": "search", "target": ["sessions “{query}”"]},
+      "method": "agent.sessions",
+      "description": "Search past agent sessions.",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "allProjects": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "query"
       ]
     },
     {

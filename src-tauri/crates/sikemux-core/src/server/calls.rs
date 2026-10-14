@@ -15,7 +15,7 @@ use super::connection::{blocking, ClientConn};
 use super::edits::{self, Edit, Filter, Owners};
 use super::names::{project_of, AgentName};
 use super::workspace::{self, AgentRun};
-use super::{board, inbox, plugins, questions, remote, share, Core, CoreError, CoreResult};
+use super::{board, inbox, plugins, questions, remote, saved, share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
@@ -42,6 +42,7 @@ pub(crate) async fn call(
         "renameAgent" => answer(rename_agent(&core, parse(params)?).await?),
         "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
         "agentNames" => answer(agent_names(&core).await?),
+        "agentSessions" => answer(saved::call(&core, parse(params)?).await?),
         "setWorkspace" => answer(workspace::set_workspace(&core, parse(params)?).await?),
         method if crate::agent_accounts::METHODS.contains(&method) => {
             super::agent_accounts::call(&core, method, params).await

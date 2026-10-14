@@ -1,16 +1,17 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
 
 use super::recent::{Found, Hit, Listed, PageScan};
-use crate::agents::config::environment_path;
-use crate::agents::AgentSession;
+use super::roots::environment_path;
+use super::search::Prose;
+use super::AgentSession;
 
 // ---- opencode — SQLite in the user's opencode data dir ------------------
-pub(in crate::agents) fn opencode_data_dirs() -> Vec<PathBuf> {
+pub fn opencode_data_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(dir) = environment_path("OPENCODE_DATA_DIR") {
         dirs.push(dir);
@@ -80,23 +81,59 @@ pub(super) fn opencode_recent(scan: &PageScan<'_>) -> Vec<Hit> {
         let Ok(conn) = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
             continue;
         };
-        for project in scan.projects() {
-            for session in opencode_sessions_from_conn(&conn, project) {
-                if !seen.insert(session.id.clone()) {
-                    continue;
-                }
-                listed.push(Listed {
-                    at_ms: session.mtime * 1000,
-                    key: session.id.clone(),
-                    item: Found {
-                        project: project.clone(),
-                        session,
-                    },
-                });
+        let found: Vec<(String, AgentSession)> = match scan.projects() {
+            Some(projects) => projects
+                .flat_map(|project| {
+                    opencode_sessions_from_conn(&conn, project)
+                        .into_iter()
+                        .map(|session| (project.clone(), session))
+                })
+                .collect(),
+            None => opencode_every_session(&conn),
+        };
+        for (project, session) in found {
+            if !seen.insert(session.id.clone()) {
+                continue;
             }
+            listed.push(Listed {
+                at_ms: session.mtime * 1000,
+                key: session.id.clone(),
+                item: Found {
+                    project,
+                    session,
+                    place: Some(db.clone()),
+                },
+            });
         }
     }
     scan.collect(listed, |found| Some(found.clone()))
+}
+
+fn opencode_every_session(conn: &Connection) -> Vec<(String, AgentSession)> {
+    let sql = "\
+        SELECT id, \
+               COALESCE(NULLIF(TRIM(title), ''), NULLIF(TRIM(slug), ''), substr(id, 1, 13)) AS title, \
+               CAST(COALESCE(time_updated, time_created, 0) AS INTEGER) AS mtime, \
+               directory \
+        FROM session \
+        ORDER BY COALESCE(time_updated, time_created, 0) DESC \
+        LIMIT 2000";
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(3)?,
+            AgentSession {
+                id: row.get::<_, String>(0)?,
+                title: row.get::<_, String>(1)?,
+                mtime: normalize_unix_secs(row.get::<_, i64>(2).unwrap_or(0).max(0) as u64),
+            },
+        ))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(Result::ok).collect()
 }
 
 fn opencode_sessions_from_conn(conn: &Connection, cwd: &str) -> Vec<AgentSession> {
@@ -172,6 +209,26 @@ fn rename_in_databases(databases: &[PathBuf], session_id: &str, name: &str) -> R
         }
     }
     Err("session not found".to_string())
+}
+
+/// What the person and OpenCode wrote in the session: its text parts, never tool calls.
+pub(super) fn opencode_prose(db: &Path, session_id: &str, prose: &mut Prose) {
+    let Ok(conn) = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
+        return;
+    };
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT substr(json_extract(data, '$.text'), 1, 8192) FROM part \
+         WHERE session_id = ?1 AND json_extract(data, '$.type') = 'text' \
+         ORDER BY time_created, id",
+    ) else {
+        return;
+    };
+    let Ok(rows) = stmt.query_map([session_id], |row| row.get::<_, Option<String>>(0)) else {
+        return;
+    };
+    for text in rows.map_while(Result::ok).flatten() {
+        prose.push(&text);
+    }
 }
 
 #[cfg(test)]

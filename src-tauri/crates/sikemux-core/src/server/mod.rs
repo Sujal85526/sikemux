@@ -24,6 +24,7 @@ pub mod plugins;
 mod prepare;
 mod questions;
 mod remote;
+mod saved;
 mod seen;
 mod session;
 mod share;

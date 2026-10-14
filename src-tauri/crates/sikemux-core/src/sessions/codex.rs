@@ -11,13 +11,14 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::process::{ChildStdin, Command};
 
 use super::recent::{Found, Hit, Listed, PageScan};
+use super::roots::agent_config_root;
+use super::search::Prose;
+use super::AgentSession;
+use super::{apply_login_environment, apply_process_config};
 use super::{
     cached_title, collect_jsonl, condense, next_title_cache_access, stamped_transcripts,
     title_cache_stamp, TitleCacheStamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
-use crate::agents::config::agent_config_root;
-use crate::agents::executable::{apply_login_environment, apply_process_config};
-use crate::agents::AgentSession;
 
 // ---- codex — ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl ----------------
 
@@ -205,6 +206,7 @@ fn codex_session(
             title,
             mtime: stamp.unix_secs(),
         },
+        place: Some(path.to_path_buf()),
     })
 }
 
@@ -339,6 +341,29 @@ async fn send_line(stdin: &mut ChildStdin, line: &str) -> Result<(), String> {
         .flush()
         .await
         .map_err(|_| "Could not talk to Codex".to_string())
+}
+
+/// What one rollout line adds to what the person and Codex wrote.
+pub(super) fn codex_prose(line: &str, prose: &mut Prose) {
+    if !line.contains("\"event_msg\"")
+        || !(line.contains("\"user_message\"") || line.contains("\"agent_message\""))
+    {
+        return;
+    }
+    let Ok(value) = serde_json::from_str::<Value>(line) else {
+        return;
+    };
+    let Some(payload) = value.get("payload") else {
+        return;
+    };
+    if matches!(
+        payload.get("type").and_then(Value::as_str),
+        Some("user_message" | "agent_message")
+    ) {
+        if let Some(text) = payload.get("message").and_then(Value::as_str) {
+            prose.push(text);
+        }
+    }
 }
 
 #[cfg(test)]

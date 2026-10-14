@@ -7,17 +7,18 @@ use serde_json::Value;
 
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::{append_line, now_iso8601};
+use super::search::Prose;
 use super::{
-    cached_title, collect_jsonl, condense, mtime_of, read_suffix, text_from_content,
+    cached_title, collect_jsonl, condense, mtime_of, push_texts, read_suffix, text_from_content,
     title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
 
 const PI_TAIL_BYTES: u64 = 128 * 1024;
-use crate::agents::config::{environment_path, pi_agent_root};
-use crate::agents::AgentSession;
+use super::roots::{environment_path, pi_agent_root};
+use super::AgentSession;
 
 // ---- pi — ~/.pi/agent/sessions/**/<session>.jsonl ----------------------
-pub(in crate::agents) fn pi_session_dir() -> Option<PathBuf> {
+pub fn pi_session_dir() -> Option<PathBuf> {
     environment_path("PI_CODING_AGENT_SESSION_DIR")
         .or_else(|| Some(pi_agent_root()?.join("sessions")))
 }
@@ -87,6 +88,7 @@ fn pi_session(path: &Path) -> Option<Found> {
     Some(Found {
         project,
         session: AgentSession { id, title, mtime },
+        place: Some(path.to_path_buf()),
     })
 }
 
@@ -163,6 +165,30 @@ pub(super) fn rename_pi_session(path: &Path, name: &str) -> Result<(), String> {
         "name": name,
     });
     append_line(path, &entry.to_string())
+}
+
+/// What one Pi or OMP session line adds to what the person and the agent wrote.
+pub(super) fn message_prose(line: &str, prose: &mut Prose) {
+    if !line.contains("\"message\"") {
+        return;
+    }
+    let Ok(value) = serde_json::from_str::<Value>(line) else {
+        return;
+    };
+    if value.get("type").and_then(Value::as_str) != Some("message") {
+        return;
+    }
+    let Some(message) = value.get("message") else {
+        return;
+    };
+    if matches!(
+        message.get("role").and_then(Value::as_str),
+        Some("user" | "assistant")
+    ) {
+        if let Some(content) = message.get("content") {
+            push_texts(content, prose);
+        }
+    }
 }
 
 #[cfg(test)]

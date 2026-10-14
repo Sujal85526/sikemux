@@ -6,38 +6,12 @@ use sikemux_core::agent_accounts::status::AgentStatus;
 use sikemux_core::agent_catalog::AGENTS;
 use sikemux_core::client::CoreClient;
 use sikemux_core::launch::discovery;
-use sikemux_pty::user_shell::login_shell_environment;
 use tauri::State;
-use tokio::process::Command;
 
-use super::config::{agent_config_root, configured_default_effort, configured_default_model};
+use super::config::{configured_default_effort, configured_default_model};
 use super::{AgentInfo, AgentProfileRequest};
 use crate::error::AppResult;
 use crate::pty::PtyManager;
-
-pub(super) fn apply_process_config(command: &mut Command, agent: &str, config_path: Option<&str>) {
-    let Some(root) = agent_config_root(agent, config_path) else {
-        return;
-    };
-    if config_path.is_none() {
-        return;
-    }
-    match agent {
-        "codex" => {
-            command.env("CODEX_HOME", root);
-        }
-        "claude" => {
-            command.env("CLAUDE_CONFIG_DIR", root);
-        }
-        _ => {}
-    }
-}
-
-pub(super) fn apply_login_environment(command: &mut Command) {
-    for (key, value) in login_shell_environment() {
-        command.env(key, value);
-    }
-}
 
 /// Agent CLIs that are installed for the current user. The app's PATH is fixed
 /// from the login shell during boot, so this matches what spawned PTYs can run.

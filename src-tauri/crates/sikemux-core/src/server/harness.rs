@@ -27,7 +27,7 @@ use super::connection::blocking;
 use super::messages::{self, Mailbox, MailboxRecord};
 use super::questions::{self, Questions, QuestionsRecord};
 use super::window::{self, Call};
-use super::{board, follow, spawn};
+use super::{board, follow, saved, spawn};
 use super::{session, Core};
 use crate::skills;
 
@@ -483,6 +483,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "agent.list" => messages::list(core, &request).await,
         "agent.send" => messages::send(core, &request).await,
         "agent.spawn" => spawn::spawn(core, &request).await,
+        "agent.sessions" => saved::find(core, &request).await,
         "agent.ask" => questions::ask(core, &request).await,
         "agent.read" => follow::read(core, &request).await,
         "agent.wait" => follow::wait(core, &request).await,

@@ -21,11 +21,13 @@ use super::connection::blocking;
 use super::follow::{self, TerminalAnswer};
 use super::messages;
 use super::names::Worker;
+use super::saved::{self, Saved};
 use super::workspace::{own_launch, Lead, Paid};
 use super::Core;
 
 const MAX_PROMPT_BYTES: usize = 64 * 1024;
 const MAX_MODEL_CHARS: usize = 200;
+const MAX_SESSION_ID_CHARS: usize = 4_096;
 /// How much of a worker's final answer its lead is sent.
 const MAX_REPORT_BYTES: usize = 4 * 1024;
 
@@ -144,7 +146,11 @@ fn lead_of(core: &Core, lead_id: &str, project: &str) -> Result<(Lead, PathBuf),
     ))
 }
 
-fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> {
+fn start(
+    core: &Arc<Core>,
+    request: &HarnessRequest,
+    resume: Option<&Saved>,
+) -> Result<Started, String> {
     let lead_id = request
         .agent_id
         .clone()
@@ -155,13 +161,17 @@ fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> 
     let named_provider = text_param(params, "provider", 64)?.map(|id| id.trim().to_owned());
     let reports = reports_back(params)?;
     let _one_at_a_time = core.harness.spawning.one_at_a_time();
-    let (lead, cwd) = lead_of(core, &lead_id, &request.project)?;
+    let (lead, lead_cwd) = lead_of(core, &lead_id, &request.project)?;
+    let cwd = resume.map_or(lead_cwd, |saved| saved.project.clone());
     let helper = core.workspaces.helper().filter(|helper| {
-        model.is_none()
+        resume.is_none()
+            && model.is_none()
             && named_provider.is_none()
             && cli.as_ref().is_none_or(|cli| *cli == helper.agent)
     });
-    let provider = cli
+    let provider = resume
+        .map(|saved| saved.cli.clone())
+        .or(cli)
         .or_else(|| helper.as_ref().map(|helper| helper.agent.clone()))
         .or_else(|| (!lead.provider.is_empty()).then(|| lead.provider.clone()))
         .ok_or("cli must name the agent to start, such as claude or codex")?;
@@ -173,6 +183,7 @@ fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> 
     let (mut launch, launcher) = core
         .workspaces
         .worker_launch(&lead, &provider, &cwd, model, paid)?;
+    launch.resume_id = resume.map(|saved| saved.session_id.clone());
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
     let named = core.names.hire(
         Worker {
@@ -223,37 +234,89 @@ pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<
         }
         _ => return Err("prompt must be the new agent's task, as nonempty text".into()),
     };
+    let resume = text_param(&request.params, "resume", MAX_SESSION_ID_CHARS)?.map(str::to_owned);
     match request.params.get("mode") {
         None | Some(Value::Null) => {}
         Some(Value::String(mode)) if mode == "chat" => {}
-        Some(Value::String(mode)) if mode == "terminal" => {
+        Some(Value::String(mode)) if mode == "terminal" && resume.is_none() => {
             return spawn_terminal(core, request, prompt).await
+        }
+        Some(Value::String(mode)) if mode == "terminal" => {
+            return Err("resume reopens the session as a chat; leave mode out".into())
         }
         Some(_) => return Err("mode must be chat or terminal".into()),
     }
+    let saved = match resume {
+        Some(session_id) => {
+            let (owner, cli) = (core.clone(), request.params.get("cli").cloned());
+            let saved = blocking(move || {
+                let cli = cli.as_ref().and_then(Value::as_str).map(str::to_lowercase);
+                saved::locate(&owner, session_id.trim(), cli.as_deref()).map_err(Into::into)
+            })
+            .await
+            .map_err(|error| error.to_string())?;
+            if let Some((agent_id, name)) = &saved.open {
+                return send_to_open(core, request, &saved, agent_id, name.as_deref(), prompt)
+                    .await;
+            }
+            Some(saved)
+        }
+        None => None,
+    };
     let started = {
-        let (core, request) = (core.clone(), request.clone());
-        blocking(move || start(&core, &request).map_err(Into::into))
+        let (core, request, resumed) = (core.clone(), request.clone(), saved.clone());
+        blocking(move || start(&core, &request, resumed.as_ref()).map_err(Into::into))
             .await
             .map_err(|error| error.to_string())?
     };
     let reports = started.reports;
+    let starting = match &saved {
+        Some(saved) => format!(
+            "{} is reopening \"{}\" in its own tab",
+            started.name, saved.title
+        ),
+        None => format!("{} is starting in its own tab", started.name),
+    };
     let answer = json!({
         "name": started.name,
         "agentId": started.agent_id,
         "cli": started.provider,
         "model": started.model,
         "provider": started.paid_by,
+        "resumed": saved.as_ref().map(|saved| &saved.session_id),
         "reportsBack": reports,
         "note": format!(
-            "{} is starting in its own tab and gets your prompt once it is ready.{}",
-            started.name,
+            "{starting} and gets your prompt once it is ready.{}",
             if reports { " Each time its turn ends, its final answer comes to you as a message." } else { "" }
         ),
     });
     let core = core.clone();
     tokio::spawn(async move { hand_task(&core, started, prompt).await });
     Ok(answer)
+}
+
+/// Hands the prompt to the agent that already has the session open, as
+/// `agent_send` would, rather than opening a second copy of it.
+async fn send_to_open(
+    core: &Arc<Core>,
+    request: &HarnessRequest,
+    saved: &Saved,
+    agent_id: &str,
+    name: Option<&str>,
+    prompt: String,
+) -> Result<Value, String> {
+    let mut message = request.clone();
+    message.params = json!({ "to": agent_id, "text": prompt });
+    let sent = messages::send(core, &message).await?;
+    let name = name.unwrap_or(agent_id);
+    Ok(json!({
+        "name": name,
+        "agentId": agent_id,
+        "cli": saved.cli,
+        "alreadyOpen": true,
+        "sent": sent,
+        "note": format!("{name} already has \"{}\" open, so your prompt went to it as a message, as agent_send sends one.", saved.title),
+    }))
 }
 
 /// Gives the new agent its task once it is ready, or tells its lead it

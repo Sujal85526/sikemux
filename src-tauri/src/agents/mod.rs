@@ -8,16 +8,9 @@ use serde::{Deserialize, Serialize};
 use sikemux_core::agent_accounts::status::AgentStatus;
 
 pub(crate) use config::global_skill_folders;
-pub(crate) use sessions::context::session_transcript_path;
 pub use sikemux_core::agent_catalog::AgentKind;
+pub(crate) use sikemux_core::sessions::context::session_transcript_path;
 pub use watch::{note_streaming_session, watch_count};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AgentSession {
-    id: String,
-    title: String,
-    mtime: u64,
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -10,12 +10,12 @@ use serde_json::Value;
 use super::claude::{CLAUDE_HEAD_BYTES, CLAUDE_TAIL_BYTES};
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::now_iso8601;
+use super::roots::{omp_agent_root, omp_session_dirs};
+use super::AgentSession;
 use super::{
     cached_title, collect_jsonl, condense, mtime_of, read_prefix, read_suffix, text_from_content,
     title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
-use crate::agents::config::{omp_agent_root, omp_session_dirs};
-use crate::agents::AgentSession;
 
 pub(super) fn omp_sessions(cwd: &str) -> Vec<AgentSession> {
     omp_sessions_from_dirs(cwd, omp_session_dirs())
@@ -94,6 +94,7 @@ fn omp_session(path: &Path) -> Option<Found> {
             title,
             mtime,
         },
+        place: Some(path.to_path_buf()),
     })
 }
 

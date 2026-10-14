@@ -885,6 +885,34 @@ may not; one agent has at most six of its own open, and a project at most
 eight that agents started. A refusal says which limit it hit. When the person
 closes a lead, Sikemux asks them whether to stop its agents or keep them.
 
+### Finding and resuming an earlier session
+
+When the person asks you to go back to an earlier session they half remember,
+such as "the one where we fixed the login flake", call `agent_sessions` with
+`query`, the words they used. It searches the sessions every agent CLI saved
+on this host, Claude, Codex, OpenCode, Hermes, Pi, OMP, Grok and Muse, by
+title and by what the person and the agent wrote, not by tool output. It
+searches your project's sessions; pass `project`, a folder, for another one,
+or `allProjects: true` for every project. Sessions whose title holds the
+words, that hold more of the words, and recent ones come first. Each comes
+with its `title`, `cli`, `project`, `date`, `sessionId`, a line or two of
+`snippets` where the words were found, and `openNow` with the agent's `name`
+and `agentId` when an agent has it open now. `limit` says how many, at most 20.
+The `note` says when time ran out before every session was read.
+
+If the top match is clearly the one, resume it. If you are not sure, show the
+person the top few, each with its title, CLI, date and a snippet, and let them
+pick.
+
+To resume one, call `agent_spawn` with `resume` set to its `sessionId` and
+`prompt` set to what it should do now. It reopens on the same CLI in the
+session's own project, in its own tab with a fresh name, as any agent you start
+does: on your account and in your permission mode, under the same limits, and
+it reports back to you. Leave out `cli` and `model` unless you mean them; `cli`
+must then be the session's. When an agent already has the session open,
+nothing is reopened: your prompt goes to that agent as a message, as
+`agent_send` sends one, and the answer says `alreadyOpen`.
+
 ### Reading what an agent said
 
 `agent_read` takes `agent`, a name or `agentId`, and answers with what that

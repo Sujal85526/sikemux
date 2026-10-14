@@ -7,9 +7,10 @@ use serde_json::Value;
 
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::now_iso8601;
+use super::roots::grok_root;
+use super::search::{each_line, Prose};
+use super::AgentSession;
 use super::{condense, mtime_of, MAX_AGENT_TRANSCRIPTS_INSPECTED, MAX_AGENT_TRANSCRIPT_PATHS};
-use crate::agents::config::grok_root;
-use crate::agents::AgentSession;
 
 fn collect_grok_session_dirs(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
@@ -202,6 +203,7 @@ fn grok_found(session_dir: &Path) -> Option<Found> {
             title,
             mtime: grok_session_mtime(session_dir),
         },
+        place: Some(session_dir.to_path_buf()),
     })
 }
 
@@ -284,6 +286,60 @@ fn lock_exclusive(file: &fs::File) -> Result<(), String> {
 #[cfg(not(unix))]
 fn lock_exclusive(_file: &fs::File) -> Result<(), String> {
     Ok(())
+}
+
+/// The file a Grok session's conversation is read from.
+pub(super) fn grok_transcript(session_dir: &Path) -> Option<PathBuf> {
+    ["updates.jsonl", "chat_history.jsonl"]
+        .iter()
+        .map(|name| session_dir.join(name))
+        .find(|path| path.is_file())
+}
+
+/// What the person and Grok wrote: its streamed message chunks joined back into messages.
+pub(super) fn grok_prose(session_dir: &Path, prose: &mut Prose) {
+    let Some(path) = grok_transcript(session_dir) else {
+        return;
+    };
+    let mut message: Option<(bool, String)> = None;
+    let flush = |message: &mut Option<(bool, String)>, prose: &mut Prose| {
+        if let Some((user, text)) = message.take() {
+            prose.push(if user { grok_user_query(&text) } else { &text });
+        }
+    };
+    each_line(&path, |line| {
+        if !line.contains("message") {
+            return;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            return;
+        };
+        let (user, content) = match value.pointer("/params/update") {
+            Some(update) => match update.get("sessionUpdate").and_then(Value::as_str) {
+                Some("user_message_chunk") => (true, update.get("content")),
+                Some("agent_message_chunk") => (false, update.get("content")),
+                _ => return,
+            },
+            None => match value.get("type").and_then(Value::as_str) {
+                Some("user") if value.get("synthetic_reason").is_none() => {
+                    (true, value.get("content"))
+                }
+                Some("assistant") => (false, value.get("content")),
+                _ => return,
+            },
+        };
+        let Some(text) = content.and_then(grok_content_text) else {
+            return;
+        };
+        match &mut message {
+            Some((was_user, joined)) if *was_user == user => joined.push_str(&text),
+            _ => {
+                flush(&mut message, prose);
+                message = Some((user, text));
+            }
+        }
+    });
+    flush(&mut message, prose);
 }
 
 #[cfg(test)]

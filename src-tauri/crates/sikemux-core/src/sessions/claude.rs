@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
@@ -6,19 +7,21 @@ use serde_json::Value;
 
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::append_line;
+use super::roots::agent_config_root;
+use super::search::Prose;
+use super::AgentSession;
 use super::{
-    cached_title, condense, read_prefix, read_suffix, stamped_transcripts, text_from_content,
-    title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
+    cached_title, condense, push_texts, read_prefix, read_suffix, stamped_transcripts,
+    text_from_content, title_cache_stamp, FileCache, TitleCacheStamp,
+    MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
-use crate::agents::config::agent_config_root;
-use crate::agents::AgentSession;
 
 // ---- claude — ~/.claude/projects/<cwd-dashed>/<uuid>.jsonl --------------
 const MAX_PROJECT_DIR_NAME: usize = 200;
 
 /// Claude Code turns every character of the cwd that is not an ASCII letter or digit into
 /// `-`, counting UTF-16 units, and cuts names past 200 characters before adding a hash.
-pub(crate) fn claude_project_dir(root: &Path, cwd: &str) -> PathBuf {
+pub fn claude_project_dir(root: &Path, cwd: &str) -> PathBuf {
     let projects = root.join("projects");
     let mut name = String::new();
     for c in cwd.chars() {
@@ -99,9 +102,20 @@ pub(super) fn claude_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> V
     let Some(root) = agent_config_root("claude", config_path) else {
         return Vec::new();
     };
+    let folders: Vec<(PathBuf, Option<String>)> = match scan.projects() {
+        Some(projects) => projects
+            .map(|project| (claude_project_dir(&root, project), Some(project.clone())))
+            .collect(),
+        None => fs::read_dir(root.join("projects"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| (entry.path(), None))
+            .collect(),
+    };
     let mut listed = Vec::new();
-    for project in scan.projects() {
-        let Ok(entries) = fs::read_dir(claude_project_dir(&root, project)) else {
+    for (folder, project) in folders {
+        let Ok(entries) = fs::read_dir(folder) else {
             continue;
         };
         for path in entries
@@ -120,14 +134,39 @@ pub(super) fn claude_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> V
     scan.collect(listed, |(path, stamp, project)| {
         let id = path.file_stem().and_then(|s| s.to_str())?;
         let title = cached_title(path, *stamp, || claude_title(path))?;
+        let project = match project {
+            Some(project) => project.clone(),
+            None => claude_cwd(path, *stamp)?,
+        };
         Some(Found {
-            project: project.clone(),
+            project,
             session: AgentSession {
                 id: id.to_string(),
                 title,
                 mtime: stamp.unix_secs(),
             },
+            place: Some(path.clone()),
         })
+    })
+}
+
+/// The folder a session ran in, which its project folder's name keeps only lossily.
+fn claude_cwd(path: &Path, stamp: TitleCacheStamp) -> Option<String> {
+    static FOLDERS: FileCache = FileCache::new();
+    FOLDERS.get_or(path, stamp, || {
+        let file = fs::File::open(path).ok()?;
+        BufReader::new(file)
+            .lines()
+            .take(40)
+            .map_while(Result::ok)
+            .filter(|line| line.contains("\"cwd\""))
+            .find_map(|line| {
+                serde_json::from_str::<Value>(&line)
+                    .ok()?
+                    .get("cwd")?
+                    .as_str()
+                    .map(str::to_owned)
+            })
     })
 }
 
@@ -240,6 +279,34 @@ fn claude_title(path: &Path) -> Option<String> {
     }
 
     titles.resolve()
+}
+
+/// What one transcript line adds to what the person and Claude wrote: typed
+/// prompts and Claude's replies, never tool calls, their output or thinking.
+pub(super) fn claude_prose(line: &str, prose: &mut Prose) {
+    let user = line.contains("\"type\":\"user\"");
+    if user && line.contains("\"tool_result\"") {
+        return;
+    }
+    let replied = line.contains("\"type\":\"assistant\"") && line.contains("\"type\":\"text\"");
+    if !user && !replied {
+        return;
+    }
+    let Ok(value) = serde_json::from_str::<Value>(line) else {
+        return;
+    };
+    let kind = value.get("type").and_then(Value::as_str);
+    let aside = |key: &str| value.get(key).and_then(Value::as_bool) == Some(true);
+    if !matches!(kind, Some("user" | "assistant")) || aside("isMeta") || aside("isSidechain") {
+        return;
+    }
+    let Some(content) = value
+        .get("message")
+        .and_then(|message| message.get("content"))
+    else {
+        return;
+    };
+    push_texts(content, prose);
 }
 
 #[cfg(test)]
