@@ -29,7 +29,7 @@ import { useChatWorktree } from "./useChatWorktree";
 import { useStickToBottom } from "./useStickToBottom";
 import { mentionContext, useMates } from "./agentMentions";
 import { deliverToAgent } from "../agents/agentInbox";
-import type { AgentQuestion } from "../api/agentQuestions";
+import type { AgentQuestion } from "../agents/agentQuestions";
 import { AssumedQuestion, JustAnswered, OpenQuestion } from "./AgentQuestions";
 import type { OutgoingMessage } from "./queuedMessages";
 import { useChatQuestions } from "./useChatQuestions";

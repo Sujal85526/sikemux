@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
-import { blockingQuestion } from "../api/agentQuestions";
+import { blockingQuestion } from "./agentQuestions";
 import { agentDisplay } from "../state/agentStatus";
 import { openAgents } from "../state/selectors";
 import { swallow } from "../state/toast";

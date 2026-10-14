@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { AGENT_QUESTIONS_EVENT, agentQuestionsApi, type AgentQuestion } from "../api/agentQuestions";
+import type { AgentQuestion } from "../agents/agentQuestions";
+import { AGENT_QUESTIONS_EVENT, agentQuestionsApi } from "../api/agentQuestions";
 import { getIpcTransport } from "../api/transport";
 import * as cmd from "../state/commands";
 import { swallow } from "../state/toast";

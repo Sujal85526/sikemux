@@ -1,7 +1,7 @@
 import { agentApi, type AgentSession } from "../../api/agents";
 import type { AcpChat } from "../../api/acp";
 import { agentNamesApi } from "../../api/agentNames";
-import { waitsOnPerson, type AgentQuestion } from "../../api/agentQuestions";
+import { waitsOnPerson, type AgentQuestion } from "../../agents/agentQuestions";
 import { profileOfLauncher } from "../../remote/workspace";
 import { isAgentType } from "../../agents/catalog";
 import { agentSupportsChat, effectiveMode, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";

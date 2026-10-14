@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { agentQuestionsApi, asksPerson, type AgentQuestion, type QuestionAnswer } from "../api/agentQuestions";
+import { asksPerson, type AgentQuestion, type QuestionAnswer } from "../agents/agentQuestions";
+import { agentQuestionsApi } from "../api/agentQuestions";
 import { useStore } from "../state/store";
 import { messageLetters } from "./agentLetters";
 import type { ChatMessage } from "./types";

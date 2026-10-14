@@ -14,7 +14,7 @@ import { type Agent, type AgentType } from "../state/types";
 import { AgentIcon, IconClose, IconGlobe, IconInbox, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
-import { blockingQuestion } from "../api/agentQuestions";
+import { blockingQuestion } from "../agents/agentQuestions";
 import { AgentLabel } from "../agents/AgentLabel";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { AGENT_LABELS, agentDisplay, sortByAttention } from "../state/agentStatus";

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { AgentQuestion } from "../api/agentQuestions";
+import { viaNote, type AgentQuestion } from "../agents/agentQuestions";
 import { isAgentType } from "../agents/catalog";
 import { AgentIcon, IconCheck } from "../ui/Icons";
 import type { AnswerLetter } from "./agentLetters";
@@ -16,12 +16,6 @@ function AskedBy({ cli, children }: { cli: string; children: ReactNode }) {
             <span>{children}</span>
         </div>
     );
-}
-
-/** Why the question reached the person rather than the lead it went to first. */
-function viaNote(question: AgentQuestion): string | null {
-    if (!question.via) return null;
-    return question.passed ? `${question.via} didn't know` : `${question.via} didn't answer`;
 }
 
 /**

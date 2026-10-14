@@ -199,7 +199,7 @@ export interface ViewState {
     /** How many subagents each agent still has going. */
     agentSubagents: Record<string, number>;
     /** Questions agents asked that wait on an answer, as the core last sent them. */
-    agentQuestions: import("../api/agentQuestions").AgentQuestion[];
+    agentQuestions: import("../agents/agentQuestions").AgentQuestion[];
 
     commandPaletteOpen: boolean;
     onboardingOpen: boolean;
