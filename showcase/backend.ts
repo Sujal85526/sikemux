@@ -34,6 +34,7 @@ import {
 } from "./world/projects";
 import { terminalReplay } from "./world/terminals";
 import { AGENTS, demoSnapshot } from "./world/workspace";
+import { DEMO_BOARD } from "./world/board";
 
 type Args = Record<string, unknown>;
 type Handler = (args: Args) => unknown;
@@ -461,6 +462,32 @@ export class ShowcaseBackend implements IpcTransport {
         project: SIKEMUX,
         parent: null,
       };
+    });
+    let board = DEMO_BOARD;
+    this.on("agent_board_call", ({ method, params }) => {
+      const {
+        id,
+        project: _project,
+        ...changes
+      } = (params ?? {}) as {
+        id?: number;
+        project?: string;
+        status?: string;
+      };
+      if (method === "boards") return [board];
+      if (method === "boardUpdate")
+        board = {
+          ...board,
+          cards: board.cards.map((card) =>
+            card.id === id ? { ...card, ...changes } : card,
+          ) as typeof board.cards,
+        };
+      if (method === "boardRemove")
+        board = {
+          ...board,
+          cards: board.cards.filter((card) => card.id !== id),
+        };
+      return board;
     });
     this.on("acp_start", ({ agentId, provider }) =>
       this.startAgent(agentId as string, provider as string),
