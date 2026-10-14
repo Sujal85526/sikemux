@@ -112,6 +112,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
         "openrouter baseten together fireworks groq cerebras deepseek moonshot kimi mistral vercel api key hosted open models opencode pi omp claude codex",
     ),
     section("agents", "Local models", "ollama lm studio lmstudio local offline runner claude codex"),
+    section("agents", "Helpers", "cheap model workers scouts reviewers subagents spawn paid by provider"),
+    row("agents", "Helpers", "Agent", "helper worker scout reviewer subagent cheap model provider"),
     section("agents", "Skills", "skill SKILL.md library claude codex opencode pi omp hermes grok global own move"),
     row("agents", "Skills", "Add a skill", "new create install git folder"),
     section("agents", "Sessions"),

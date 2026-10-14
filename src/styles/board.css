@@ -72,6 +72,13 @@
     white-space: nowrap;
 }
 
+.board-owner-paid {
+    overflow: hidden;
+    color: var(--text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .board-owner .agent-activity {
     display: inline-grid;
     place-items: center;

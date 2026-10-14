@@ -12,8 +12,11 @@ use std::time::Duration;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use sikemux_core::launch::providers::{
-    self, KeySpec, Kind, Provider, Providers, Wiring, KEY_SERVICE, ROUTED_AGENTS,
+    self, Helper, KeySpec, Kind, Provider, Providers, Wiring, KEY_SERVICE, ROUTED_AGENTS,
 };
+use sikemux_core::protocol::ChatInfo;
+
+use crate::model_checks::{self, Check};
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const RUNNER_TIMEOUT: Duration = Duration::from_secs(2);
@@ -39,12 +42,15 @@ pub struct ModelProvider {
     models: Option<Vec<String>>,
     /// The agents Sikemux can run on it in place of their makers' accounts.
     agents: Vec<&'static str>,
+    /// Whether each model checked so far calls tools the way agents need.
+    checks: BTreeMap<String, Check>,
 }
 
 static STORE: OnceLock<Providers> = OnceLock::new();
 
 pub fn init(data_dir: &Path) {
     let _ = STORE.set(Providers::new(data_dir));
+    model_checks::init(data_dir);
 }
 
 fn store() -> Result<&'static Providers, String> {
@@ -70,17 +76,44 @@ pub async fn environment(agent: &str) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
-/// What a chat of `agent` starts with, on `provider` when one is named.
+/// The key of a connected provider.
+pub(crate) async fn key(id: &str) -> Option<String> {
+    let id = id.to_owned();
+    blocking(move |store| store.key(&id)).await.ok().flatten()
+}
+
+/// What a chat of `agent` starts with, on `provider` when one is named. A
+/// model first used there has its tool calls checked.
 pub async fn wiring(
     agent: &str,
     provider: Option<String>,
     model: Option<String>,
 ) -> Result<Wiring, String> {
+    let routed = provider.as_deref().and_then(providers::find);
+    let first = routed.and_then(|routed| {
+        model
+            .as_deref()
+            .or(routed.coding_model(agent))
+            .map(|model| (routed, model.to_owned()))
+    });
     let agent = agent.to_owned();
-    blocking(move |store| store.wiring(&agent, provider.as_deref(), model.as_deref())).await?
+    let wiring = blocking(move |store| store.wiring(&agent, provider.as_deref(), model.as_deref()))
+        .await??;
+    if let Some((routed, model)) = first {
+        model_checks::first_use(routed, &model);
+    }
+    Ok(wiring)
 }
 
-fn client() -> &'static Client {
+/// A chat the core started on a provider has its model's tool calls checked once.
+pub fn chat_begun(chat: &ChatInfo) {
+    let provider = chat.model_provider.as_deref().and_then(providers::find);
+    if let (Some(provider), Some(model)) = (provider, chat.model.as_deref()) {
+        model_checks::first_use(provider, model);
+    }
+}
+
+pub(crate) fn client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         Client::builder()
@@ -164,6 +197,7 @@ pub async fn model_providers() -> Vec<ModelProvider> {
                     .copied()
                     .filter(|agent| provider.routes(agent))
                     .collect(),
+                checks: model_checks::of(&provider.id),
             }
         }
     }))
@@ -180,6 +214,33 @@ pub async fn model_provider_models(id: String) -> Result<Vec<String>, String> {
     listed_models(provider, Some(&key), CHECK_TIMEOUT)
         .await
         .ok_or_else(|| format!("{} did not list its models", provider.label))
+}
+
+/// Asks the provider whether `model` calls tools the way agents need, now.
+#[tauri::command]
+pub async fn model_provider_check(id: String, model: String) -> Result<Check, String> {
+    let provider = providers::find(&id)
+        .ok_or_else(|| format!("Sikemux does not know a provider called {id}"))?;
+    let key = match provider.key {
+        Some(_) => Some(
+            key(&id)
+                .await
+                .ok_or_else(|| format!("Connect {} first", provider.label))?,
+        ),
+        None => None,
+    };
+    model_checks::run(provider, key.as_deref(), model.trim()).await
+}
+
+/// What helpers run on: workers started without a model named, and Claude Code's subagents.
+#[tauri::command]
+pub async fn model_helper() -> Result<Option<Helper>, String> {
+    blocking(Providers::helper).await
+}
+
+#[tauri::command]
+pub async fn model_helper_set(helper: Option<Helper>) -> Result<(), String> {
+    blocking(move |store| store.set_helper(helper.as_ref())).await?
 }
 
 /// Saves the key once the provider accepts it. Agents already running keep

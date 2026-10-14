@@ -244,6 +244,7 @@ export function adoptChat(chat: AcpChat): boolean {
             model,
             effort,
             ...(worktree ? { worktree } : {}),
+            ...(chat.modelProvider ? { modelProvider: chat.modelProvider } : {}),
             ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
             launchState: "live",
         };

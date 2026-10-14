@@ -24,6 +24,7 @@ beforeEach(() => {
             openai: "https://openrouter.ai/api/v1",
             connected: false,
             agents: [],
+            checks: {},
         },
         {
             id: "baseten",
@@ -33,11 +34,13 @@ beforeEach(() => {
             openai: "https://inference.baseten.co/v1",
             connected: false,
             agents: [],
+            checks: {},
         },
     ];
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
     transport.register("model_providers", () => providers.map((provider) => ({ ...provider })));
+    transport.register("model_helper", () => null);
 });
 
 afterEach(() => {

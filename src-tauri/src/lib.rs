@@ -32,6 +32,7 @@ mod inbox;
 mod login_item;
 mod lsp;
 mod markdown;
+mod model_checks;
 mod model_providers;
 mod notch;
 pub mod observability;
@@ -487,6 +488,9 @@ pub fn run() {
             model_providers::model_provider_models,
             model_providers::model_provider_connect,
             model_providers::model_provider_disconnect,
+            model_providers::model_provider_check,
+            model_providers::model_helper,
+            model_providers::model_helper_set,
             skills::skills_overview,
             skills::skills_create,
             skills::skills_install,

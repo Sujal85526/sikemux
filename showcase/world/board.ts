@@ -65,6 +65,7 @@ export const DEMO_BOARD: ProjectBoard = {
     auto: true,
     slots: 3,
     launcher: null,
+    provider: null,
     model: null,
     finish: "merge",
     check: "pnpm check",

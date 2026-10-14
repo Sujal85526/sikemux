@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AgentIcon, IconChevron } from "../ui/Icons";
 import type { ChatAgentType } from "../agents/agentLaunch";
 import { agentLabel } from "../agents/catalog";
-import { modelProvidersApi, type ModelProvider } from "../api/modelProviders";
+import { checkOf, checkWords, codingModel, modelProvidersApi, type ModelProvider } from "../api/modelProviders";
 import { swallow } from "../state/toast";
 import type { Agent, ProviderProfile } from "../state/types";
 import PickerMenu, { type AgentChoicesProps, type Choice } from "./PickerMenu";
@@ -144,8 +144,14 @@ function payerTitle(provider: ModelProvider): string {
     return provider.kind === "local" ? `Runs on ${provider.label} on this computer` : `Paid with your ${provider.label} key`;
 }
 
+/** A served model's name, with whether it calls tools the way agents need once checked. */
+function servedLabel(provider: ModelProvider, model: string): string {
+    const check = checkOf(provider, model);
+    return check ? `${model} · ${checkWords(check)}` : model;
+}
+
 /** Who pays for the chat's turns: the agent's own account, or a provider the
-    person connected. Picking a provider moves the chat there, on its first model. */
+    person connected. Picking a provider moves the chat there, on its coding model. */
 function PayerChoices({
     agent,
     profile,
@@ -223,7 +229,7 @@ export function ComposerPickers({
                 const label = model && route ? `${current} · ${route.provider.label}` : current;
                 const listed = config?.options || [];
                 const served = model ? (route?.models ?? []).filter((value) => !listed.some((option) => option.value === value)) : [];
-                const options = [...listed, ...served.map((value) => ({ value, label: value }))];
+                const options = [...listed, ...served.map((value) => ({ value, label: route ? servedLabel(route.provider, value) : value }))];
                 return (
                     <Picker
                         key={id}
@@ -240,7 +246,14 @@ export function ComposerPickers({
                                     agent={agent}
                                     profile={profile}
                                     routes={routes}
-                                    onPick={(next) => relaunch(agent.type as ChatAgentType, profile?.id, next?.models[0], next?.provider.id)}
+                                    onPick={(next) =>
+                                        relaunch(
+                                            agent.type as ChatAgentType,
+                                            profile?.id,
+                                            next && codingModel(next.provider, agent.type, next.models),
+                                            next?.provider.id,
+                                        )
+                                    }
                                 />
                             ) : undefined
                         }

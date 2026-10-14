@@ -170,6 +170,10 @@
 .model-provider-models {
     font-family: var(--mono);
 }
+.model-provider-checks {
+    display: flex;
+    flex-direction: column;
+}
 
 /* An account row: its initial, its name, and which one new chats start on. */
 .account-row-label {

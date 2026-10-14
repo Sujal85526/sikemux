@@ -177,7 +177,10 @@ impl EventSink for AppSink {
                 crate::remote::follow_remote_access(&self.app, status.enabled);
                 self.emit("remote_status_changed", status);
             }
-            Event::ChatBegun { chat } => self.emit("remote_chat_begun", chat),
+            Event::ChatBegun { chat } => {
+                crate::model_providers::chat_begun(&chat);
+                self.emit("remote_chat_begun", chat)
+            }
             Event::WakeChat { agent_id } => self.emit("remote_chat_wake", agent_id),
             Event::FocusAgent { agent_id } => {
                 crate::harness::bring_to_front(&self.app);

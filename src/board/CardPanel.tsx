@@ -199,7 +199,7 @@ export function CardPanel({
                         <span className="board-fact">
                             <span className="board-fact-name">Owner</span>
                             {card.owner ? (
-                                <Owner id={card.owner} name={card.ownerName} cli={card.ownerCli} />
+                                <Owner id={card.owner} name={card.ownerName} cli={card.ownerCli} paidBy={card.paidBy} />
                             ) : (
                                 <span className="board-nobody">Nobody yet</span>
                             )}

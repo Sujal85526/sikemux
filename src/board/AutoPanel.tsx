@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { BoardAuto, SettingsChanges } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
+import { modelProvidersApi } from "../api/modelProviders";
 import { chatLaunchers } from "../remote/workspace";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
@@ -61,6 +62,19 @@ function TextSetting({
 export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: BoardAuto | null; onClose: () => void }) {
     const profiles = useStore((s) => s.providerProfiles);
     const [busy, setBusy] = useState(false);
+    const [payers, setPayers] = useState<DropdownOption[]>([]);
+    useEffect(() => {
+        void modelProvidersApi
+            .list()
+            .then((providers) =>
+                setPayers(
+                    providers
+                        .filter((provider) => provider.connected && provider.agents.length > 0)
+                        .map((provider) => ({ value: provider.id, label: provider.label })),
+                ),
+            )
+            .catch(reportError("Model providers"));
+    }, []);
     const settings = auto?.settings;
     const launchers: DropdownOption[] = [
         { value: FIRST_THAT_WORKS, label: "The first that works" },
@@ -116,6 +130,17 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                         onChange={(launcher) => void save({ launcher: launcher || null })}
                     />
                 </span>
+                {(payers.length > 0 || settings?.provider) && (
+                    <span className="board-fact">
+                        <span className="board-fact-name">Paid by</span>
+                        <Dropdown
+                            value={settings?.provider ?? ""}
+                            options={[{ value: "", label: "Its own account" }, ...payers]}
+                            disabled={busy}
+                            onChange={(provider) => void save({ provider: provider || null })}
+                        />
+                    </span>
+                )}
                 <span className="board-fact">
                     <span className="board-fact-name">Model</span>
                     <TextSetting

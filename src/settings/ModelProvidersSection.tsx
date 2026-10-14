@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { errorText } from "../lib/format";
-import { modelProvidersApi, type ModelProvider, type ModelProviderKind } from "../api/modelProviders";
+import { checkWords, codingModel, modelProvidersApi, type ModelHelper, type ModelProvider, type ModelProviderKind } from "../api/modelProviders";
 import { portsApi } from "../api/ports";
+import { CHAT_AGENT_TYPES } from "../agents/agentLaunch";
 import { agentLabel } from "../agents/catalog";
 import { reportError } from "../state/toast";
+import { Dropdown } from "../ui/Dropdown";
 import { SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 
 const KEYED_SECTIONS: { kind: ModelProviderKind; title: string; sub: string }[] = [
@@ -23,6 +25,24 @@ const KEYED_SECTIONS: { kind: ModelProviderKind; title: string; sub: string }[] 
 function chatsOn(provider: ModelProvider): string {
     const agents = provider.agents.map(agentLabel);
     return agents.length ? `${agents.join(" and ")} chats can run on it from the model picker.` : "";
+}
+
+/** The model a check asks about: the provider's coding model, else the first a local runner has. */
+const checkedModel = (provider: ModelProvider) => provider.model ?? provider.models?.[0];
+
+/** Each model checked on the provider, and whether it calls tools the way agents need. */
+function CheckedModels({ provider }: { provider: ModelProvider }) {
+    const checked = Object.entries(provider.checks);
+    if (!checked.length) return null;
+    return (
+        <span className="model-provider-checks">
+            {checked.map(([model, check]) => (
+                <span key={model} title={check.detail} className={check.works ? undefined : "model-provider-failure"}>
+                    {model} {checkWords(check)}, {new Date(check.at).toLocaleDateString()}
+                </span>
+            ))}
+        </span>
+    );
 }
 
 const openSignUp = (provider: ModelProvider) => void portsApi.openExternal(provider.signUpUrl).catch(reportError("Open link"));
@@ -61,6 +81,28 @@ export function ModelProvidersSection() {
         setFailure(null);
     };
 
+    const checkTools = (provider: ModelProvider, model: string) =>
+        change(provider.id, async () => {
+            await modelProvidersApi.check(provider.id, model);
+        });
+
+    const checkButton = (provider: ModelProvider) => {
+        const model = checkedModel(provider);
+        if (!model) return null;
+        const isBusy = busy === provider.id;
+        return (
+            <button
+                className="settings-btn"
+                type="button"
+                disabled={isBusy}
+                aria-busy={isBusy || undefined}
+                title={`Send ${model} one short request offering a tool`}
+                onClick={() => void checkTools(provider, model)}>
+                {isBusy ? "Checking…" : "Check tool calls"}
+            </button>
+        );
+    };
+
     const checkAgain = async () => {
         setChecking(true);
         await refresh();
@@ -80,9 +122,13 @@ export function ModelProvidersSection() {
                     failed ? (
                         <span className="model-provider-failure">{failed}</span>
                     ) : provider.connected ? (
-                        `Connected. Agents started from now on can use it. ${chatsOn(provider)}`.trim()
+                        <>
+                            {`Connected. Agents started from now on can use it. ${chatsOn(provider)}`.trim()}
+                            <CheckedModels provider={provider} />
+                        </>
                     ) : undefined
                 }>
+                {provider.connected && checkButton(provider)}
                 {provider.connected ? (
                     <button
                         className="settings-btn danger"
@@ -140,6 +186,7 @@ export function ModelProvidersSection() {
                     Download
                 </button>
             )}
+            {provider.connected && checkButton(provider)}
             <button className="settings-btn" type="button" disabled={checking} aria-busy={checking || undefined} onClick={() => void checkAgain()}>
                 {checking ? "Checking…" : "Check again"}
             </button>
@@ -166,6 +213,7 @@ export function ModelProvidersSection() {
                 sub="Models served on this computer by Ollama or LM Studio. They need no key, and nothing leaves this computer.">
                 <SettingsRows>{local.map(localRow)}</SettingsRows>
             </SettingsSection>
+            <HelpersSection providers={providers} />
         </>
     );
 }
@@ -177,6 +225,81 @@ function RunnerState({ provider }: { provider: ModelProvider }) {
     return (
         <>
             Running with <span className="model-provider-models">{models.join(", ")}</span>. {chatsOn(provider)}
+            <CheckedModels provider={provider} />
         </>
+    );
+}
+
+const SAME_AS_LEAD = "";
+
+/** What helpers run on: agents other agents start without naming a model, and Claude Code's own subagents. */
+function HelpersSection({ providers }: { providers: ModelProvider[] }) {
+    const [helper, setHelper] = useState<ModelHelper | null>(null);
+    const [draft, setDraft] = useState<string | null>(null);
+    useEffect(() => {
+        modelProvidersApi.helper().then(setHelper).catch(reportError("Helpers"));
+    }, []);
+    const save = (next: ModelHelper | null) =>
+        modelProvidersApi
+            .setHelper(next)
+            .then(() => setHelper(next))
+            .catch(reportError("Helpers"));
+    const routes = helper ? providers.filter((provider) => provider.connected && provider.agents.includes(helper.agent)) : [];
+    const route = routes.find((provider) => provider.id === helper?.provider);
+    return (
+        <SettingsSection
+            title="Helpers"
+            sub="Agents that other agents start without naming a model run as set here, and Claude Code's own subagents take this model when their chat runs where helpers do. The agent you build with keeps the model you pick.">
+            <SettingsRows>
+                <SettingsRow label="Agent">
+                    <Dropdown
+                        value={helper?.agent ?? SAME_AS_LEAD}
+                        options={[
+                            { value: SAME_AS_LEAD, label: "As the agent that starts them" },
+                            ...CHAT_AGENT_TYPES.map((type) => ({ value: type, label: agentLabel(type) })),
+                        ]}
+                        onChange={(agent) => void save(agent ? { agent } : null)}
+                    />
+                </SettingsRow>
+                {helper && (
+                    <>
+                        <SettingsRow label="Paid by">
+                            <Dropdown
+                                value={helper.provider ?? ""}
+                                options={[
+                                    { value: "", label: `${agentLabel(helper.agent)} account` },
+                                    ...routes.map((provider) => ({ value: provider.id, label: provider.label })),
+                                ]}
+                                onChange={(provider) => void save({ agent: helper.agent, ...(provider ? { provider } : {}) })}
+                            />
+                        </SettingsRow>
+                        <SettingsRow label="Model">
+                            <input
+                                className="settings-input mono"
+                                spellCheck={false}
+                                aria-label="Helper model"
+                                placeholder={(route && codingModel(route, helper.agent)) ?? "The agent's own"}
+                                value={draft ?? helper.model ?? ""}
+                                onChange={(event) => setDraft(event.target.value)}
+                                onBlur={() => {
+                                    const model = draft?.trim();
+                                    setDraft(null);
+                                    if (model !== undefined && model !== (helper.model ?? "")) {
+                                        void save({
+                                            agent: helper.agent,
+                                            ...(helper.provider ? { provider: helper.provider } : {}),
+                                            ...(model ? { model } : {}),
+                                        });
+                                    }
+                                }}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter") event.currentTarget.blur();
+                                }}
+                            />
+                        </SettingsRow>
+                    </>
+                )}
+            </SettingsRows>
+        </SettingsSection>
     );
 }

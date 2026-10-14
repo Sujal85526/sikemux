@@ -163,7 +163,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                     ) : null}
                     <span className="kanban-grow" />
                     {each.owner ? (
-                        <Owner id={each.owner} name={each.ownerName} cli={each.ownerCli} />
+                        <Owner id={each.owner} name={each.ownerName} cli={each.ownerCli} paidBy={each.paidBy} />
                     ) : (
                         <span className="board-nobody">Nobody yet</span>
                     )}

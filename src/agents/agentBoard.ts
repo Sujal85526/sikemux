@@ -39,6 +39,8 @@ export interface BoardSettings {
     readonly slots: number;
     /** The app's launcher Auto's agents start with; null for the first that works. */
     readonly launcher: string | null;
+    /** The connected provider its agents run on; null for their own accounts. */
+    readonly provider: string | null;
     readonly model: string | null;
     /** Merge once checks pass, or stop at the opened pull request. */
     readonly finish: "merge" | "pr";
@@ -70,6 +72,8 @@ export interface BoardCard {
     readonly owner: string | null;
     readonly ownerName: string | null;
     readonly ownerCli: string | null;
+    /** The provider paying for the owner's turns, by name, when not its own account. */
+    readonly paidBy?: string;
     /** The agent at the top of the team the card belongs to, none for a card only the person has touched. */
     readonly team: string | null;
     readonly teamName: string | null;

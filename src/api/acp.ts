@@ -73,6 +73,8 @@ export interface AcpChat {
     launcher: string | null;
     permissionMode: string;
     model: string | null;
+    /** The connected provider its turns are paid with, in place of the agent's own account. */
+    modelProvider?: string;
     effort: string | null;
 }
 
