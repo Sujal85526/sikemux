@@ -4,7 +4,7 @@
 //! does not know of changed a file, its lines are left without an owner.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -65,80 +65,97 @@ pub(crate) struct Removal {
 /// `count` lines from `start` in the newer file stand where `removed` stood,
 /// as in the edit record.
 #[derive(Clone, Copy)]
-struct Hunk {
-    start: u64,
-    count: u64,
-    removed: u64,
+pub(super) struct Hunk {
+    pub start: u64,
+    pub count: u64,
+    pub removed: u64,
 }
 
 /// Who wrote each line `dir`'s checkout changed since its last commit, or,
 /// when `staged`, each line it has staged, numbered as in the index.
 pub(crate) fn owners(core: &Core, dir: &Path, staged: bool) -> Result<Owners, String> {
-    let top = git(dir, &["rev-parse", "--show-toplevel"])?;
-    let top = Path::new(top.trim());
-    let base = if git(top, &["rev-parse", "--verify", "--quiet", "HEAD"]).is_ok() {
-        "HEAD"
-    } else {
-        EMPTY_TREE
-    };
-    let changed = hunks(&git(top, &diff_args(staged, Some(base)))?);
+    traced(core, dir, staged).map(|(owners, _)| owners)
+}
+
+/// The diff `traced` laid the record over.
+pub(super) struct Diff {
+    pub top: PathBuf,
+    /// The commit it compared with, none before the first.
+    pub base: Option<String>,
+    pub changed: HashMap<String, Vec<Hunk>>,
+    pub untracked: HashSet<String>,
+}
+
+pub(super) fn traced(core: &Core, dir: &Path, staged: bool) -> Result<(Owners, Diff), String> {
+    let top = PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"])?.trim());
+    let base = git(&top, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+        .ok()
+        .map(|base| base.trim().to_owned());
+    let against = base.as_deref().unwrap_or(EMPTY_TREE);
+    let changed = hunks(&git(&top, &diff_args(staged, Some(against)))?);
     let (unstaged, untracked) = if staged {
-        (hunks(&git(top, &diff_args(false, None))?), HashSet::new())
+        (hunks(&git(&top, &diff_args(false, None))?), HashSet::new())
     } else {
-        let others = git(top, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+        let others = git(&top, &["ls-files", "-z", "--others", "--exclude-standard"])?;
         let others = others.split('\0').filter(|path| !path.is_empty());
         (HashMap::new(), others.map(str::to_owned).collect())
     };
-    let paths: HashMap<String, &str> = changed
+    let paths: HashMap<String, String> = changed
         .keys()
         .chain(&untracked)
-        .map(|path| (top.join(path).to_string_lossy().into_owned(), path.as_str()))
+        .map(|path| (top.join(path).to_string_lossy().into_owned(), path.clone()))
         .collect();
-    if paths.is_empty() {
-        return Ok(Owners::default());
-    }
-    let project = project_of(dir, &core.workspaces.project_paths());
-    let wanted = paths.keys().cloned().collect();
-    let edits = core.edits.touching(&project, &wanted);
-    let mut agents = Agents::default();
-    let mut by_path: HashMap<&str, Vec<(usize, &Edit)>> = HashMap::new();
-    for edit in &edits {
-        let author = agents.of(edit);
-        by_path.entry(&edit.path).or_default().push((author, edit));
-    }
-    let mut files = Vec::new();
-    for (abs, edits) in by_path {
-        let mut replay = Replay::default();
-        for (author, edit) in edits {
-            replay.apply(edit, author);
+    let mut owners = Owners::default();
+    if !paths.is_empty() {
+        let project = project_of(dir, &core.workspaces.project_paths());
+        let wanted = paths.keys().cloned().collect();
+        let edits = core.edits.touching(&project, &wanted);
+        let mut agents = Agents::default();
+        let mut by_path: HashMap<&str, Vec<(usize, &Edit)>> = HashMap::new();
+        for edit in &edits {
+            let author = agents.of(edit);
+            by_path.entry(&edit.path).or_default().push((author, edit));
         }
-        if replay.total.is_some()
-            && read_text(Path::new(abs)).as_deref().map(line_count) != replay.total
-        {
-            continue;
-        }
-        let path = paths[abs];
-        let index = |line| {
-            if staged {
-                in_index(unstaged.get(path).map_or(&[][..], Vec::as_slice), line)
-            } else {
-                Some(line)
+        let mut files = Vec::new();
+        for (abs, edits) in by_path {
+            let mut replay = Replay::default();
+            for (author, edit) in edits {
+                replay.apply(edit, author);
             }
-        };
-        let (lines, removed) = match changed.get(path) {
-            Some(hunks) => replay.laid_over(hunks, index),
-            None => (runs(replay.lines.iter().copied()), Vec::new()),
-        };
-        if !lines.is_empty() || !removed.is_empty() {
-            let path = path.to_owned();
-            files.push(FileOwners {
-                path,
-                lines,
-                removed,
-            });
+            if replay.total.is_some()
+                && read_text(Path::new(abs)).as_deref().map(line_count) != replay.total
+            {
+                continue;
+            }
+            let path = &paths[abs];
+            let index = |line| {
+                if staged {
+                    in_index(unstaged.get(path).map_or(&[][..], Vec::as_slice), line)
+                } else {
+                    Some(line)
+                }
+            };
+            let (lines, removed) = match changed.get(path) {
+                Some(hunks) => replay.laid_over(hunks, index),
+                None => (runs(replay.lines.iter().copied()), Vec::new()),
+            };
+            if !lines.is_empty() || !removed.is_empty() {
+                files.push(FileOwners {
+                    path: path.clone(),
+                    lines,
+                    removed,
+                });
+            }
         }
+        owners = agents.owners(core, files);
     }
-    Ok(agents.owners(core, files))
+    let diff = Diff {
+        top,
+        base,
+        changed,
+        untracked,
+    };
+    Ok((owners, diff))
 }
 
 /// One trailer line for each agent that wrote something staged in `dir`, or
@@ -153,33 +170,36 @@ pub(crate) fn commit_trailers(core: &Core, dir: &Path, fallback: Option<&str>) -
             lines.chain(file.removed.iter().map(|removal| removal.author))
         })
         .collect();
-    let mut authors: Vec<Author> = owners
+    let mut authors: Vec<&Author> = owners
         .authors
-        .into_iter()
+        .iter()
         .enumerate()
         .filter(|(at, _)| wrote.contains(at))
         .map(|(_, author)| author)
         .collect();
-    if authors.is_empty() {
-        let project = project_of(dir, &core.workspaces.project_paths());
-        let latest = fallback.and_then(|id| {
-            core.edits
-                .matching(&project, |edit| edit.agent_id == id)
-                .pop()
-        });
-        authors.extend(latest.map(|edit| author(core, &edit)));
-    }
-    authors
-        .iter()
-        .map(|author| {
-            crate::trailers::agent(
-                &author.name,
-                &author.cli,
-                author.model.as_deref(),
-                &author.agent_id,
-            )
-        })
-        .collect()
+    let latest = fallback
+        .filter(|_| authors.is_empty())
+        .and_then(|id| latest(core, dir, id));
+    authors.extend(&latest);
+    authors.into_iter().map(trailer).collect()
+}
+
+pub(super) fn trailer(author: &Author) -> String {
+    crate::trailers::agent(
+        &author.name,
+        &author.cli,
+        author.model.as_deref(),
+        &author.agent_id,
+    )
+}
+
+/// `agent_id` as its latest edit in `dir`'s project names it.
+pub(super) fn latest(core: &Core, dir: &Path, agent_id: &str) -> Option<Author> {
+    let project = project_of(dir, &core.workspaces.project_paths());
+    core.edits
+        .matching(&project, |edit| edit.agent_id == agent_id)
+        .pop()
+        .map(|edit| author(core, &edit))
 }
 
 fn author(core: &Core, edit: &Edit) -> Author {
@@ -487,14 +507,28 @@ fn header(text: &str) -> Option<Hunk> {
     })
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(super) fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+    run(dir, args, None, None).map(|out| String::from_utf8_lossy(&out).into_owned())
+}
+
+/// Runs git in `dir`, with `index` in place of the checkout's own and `input`
+/// on its standard input.
+pub(super) fn run(
+    dir: &Path,
+    args: &[&str],
+    index: Option<&Path>,
+    input: Option<&[u8]>,
+) -> Result<Vec<u8>, String> {
     let mut command = sikemux_process::user_environment::command("git");
     command
         .args(["-c", "core.fsmonitor=false", "-c", "core.quotePath=false"])
         .args(args)
         .current_dir(dir)
         .env("GIT_TERMINAL_PROMPT", "0");
-    let output = sikemux_process::run(&mut command, None, TIMEOUT, OUTPUT_LIMIT, None)
+    if let Some(index) = index {
+        command.env("GIT_INDEX_FILE", index);
+    }
+    let output = sikemux_process::run(&mut command, input, TIMEOUT, OUTPUT_LIMIT, None)
         .map_err(|error| format!("git did not run: {error}"))?;
     if !output.status.success() {
         return Err(format!(
@@ -503,5 +537,5 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(output.stdout)
 }

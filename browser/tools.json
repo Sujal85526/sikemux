@@ -1670,6 +1670,31 @@
       ]
     },
     {
+      "name": "git_commit",
+      "row": {"verb": "commit", "kind": "edit", "icon": "pull-request", "target": ["{message}"]},
+      "method": "git.commit",
+      "description": "Commit only the lines you wrote in this checkout, leaving other agents' changes and the files on disk as they are. paths adds changes no agent wrote in those files or folders, unless another agent changed them too. Returns the commit, its files and what was left.",
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "paths": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": [
+        "message"
+      ]
+    },
+    {
       "name": "skills",
       "row": {"verb": "skills", "kind": "edit", "icon": "book", "target": ["{action} {name}", "{action} from {source}", "{action}"]},
       "method": "skills.manage",

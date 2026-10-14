@@ -87,6 +87,7 @@ export const TOOL_ROWS = {
     board_list: { verb: "list", kind: "read", icon: "dashboard", target: ["card #{card}", "the board"] },
     board_claim: { verb: "claim", kind: "edit", icon: "issue", target: ["card #{card}"] },
     board_update: { verb: "update", kind: "edit", icon: "issue", target: ["card #{card} to {status}", "card #{card}"], detail: ["{result}"] },
+    git_commit: { verb: "commit", kind: "edit", icon: "pull-request", target: ["{message}"] },
     skills: { verb: "skills", kind: "edit", icon: "book", target: ["{action} {name}", "{action} from {source}", "{action}"] },
     app_console: { verb: "read", kind: "read", icon: "terminal", target: ["the app console"] },
     bitbucket_pulls: {

@@ -3,6 +3,7 @@
 //! data folder, one file of JSON lines per project, newest last. Paths and
 //! lines only, never what the files hold.
 
+pub(crate) mod commit;
 mod lines;
 mod owners;
 

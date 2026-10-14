@@ -54,7 +54,7 @@ const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const TOOL_CALLS_FILE: &str = "agent-tool-calls.json";
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
 /// Tools only an agent that proves who it is may call.
-const AGENT_METHODS: [&str; 2] = ["agent.", "board."];
+const AGENT_METHODS: [&str; 3] = ["agent.", "board.", "git."];
 /// What agents do goes in the same journal as tasks, for `agent_wait` alone.
 pub(crate) const AGENT_EVENT: &str = "agent.";
 
@@ -490,6 +490,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "board.list" => board::list(core, &request).await,
         "board.claim" => board::claim(core, &request).await,
         "board.update" => board::update(core, &request).await,
+        "git.commit" => super::edits::commit::call(core, &request).await,
         "browser.record" => {
             let agent_id = request.agent_id.clone();
             let answer = forward(core, request).await?;
