@@ -8,8 +8,6 @@ export const DictationPreview = lazyPart(() => import("./DictationPreview").then
 export const PickerMenu = lazyPart(() => import("./PickerMenu").then((module) => module.default));
 export const MessageEditor = lazyPart(() => import("./MessageEditor").then((module) => module.MessageEditor));
 
-let loading: Promise<void> | null = null;
-
 /** Fetches every part a chat loads apart, so a chat never draws without one it needs. */
 export const loadChatParts = () =>
-    (loading ??= loadParts([QuestionRows, LiveStack, ChatFailureActions, ComposerMenu, DictationPreview, PickerMenu, MessageEditor]));
+    loadParts([QuestionRows, LiveStack, ChatFailureActions, ComposerMenu, DictationPreview, PickerMenu, MessageEditor]);
