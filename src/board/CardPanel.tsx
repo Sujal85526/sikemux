@@ -47,11 +47,15 @@ export function CardPanel({
     onSelect: (id: number) => void;
     onClose: () => void;
 }) {
-    const [title, setTitle] = useState(card?.title ?? "");
-    const [details, setDetails] = useState(card?.details ?? "");
-    const [parent, setParent] = useState(card?.parent ?? 0);
-    const [dependsOn, setDependsOn] = useState<number[]>(card?.dependsOn ?? []);
+    const [titleDraft, setTitleDraft] = useState<string | null>(card ? null : "");
+    const [detailsDraft, setDetailsDraft] = useState<string | null>(card ? null : "");
+    const [newParent, setNewParent] = useState(0);
+    const [newDependsOn, setNewDependsOn] = useState<number[]>([]);
     const [busy, setBusy] = useState(false);
+    const title = titleDraft ?? card?.title ?? "";
+    const details = detailsDraft ?? card?.details ?? "";
+    const parent = card ? (card.parent ?? 0) : newParent;
+    const dependsOn = card ? card.dependsOn : newDependsOn;
 
     const run = async (label: string, work: () => Promise<{ project: string; cards: BoardCard[] }>) => {
         setBusy(true);
@@ -66,8 +70,14 @@ export function CardPanel({
             setBusy(false);
         }
     };
-    const change = (changes: CardChanges) => {
-        if (card) void run("change the card", () => agentBoardApi.update(folder, card.id, changes));
+    const change = async (changes: CardChanges) => {
+        if (card) await run("change the card", () => agentBoardApi.update(folder, card.id, changes));
+    };
+    const commit = (draft: string | null, setDraft: (update: (now: string | null) => string | null) => void, changes: CardChanges | null) => {
+        if (!card || draft === null) return;
+        const done = () => setDraft((now) => (now === draft ? null : now));
+        if (changes) void change(changes).then(done);
+        else done();
     };
 
     const unplaceable = card ? below(cards, card.id) : new Set<number>();
@@ -80,8 +90,8 @@ export function CardPanel({
         .map((other) => ({ value: String(other.id), label: other.title }));
     const nameOf = (id: number) => cards.find((other) => other.id === id)?.title ?? `card ${id}`;
     const setWaits = (next: number[]) => {
-        setDependsOn(next);
-        change({ dependsOn: next });
+        if (card) void change({ dependsOn: next });
+        else setNewDependsOn(next);
     };
     const under = card ? cards.filter((other) => other.parent === card.id) : [];
 
@@ -129,7 +139,7 @@ export function CardPanel({
                         )}
                     </span>
                 ) : (
-                    <span className="kanban-meta">{card ? `Added by ${card.createdByName}` : "New card"}</span>
+                    <span className="kanban-meta">{card ? `Added by ${card.createdBy ? card.createdByName : "you"}` : "New card"}</span>
                 )}
                 <span className="kanban-grow" />
                 <button type="button" className="kanban-icon-button" title="Close" aria-label="Close the card" onClick={onClose}>
@@ -142,9 +152,10 @@ export function CardPanel({
                 autoFocus={!card}
                 placeholder="What needs doing"
                 aria-label="Title"
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(event) => setTitleDraft(event.target.value)}
                 onBlur={() => {
-                    if (card && title.trim() && title.trim() !== card.title) change({ title: title.trim() });
+                    const next = title.trim();
+                    commit(titleDraft, setTitleDraft, card && next && next !== card.title ? { title: next } : null);
                 }}
                 onKeyDown={(event) => {
                     if (event.key === "Enter") event.currentTarget.blur();
@@ -160,7 +171,7 @@ export function CardPanel({
                                 value={card.status}
                                 options={STATUS_OPTIONS}
                                 disabled={busy}
-                                onChange={(status) => change({ status: status as CardStatus })}
+                                onChange={(status) => void change({ status: status as CardStatus })}
                             />
                         </span>
                         <span className="board-fact">
@@ -180,10 +191,7 @@ export function CardPanel({
                         options={parentOptions}
                         disabled={busy}
                         search={parentOptions.length > 8 ? "Find a card" : undefined}
-                        onChange={(value) => {
-                            setParent(Number(value));
-                            change({ parent: Number(value) });
-                        }}
+                        onChange={(value) => (card ? void change({ parent: Number(value) }) : setNewParent(Number(value)))}
                     />
                 </span>
                 <span className="board-fact board-waits">
@@ -219,9 +227,10 @@ export function CardPanel({
                 placeholder="Details: what done looks like, files, constraints"
                 aria-label="Details"
                 rows={8}
-                onChange={(event) => setDetails(event.target.value)}
+                onChange={(event) => setDetailsDraft(event.target.value)}
                 onBlur={() => {
-                    if (card && details.trim() !== card.details) change({ details: details.trim() });
+                    const next = details.trim();
+                    commit(detailsDraft, setDetailsDraft, card && next !== card.details ? { details: next } : null);
                 }}
             />
             {card?.result && (

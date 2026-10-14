@@ -169,10 +169,23 @@
 
 .board-fact {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
+    min-width: 0;
     font-size: var(--text-sm);
+}
+
+.board-fact > .dd {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.board-fact .dd-btn {
+    max-width: 100%;
+}
+
+.board-waits {
+    flex-wrap: wrap;
 }
 
 .board-fact-name {
