@@ -5,7 +5,7 @@ import { warmTranscript } from "../chat/ChatMessageRow";
 import { ChatTranscript } from "../chat/ChatTranscript";
 import { activityText } from "../chat/chatStatus";
 import { PathRootsProvider } from "../chat/FileRef";
-import { BackgroundTasks, RunningSubagents } from "../chat/LiveStack";
+import LiveStack from "../chat/LiveStack";
 import { newFoldMemory } from "../chat/longText";
 import { RemoteOriginContext } from "../chat/origin";
 import { activeToolLabel } from "../chat/toolLabels";
@@ -145,10 +145,7 @@ export function SharedChat({ session, visible, actions }: { session: ShareSessio
                                                     </button>
                                                 )}
                                                 {(subagents.length > 0 || state.tasks.length > 0) && (
-                                                    <div className="chat-live-stack">
-                                                        <RunningSubagents subagents={subagents} folds={liveFolds} />
-                                                        <BackgroundTasks tasks={state.tasks} stopping={[]} folds={liveFolds} />
-                                                    </div>
+                                                    <LiveStack subagents={subagents} tasks={state.tasks} folds={liveFolds} />
                                                 )}
                                                 <SharedChatFoot snapshot={snapshot} />
                                             </div>

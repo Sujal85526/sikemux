@@ -1,19 +1,17 @@
-import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { errorText } from "../lib/format";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ComposerPickers } from "./ComposerPickers";
 import type { SessionConfig } from "./sessionConfig";
-import { basename, dirname, joinPath } from "../lib/paths";
-import { formatAge } from "../lib/format";
+import { basename, joinPath } from "../lib/paths";
 import { animate } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
-import { AgentIcon, IconArrowUp, IconClose, IconFolder, IconPlus } from "../ui/Icons";
-import { FileIcon, FileTypeIcon } from "../ui/FileIcon";
-import { useResourceEnabled } from "../state/resources";
-import { filesListR } from "../state/resources.defs";
+import { IconArrowUp, IconClose, IconPlus } from "../ui/Icons";
+import { FileTypeIcon } from "../ui/FileIcon";
 import { usePathRoots } from "./FileRef";
 import { useImagePreview } from "./imagePreview";
 import { YoloToggle } from "./YoloToggle";
@@ -23,9 +21,9 @@ import { finishDictationInto, useVoice, writesInto } from "../voice/dictation";
 import { ContextMeter } from "./ContextMeter";
 import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { arrowsBrowse, recallPrompt, type HistoryPosition } from "./promptHistory";
-import { commandMatches, entryName, mergePaths, projectEntries, rankEntries, removeToken, tokenAt, type ProjectEntry } from "./composerInput";
+import { MAX_MENU_ENTRIES, mergePaths, removeToken, tokenAt, type ProjectEntry } from "./composerInput";
 import { canSwitchMode } from "../agents/agentLaunch";
-import { isAgentType } from "../agents/catalog";
+import { AgentMark } from "../agents/AgentMark";
 import { receiveForAgent } from "../agents/agentInbox";
 import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
 import type { OutgoingMessage } from "./queuedMessages";
@@ -35,42 +33,17 @@ import type { TrackedItem, TrackedKind } from "../codehost/tracked";
 import type { TrackedMatches } from "./TrackedSource";
 import { ContextMark } from "./ContextChip";
 import { contextChip } from "./promptContext";
-import { EARLIER_URI, matchMates, mentionContext, useEarlierChats, useMates, wakeEarlier, type EarlierChat, type Mate } from "./agentMentions";
-import { AgentStateIndicator } from "../agents/AgentStateIndicator";
+import { mentionContext, useMates, type Mate } from "./agentMentions";
+import type { EarlierChat } from "./earlierChats";
+import type { MenuKeys, MenuPick } from "./ComposerMenu";
+import { lazyPart } from "../lib/lazyPart";
 
-/** Draws the box's text with the words still being spoken dimmed at the caret, where they will be typed. */
-function DictationPreview({
-    draft,
-    caret,
-    heard,
-    editor,
-}: {
-    draft: string;
-    caret: number;
-    heard: string;
-    editor: RefObject<HTMLTextAreaElement | null>;
-}) {
-    const preview = useRef<HTMLDivElement>(null);
-    const spoken = useRef<HTMLSpanElement>(null);
-    useLayoutEffect(() => {
-        const box = preview.current;
-        const words = spoken.current;
-        if (!box || !words) return;
-        const bottom = box.getBoundingClientRect().bottom - parseFloat(getComputedStyle(box).paddingBottom);
-        box.scrollTop += words.getBoundingClientRect().bottom - bottom;
-        if (editor.current) editor.current.scrollTop = box.scrollTop;
-    }, [draft, caret, heard, editor]);
-    const before = draft.slice(0, caret);
-    return (
-        <div className="chat-dictation-preview" ref={preview}>
-            {before}
-            <span ref={spoken} aria-live="polite">
-                {before && !/\s$/.test(before) ? " " : ""}
-                {heard}
-            </span>
-            {draft.slice(caret)}
-        </div>
-    );
+/** Puts the caret at `at` once the next frame has the new draft in the box. */
+function caretTo(editor: RefObject<HTMLTextAreaElement | null>, at: number) {
+    window.requestAnimationFrame(() => {
+        editor.current?.focus();
+        editor.current?.setSelectionRange(at, at);
+    });
 }
 
 function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => void }) {
@@ -85,51 +58,6 @@ function ComposerAttachment({ path, onRemove }: { path: string; onRemove: () => 
     );
 }
 
-interface MenuRow {
-    key: string;
-    content: ReactNode;
-    choose: () => void;
-    /** The heading it and the rows after it sit under, below the menu's own. */
-    group?: string;
-}
-
-interface ComposerMenuModel {
-    label: string;
-    heading: string;
-    aside: string;
-    variant: "commands" | "entries";
-    rows: MenuRow[];
-    empty: string | null;
-}
-
-function ComposerMenu({ menu, selected }: { menu: ComposerMenuModel; selected: number }) {
-    return (
-        <div className={`chat-slash-menu ${menu.variant}`} role="listbox" aria-label={menu.label}>
-            <div className="chat-slash-heading">
-                <span>{menu.heading}</span>
-                <span>{menu.aside}</span>
-            </div>
-            {menu.rows.length === 0 && menu.empty && <div className="chat-slash-empty">{menu.empty}</div>}
-            {menu.rows.map((row, index) => (
-                <Fragment key={row.key}>
-                    {row.group && row.group !== menu.rows[index - 1]?.group && <div className="chat-slash-group">{row.group}</div>}
-                    <button
-                        type="button"
-                        role="option"
-                        aria-selected={index === selected}
-                        className={index === selected ? "selected" : ""}
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={row.choose}>
-                        {row.content}
-                    </button>
-                </Fragment>
-            ))}
-        </div>
-    );
-}
-
-const MAX_ENTRIES = 8;
-
 /**
  * An item to hand over with the message. One picked with `#` is read in full only when the message is sent, and an
  * earlier chat picked with `@` is opened again only then.
@@ -142,15 +70,14 @@ interface ComposerContext {
     earlier?: EarlierChat;
 }
 
-const earlierUri = ({ chat }: EarlierChat) => `${EARLIER_URI}${chat.agent}/${chat.id}`;
-
 function mergeContext(current: ComposerContext[], incoming: readonly ComposerContext[]): ComposerContext[] {
     return [...current, ...incoming.filter((item) => !current.some((other) => other.uri === item.uri))];
 }
 
 function readContext(item: ComposerContext): Promise<PromptContext> {
     if (item.text !== null) return Promise.resolve({ uri: item.uri, title: item.title, text: item.text });
-    if (item.earlier) return wakeEarlier(item.earlier);
+    const { earlier } = item;
+    if (earlier) return import("./earlierChats").then(({ wakeEarlier }) => wakeEarlier(earlier));
     if (!item.tracked) return Promise.reject(new Error(`${item.title} has nothing to send`));
     const { repo, kind, number } = item.tracked;
     return Promise.all([import("../codehost/tracked"), import("../codehost/api")]).then(([{ loadTrackedContext }, { failureMessage }]) =>
@@ -161,38 +88,68 @@ function readContext(item: ComposerContext): Promise<PromptContext> {
 }
 
 const TrackedSource = lazy(() => import("./TrackedSource"));
+export const DictationPreview = lazyPart(() => import("./DictationPreview").then((module) => module.default));
+export const ComposerMenu = lazyPart(() => import("./ComposerMenu").then((module) => module.default));
 const WorktreeToggle = lazy(() => import("./ChatWorktree").then(({ WorktreeToggle }) => ({ default: WorktreeToggle })));
+
+function Chip({
+    title,
+    mark,
+    kind,
+    label,
+    removeLabel,
+    onRemove,
+    answering = false,
+}: {
+    title: string;
+    mark: ReactNode;
+    kind?: string;
+    label: ReactNode;
+    removeLabel: string;
+    onRemove: () => void;
+    answering?: boolean;
+}) {
+    return (
+        <span className={`chat-context-chip${answering ? " answering" : ""}`} title={title}>
+            <span className="chat-context-mark" data-kind={kind}>
+                {mark}
+            </span>
+            <span>{label}</span>
+            <button type="button" aria-label={removeLabel} onClick={onRemove}>
+                <IconClose size={11} />
+            </button>
+        </span>
+    );
+}
 
 function ComposerContextChip({ item, onRemove }: { item: ComposerContext; onRemove: () => void }) {
     if (item.earlier) {
         const { agent, title } = item.earlier.chat;
         return (
-            <span className="chat-context-chip" title="Sending this opens the chat again under a new name and tells the agent who it is">
-                <span className="chat-context-mark">
-                    <AgentIcon type={agent} size={14} className={`agent-glyph ${agent}`} />
-                </span>
-                <span>{title}</span>
-                <button type="button" aria-label={`Remove ${title}`} onClick={onRemove}>
-                    <IconClose size={11} />
-                </button>
-            </span>
+            <Chip
+                title="Sending this opens the chat again under a new name and tells the agent who it is"
+                mark={<AgentMark cli={agent} />}
+                label={title}
+                removeLabel={`Remove ${title}`}
+                onRemove={onRemove}
+            />
         );
     }
     const chip = contextChip(item);
-    const name = chip.number ? `#${chip.number}` : chip.title;
     return (
-        <span className="chat-context-chip" title={item.uri}>
-            <span className="chat-context-mark" data-kind={chip.kind ?? "other"}>
-                <ContextMark kind={chip.kind} size={14} />
-            </span>
-            <span>
-                {chip.number && <span className="chat-context-number">#{chip.number} </span>}
-                {chip.title}
-            </span>
-            <button type="button" aria-label={`Remove ${name}`} onClick={onRemove}>
-                <IconClose size={11} />
-            </button>
-        </span>
+        <Chip
+            title={item.uri}
+            mark={<ContextMark kind={chip.kind} size={14} />}
+            kind={chip.kind ?? "other"}
+            label={
+                <>
+                    {chip.number && <span className="chat-context-number">#{chip.number} </span>}
+                    {chip.title}
+                </>
+            }
+            removeLabel={`Remove ${chip.number ? `#${chip.number}` : chip.title}`}
+            onRemove={onRemove}
+        />
     );
 }
 
@@ -201,22 +158,6 @@ export interface ComposerAnswering {
     cli: string;
     question: string;
     onRemove: () => void;
-}
-
-function AnsweringChip({ answering }: { answering: ComposerAnswering }) {
-    return (
-        <span className="chat-context-chip answering" title={answering.question}>
-            <span className="chat-context-mark">
-                {isAgentType(answering.cli) && <AgentIcon type={answering.cli} size={14} className={`agent-glyph ${answering.cli}`} />}
-            </span>
-            <span>
-                Answering {answering.name} · {answering.question}
-            </span>
-            <button type="button" aria-label="Stop answering" onClick={answering.onRemove}>
-                <IconClose size={11} />
-            </button>
-        </span>
-    );
 }
 
 /* The composer keeps the draft to itself: a keystroke redraws these few rows
@@ -334,10 +275,7 @@ export function ChatComposer({
             const next = text ? `${current.trimEnd()}${current.trim() ? "\n\n" : ""}${text}` : current;
             setDraft(next);
             setCaret(next.length);
-            window.requestAnimationFrame(() => {
-                editorRef.current?.focus();
-                editorRef.current?.setSelectionRange(next.length, next.length);
-            });
+            caretTo(editorRef, next.length);
         });
     }, [agent.id, visible]);
 
@@ -353,10 +291,7 @@ export function ChatComposer({
             const at = before.length + inserted.length;
             setDraft(`${before}${inserted}${after}`);
             setCaret(at);
-            window.requestAnimationFrame(() => {
-                editor.focus();
-                editor.setSelectionRange(at, at);
-            });
+            caretTo(editorRef, at);
         });
     }, [paneRef]);
 
@@ -383,12 +318,7 @@ export function ChatComposer({
     const placeCaret = (position: number) => {
         setCaret(position);
         setMenuDismissed(true);
-        window.requestAnimationFrame(() => {
-            const editor = editorRef.current;
-            if (!editor) return;
-            editor.focus();
-            editor.setSelectionRange(position, position);
-        });
+        caretTo(editorRef, position);
     };
 
     const takeToken = () => {
@@ -398,26 +328,9 @@ export function ChatComposer({
         placeCaret(next.caret);
     };
 
-    const slashCommands = useMemo(() => {
-        return token?.trigger === "/" ? commandMatches(commands, token.needle) : [];
-    }, [commands, token?.trigger, token?.needle]);
-
-    const files = useResourceEnabled(token?.trigger === "@" && !!cwd, filesListR, cwd);
-    const entries = useMemo(() => projectEntries(files.data ?? []), [files.data]);
-    const entryMatches = useMemo(
-        () => (token?.trigger === "@" ? rankEntries(token.needle, entries, MAX_ENTRIES) : []),
-        [entries, token?.trigger, token?.needle],
-    );
     const mates = useMates(agent.id);
-    const mateMatches = useMemo(
-        () => (token?.trigger === "@" ? matchMates(mates, token.needle, MAX_ENTRIES) : []),
-        [mates, token?.trigger, token?.needle],
-    );
-    const earlierChats = useEarlierChats(agent.id, token?.trigger === "@" ? token.needle : null);
-    const earlierMatches = earlierChats.filter((earlier) => !contexts.some((item) => item.uri === earlierUri(earlier)));
-
     const [trackedList, setTrackedList] = useState<TrackedMatches>({ state: "loading" });
-    const trackedMatches = token?.trigger === "#" && trackedList.state === "ready" ? trackedList.matches : [];
+    const menuKeys = useRef<MenuKeys | null>(null);
 
     const selectCommand = (command: AcpAvailableCommand) => {
         if (!token) return;
@@ -434,11 +347,9 @@ export function ChatComposer({
         placeCaret(token.start + written.length);
     };
 
-    const selectEarlier = (earlier: EarlierChat) => {
+    const selectEarlier = (earlier: EarlierChat, uri: string) => {
         takeToken();
-        setContexts((current) =>
-            mergeContext(current, [{ uri: earlierUri(earlier), title: earlier.chat.title, text: null, tracked: null, earlier }]),
-        );
+        setContexts((current) => mergeContext(current, [{ uri, title: earlier.chat.title, text: null, tracked: null, earlier }]));
         onError(null);
     };
 
@@ -448,126 +359,20 @@ export function ChatComposer({
         onError(null);
     };
 
-    const selectTracked = (item: TrackedItem) => {
-        if (trackedList.state !== "ready") return;
+    const selectTracked = (item: TrackedItem, repo: RepoRef) => {
         takeToken();
-        const chosen = {
-            uri: item.url,
-            title: `#${item.number} ${item.title}`,
-            text: null,
-            tracked: { repo: trackedList.repo, kind: item.kind, number: item.number },
-        };
+        const chosen = { uri: item.url, title: `#${item.number} ${item.title}`, text: null, tracked: { repo, kind: item.kind, number: item.number } };
         setContexts((current) => mergeContext(current, [chosen]));
         onError(null);
     };
 
-    const menu: ComposerMenuModel | null =
-        token?.trigger === "/" && slashCommands.length > 0
-            ? {
-                  label: "Session commands",
-                  heading: "Session commands",
-                  aside: "ACP",
-                  variant: "commands",
-                  empty: null,
-                  rows: slashCommands.map((command) => ({
-                      key: command.name,
-                      choose: () => selectCommand(command),
-                      content: (
-                          <>
-                              <code>/{command.name}</code>
-                              <span>{command.description}</span>
-                              {command.input?.hint && <em>{command.input.hint}</em>}
-                          </>
-                      ),
-                  })),
-              }
-            : token?.trigger === "@" && (cwd || mateMatches.length > 0 || earlierMatches.length > 0)
-              ? {
-                    label: mateMatches.length + earlierMatches.length > 0 ? "Agents and project files" : "Project files",
-                    heading: mateMatches.length + earlierMatches.length > 0 ? "Agents, files and folders" : "Files and folders",
-                    aside: mateMatches.length + earlierMatches.length > 0 ? "mention · attach" : "attach",
-                    variant: "entries",
-                    empty: files.data === undefined ? "Reading the project…" : "Nothing in the project matches",
-                    rows: [
-                        ...mateMatches.map((mate) => ({
-                            key: `agent:${mate.id}`,
-                            choose: () => selectMate(mate),
-                            content: (
-                                <>
-                                    <span className="chat-menu-mark">
-                                        <span className={`agent-glyph ${mate.type}`}>
-                                            <AgentIcon type={mate.type} size={13} />
-                                        </span>
-                                    </span>
-                                    <code>@{mate.name}</code>
-                                    <span className="chat-menu-mate">
-                                        <span>{mate.title}</span>
-                                        {mate.display && <AgentStateIndicator display={mate.display} />}
-                                    </span>
-                                </>
-                            ),
-                        })),
-                        ...earlierMatches.map((earlier) => ({
-                            key: earlierUri(earlier),
-                            group: "Earlier chats",
-                            choose: () => selectEarlier(earlier),
-                            content: (
-                                <>
-                                    <span className="chat-menu-mark">
-                                        <span className={`agent-glyph ${earlier.chat.agent}`}>
-                                            <AgentIcon type={earlier.chat.agent} size={13} />
-                                        </span>
-                                    </span>
-                                    <span className="chat-menu-earlier">{earlier.chat.title}</span>
-                                    <em>{formatAge(earlier.chat.mtime * 1000)}</em>
-                                </>
-                            ),
-                        })),
-                        ...(cwd ? entryMatches : []).map((entry) => ({
-                            key: entry.path,
-                            group: earlierMatches.length > 0 ? "Files and folders" : undefined,
-                            choose: () => selectEntry(entry),
-                            content: (
-                                <>
-                                    <span className="chat-menu-mark">
-                                        {entry.folder ? <IconFolder size={13} /> : <FileIcon name={entryName(entry)} size={13} />}
-                                    </span>
-                                    <code>{entryName(entry)}</code>
-                                    <span>{dirname(entry.path.replace(/\/$/, "")) || "."}</span>
-                                </>
-                            ),
-                        })),
-                    ],
-                }
-              : token?.trigger === "#"
-                ? {
-                      label: "Issues and pull requests",
-                      heading: "Issues and pull requests",
-                      aside: trackedList.state === "ready" ? `${trackedList.repo.owner}/${trackedList.repo.name}` : "",
-                      variant: "entries",
-                      empty:
-                          trackedList.state === "loading"
-                              ? "Reading open issues and pull requests…"
-                              : trackedList.state === "unavailable"
-                                ? trackedList.message
-                                : "No open issue or pull request matches",
-                      rows: trackedMatches.map((item) => ({
-                          key: `${item.kind}-${item.number}`,
-                          choose: () => selectTracked(item),
-                          content: (
-                              <>
-                                  <span className="chat-menu-mark" data-kind={item.kind}>
-                                      <ContextMark kind={item.kind} size={13} />
-                                  </span>
-                                  <code>#{item.number}</code>
-                                  <span>{item.title}</span>
-                              </>
-                          ),
-                      })),
-                  }
-                : null;
-    const menuRows = menu?.rows ?? [];
-    const selected = Math.min(menuSelection, Math.max(0, menuRows.length - 1));
+    const pick = (choice: MenuPick) => {
+        if (choice.kind === "command") selectCommand(choice.command);
+        else if (choice.kind === "mate") selectMate(choice.mate);
+        else if (choice.kind === "earlier") selectEarlier(choice.earlier, choice.uri);
+        else if (choice.kind === "entry") selectEntry(choice.entry);
+        else selectTracked(choice.item, choice.repo);
+    };
 
     const blocked = changingConfig || changingPermissions || !permissionApplied || worktree?.state.kind === "preparing";
     const drafted = Boolean(draft.trim()) || attachments.length > 0 || contexts.length > 0;
@@ -640,7 +445,7 @@ export function ChatComposer({
             .then((context) => {
                 if (onSend({ text, paths, context: [...context, ...mentioned] }, steerNow)) clear();
             })
-            .catch((failure: unknown) => onError(failure instanceof Error ? failure.message : String(failure)))
+            .catch((failure: unknown) => onError(errorText(failure)))
             .finally(() => setReading(false));
     };
 
@@ -651,7 +456,7 @@ export function ChatComposer({
             setAttachments((current) => mergePaths(current, Array.isArray(selection) ? selection : [selection]));
             window.requestAnimationFrame(() => editorRef.current?.focus());
         } catch (failure) {
-            onError(failure instanceof Error ? failure.message : String(failure));
+            onError(errorText(failure));
         }
     };
 
@@ -659,14 +464,36 @@ export function ChatComposer({
         <div className="chat-composer">
             {token?.trigger === "#" && (
                 <Suspense fallback={null}>
-                    <TrackedSource cwd={cwd} needle={token.needle} limit={MAX_ENTRIES} onMatches={setTrackedList} />
+                    <TrackedSource cwd={cwd} needle={token.needle} limit={MAX_MENU_ENTRIES} onMatches={setTrackedList} />
                 </Suspense>
             )}
-            {menu && <ComposerMenu menu={menu} selected={selected} />}
+            {token && (
+                <ComposerMenu.Part
+                    token={token}
+                    agentId={agent.id}
+                    cwd={cwd}
+                    commands={commands}
+                    mates={mates}
+                    taken={contexts.map((item) => item.uri)}
+                    tracked={trackedList}
+                    selected={menuSelection}
+                    keys={menuKeys}
+                    onPick={pick}
+                />
+            )}
             <div className="chat-field">
                 {(attachments.length > 0 || contexts.length > 0 || answering) && (
                     <div className="chat-attachments">
-                        {answering && <AnsweringChip answering={answering} />}
+                        {answering && (
+                            <Chip
+                                answering
+                                title={answering.question}
+                                mark={<AgentMark cli={answering.cli} />}
+                                label={`Answering ${answering.name} · ${answering.question}`}
+                                removeLabel="Stop answering"
+                                onRemove={answering.onRemove}
+                            />
+                        )}
                         {attachments.map((path) => (
                             <ComposerAttachment
                                 key={path}
@@ -705,29 +532,30 @@ export function ChatComposer({
                                 setAttachments((current) => mergePaths(current, paths));
                                 onError(null);
                             })
-                            .catch((failure) => onError(failure instanceof Error ? failure.message : String(failure)));
+                            .catch((failure) => onError(errorText(failure)));
                     }}
                     onKeyDown={(event) => {
+                        const menu = token && menuKeys.current;
                         if (menu) {
                             if (event.key === "Escape") {
                                 event.preventDefault();
                                 setMenuDismissed(true);
                                 return;
                             }
-                            if (menuRows.length > 0 && !event.nativeEvent.isComposing) {
+                            if (menu.count > 0 && !event.nativeEvent.isComposing) {
                                 if (event.key === "ArrowDown") {
                                     event.preventDefault();
-                                    setMenuSelection((current) => (current + 1) % menuRows.length);
+                                    setMenuSelection((current) => (current + 1) % menu.count);
                                     return;
                                 }
                                 if (event.key === "ArrowUp") {
                                     event.preventDefault();
-                                    setMenuSelection((current) => (current - 1 + menuRows.length) % menuRows.length);
+                                    setMenuSelection((current) => (current - 1 + menu.count) % menu.count);
                                     return;
                                 }
                                 if (event.key === "Tab" || event.key === "Enter") {
                                     event.preventDefault();
-                                    menuRows[selected].choose();
+                                    menu.choose(Math.min(menuSelection, menu.count - 1));
                                     return;
                                 }
                             }
@@ -777,7 +605,7 @@ export function ChatComposer({
                         }
                     }}
                 />
-                {heard && <DictationPreview draft={draft} caret={caret} heard={heard} editor={editorRef} />}
+                {heard && <DictationPreview.Part draft={draft} caret={caret} heard={heard} editor={editorRef} />}
             </div>
             {error && <div className="chat-composer-error">{error}</div>}
             <div className="chat-composer-bar">

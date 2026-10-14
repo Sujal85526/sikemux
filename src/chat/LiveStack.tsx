@@ -12,7 +12,7 @@ export type GroupFolds = {
     toggle: (kind: string) => void;
 };
 
-export function BackgroundTasks({
+function BackgroundTasks({
     tasks,
     stopping,
     onStop,
@@ -91,7 +91,7 @@ function WorkflowAgentRow({ agent }: { agent: AcpWorkflowAgent }) {
    — the strip over the composer that the background tasks use. Its card in the
    transcript is where its output went, which is not where you look to find out
    whether it is still going. */
-export function RunningSubagents({ subagents, folds }: { subagents: AcpSubagent[]; folds: GroupFolds }) {
+function RunningSubagents({ subagents, folds }: { subagents: AcpSubagent[]; folds: GroupFolds }) {
     const agentType = useContext(ChatAgentContext).type;
     if (subagents.length === 0) return null;
     const icon = <AgentIcon type={agentType} size={16} className={`agent-glyph ${agentType}`} />;
@@ -187,7 +187,7 @@ function Group({
     );
 }
 
-export function QueuedMessages({
+function QueuedMessages({
     messages,
     steerable,
     onSteer,
@@ -234,5 +234,31 @@ export function QueuedMessages({
                 );
             })}
         </Group>
+    );
+}
+
+/** What is still going on under the transcript: running subagents, background tasks and messages waiting their turn. */
+export default function LiveStack({
+    subagents,
+    tasks,
+    folds,
+    stopping = [],
+    onStop,
+    queue,
+}: {
+    subagents: AcpSubagent[];
+    tasks: AcpAsyncTask[];
+    folds: GroupFolds;
+    stopping?: string[];
+    onStop?: (taskId: string) => void;
+    /** Without it, as in a shared chat, nothing can be queued here. */
+    queue?: { messages: QueuedMessage[]; steerable: boolean; onSteer: (messages: QueuedMessage[]) => void; onDrop: (id: string) => void };
+}) {
+    return (
+        <div className="chat-live-stack">
+            <RunningSubagents subagents={subagents} folds={folds} />
+            <BackgroundTasks tasks={tasks} stopping={stopping} onStop={onStop} folds={folds} />
+            {queue && <QueuedMessages {...queue} />}
+        </div>
     );
 }

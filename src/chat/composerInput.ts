@@ -59,6 +59,9 @@ export function removeToken(text: string, token: Pick<ComposerToken, "start">, c
     return { text: `${before}${after}`, caret: before.length };
 }
 
+/** The most rows the composer's menu lists for files, agents or issues. */
+export const MAX_MENU_ENTRIES = 8;
+
 export interface ProjectEntry {
     /** Relative to the project, with a trailing slash on a folder. */
     path: string;

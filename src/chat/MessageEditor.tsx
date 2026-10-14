@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import "../styles/chat/message-editor.css";
 
 /** A sent message opened again for writing. Sending it takes the chat back to
     before it and asks again with the new text. */

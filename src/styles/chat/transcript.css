@@ -74,22 +74,34 @@
     padding-bottom: 10px;
 }
 
-.chat-letter-from {
+.chat-letter-from,
+.chat-ask-who {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
     color: var(--ink-dim);
     font-size: var(--text-2xs);
+}
+
+.chat-letter-from {
+    gap: 8px;
+    margin-bottom: 4px;
     line-height: 1.4;
 }
 
-.chat-letter-from b {
+.chat-ask-who {
+    gap: 7px;
+    height: 22px;
+    margin-bottom: 2px;
+}
+
+.chat-letter-from b,
+.chat-ask-who b {
     color: var(--ink);
     font-weight: 600;
 }
 
-.chat-letter-from > .agent-glyph {
+.chat-letter-from > .agent-glyph,
+.chat-ask-who > .agent-glyph {
     flex: none;
 }
 
@@ -103,90 +115,9 @@
     margin-top: 14px;
 }
 
-.chat-message.agent-question {
-    padding-top: 12px;
-    padding-bottom: 6px;
-}
-
-.chat-ask-who {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    height: 22px;
-    margin-bottom: 2px;
-    color: var(--ink-dim);
-    font-size: var(--text-2xs);
-}
-
-.chat-ask-who > .agent-glyph {
-    flex: none;
-}
-
-.chat-ask-who b {
-    color: var(--ink);
-    font-weight: 600;
-}
-
-.chat-ask-ticket {
-    margin-left: auto;
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: 10px;
-}
-
 .chat-ask-text {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-}
-
-.chat-ask-options {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    margin: 8px 0 2px -8px;
-}
-
-.chat-ask-option {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    max-width: 100%;
-    min-height: 30px;
-    padding: 0 8px;
-    color: var(--ink);
-    font-size: calc(13.5px * var(--chat-text-em, 1));
-    line-height: 30px;
-    text-align: left;
-    transition: background 90ms;
-}
-
-.chat-ask-option:hover:not(:disabled),
-.chat-ask-option.writing {
-    background: color-mix(in oklab, var(--ink) 6%, transparent);
-}
-
-.chat-ask-option.other {
-    color: var(--ink-dim);
-}
-
-.chat-ask-key {
-    flex: none;
-    width: 10px;
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: var(--text-2xs);
-}
-
-.chat-ask-why {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--ink-dim);
-    font-size: var(--text-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.chat-ask-option.writing .chat-ask-why {
-    font-style: italic;
 }
 
 .chat-ask-answered {
@@ -204,48 +135,6 @@
 .chat-letter-answer + .chat-letter-from,
 .chat-markdown + .chat-letter-answer {
     margin-top: 14px;
-}
-
-.chat-ask-assumed {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 26px;
-    color: var(--ink-dim);
-    font-size: var(--text-xs);
-}
-
-.chat-ask-assumed > svg {
-    flex: none;
-    color: var(--ink-faint);
-}
-
-.chat-ask-assumed > span:first-of-type {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.chat-ask-assumed b {
-    color: var(--ink);
-    font-weight: 500;
-}
-
-.chat-ask-dot {
-    color: var(--ink-faint);
-}
-
-.chat-ask-assumed button {
-    flex: none;
-    color: var(--ink-dim);
-    text-decoration: underline;
-    text-decoration-color: var(--line);
-    text-underline-offset: 3px;
-}
-
-.chat-ask-assumed button:hover:not(:disabled) {
-    color: var(--ink);
 }
 
 .chat-message-content {
@@ -286,60 +175,6 @@
     width: 24px;
     height: 24px;
     color: var(--ink-dim);
-}
-
-.chat-message-editor {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
-    width: 80%;
-    margin-left: auto;
-}
-
-.chat-message-editor textarea {
-    box-sizing: border-box;
-    width: 100%;
-    max-height: 320px;
-    padding: 8px 12px;
-    border: 1px solid var(--acc-line);
-    border-radius: var(--radius-3);
-    background: color-mix(in srgb, var(--rail-2) 72%, transparent);
-    color: var(--ink);
-    font: inherit;
-    font-size: calc(13.5px * var(--chat-text-em, 1));
-    line-height: 1.65;
-    resize: none;
-    outline: none;
-}
-
-.chat-message-editor-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.chat-message-editor-actions button {
-    height: 26px;
-    padding: 0 11px;
-    border: 1px solid var(--line);
-    background: var(--rail-2);
-    color: var(--ink-dim);
-    font-size: calc(10.5px * var(--chat-text-em, 1));
-}
-
-.chat-message-editor-actions button:hover:not(:disabled) {
-    border-color: var(--acc-line);
-    color: var(--ink);
-}
-
-.chat-message-editor-actions button.primary {
-    border-color: var(--acc-line);
-    background: color-mix(in srgb, var(--acc) 18%, transparent);
-    color: var(--ink);
-}
-
-.chat-message-editor-actions button:disabled {
-    opacity: 0.45;
 }
 
 .chat-message-time {

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { errorText } from "../lib/format";
 import { asksPerson, type AgentQuestion, type QuestionAnswer } from "../agents/agentQuestions";
 import { agentQuestionsApi } from "../api/agentQuestions";
 import { useStore } from "../state/store";
@@ -21,6 +22,7 @@ export interface ChatQuestions {
     /** The composer answers the question because the person chose to write the answer. */
     writing: boolean;
     answer: (question: AgentQuestion, answer: QuestionAnswer, shown: string | null) => Promise<boolean>;
+    choose: (question: AgentQuestion, choice: number) => void;
     write: (question: AgentQuestion) => void;
     stopComposing: () => void;
 }
@@ -62,13 +64,18 @@ export function useChatQuestions(agentId: string, messages: readonly ChatMessage
                 setWritingId((current) => (current === question.id ? null : current));
                 return true;
             } catch (error) {
-                onError(error instanceof Error ? error.message : String(error));
+                onError(errorText(error));
                 return false;
             } finally {
                 setBusy(null);
             }
         },
         [onError],
+    );
+
+    const choose = useCallback(
+        (question: AgentQuestion, choice: number) => void answer(question, { choice }, question.choices[choice]?.label ?? null),
+        [answer],
     );
 
     const write = useCallback((question: AgentQuestion) => {
@@ -87,5 +94,5 @@ export function useChatQuestions(agentId: string, messages: readonly ChatMessage
         setDismissed((current) => new Set(current).add(composing.id));
     }, [composing]);
 
-    return { open, assumed, answered, busy, composing, writing: writing !== null, answer, write, stopComposing };
+    return { open, assumed, answered, busy, composing, writing: writing !== null, answer, choose, write, stopComposing };
 }

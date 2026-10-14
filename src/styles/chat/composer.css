@@ -323,113 +323,6 @@
     font-size: calc(10.5px * var(--chat-text-em, 1));
 }
 
-.chat-slash-menu {
-    position: absolute;
-    right: 8px;
-    bottom: calc(100% + 7px);
-    left: 8px;
-    z-index: 2;
-    overflow: hidden;
-}
-
-.chat-slash-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    min-height: 30px;
-    padding: 0 10px;
-    border-bottom: 1px solid var(--line-soft);
-    color: var(--ink-faint);
-    font-size: calc(9.5px * var(--chat-text-em, 1));
-}
-
-.chat-slash-menu button {
-    display: grid;
-    grid-template-columns: 130px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-2);
-    width: 100%;
-    min-height: 34px;
-    padding: 5px 10px;
-    text-align: left;
-}
-
-.chat-slash-menu button:hover,
-.chat-slash-menu button.selected {
-    background: var(--acc-soft);
-}
-
-.chat-slash-menu code {
-    color: var(--ink);
-    font-size: calc(10.5px * var(--chat-text-em, 1));
-}
-
-.chat-slash-menu button > span {
-    overflow: hidden;
-    color: var(--ink-dim);
-    font-size: calc(10.5px * var(--chat-text-em, 1));
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.chat-slash-menu em {
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: calc(9.5px * var(--chat-text-em, 1));
-    font-style: normal;
-}
-
-.chat-slash-menu.entries button {
-    grid-template-columns: 16px minmax(0, max-content) minmax(0, 1fr);
-}
-
-.chat-slash-menu.entries code {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.chat-slash-menu button > .chat-menu-mate {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.chat-menu-mate > span:first-child {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.chat-slash-group {
-    padding: 7px 10px 3px;
-    border-top: 1px solid var(--line-soft);
-    color: var(--ink-faint);
-    font-size: calc(9.5px * var(--chat-text-em, 1));
-}
-
-.chat-slash-menu button > .chat-menu-earlier {
-    color: var(--ink);
-}
-
-.chat-slash-menu.entries button > em {
-    justify-self: end;
-}
-
-.chat-menu-mark {
-    display: inline-flex;
-    justify-content: center;
-    align-items: center;
-    color: var(--text-tertiary);
-}
-
-.chat-slash-empty {
-    padding: 9px 10px;
-    color: var(--text-tertiary);
-    font-size: calc(10.5px * var(--chat-text-em, 1));
-}
-
 .chat-drop-target {
     position: absolute;
     inset: 10px;
@@ -463,14 +356,6 @@
     .chat-message {
         padding-inline: 12px;
     }
-
-    .chat-slash-menu.commands button {
-        grid-template-columns: 100px minmax(0, 1fr);
-    }
-
-    .chat-slash-menu em {
-        display: none;
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -501,9 +386,4 @@
     .chat-context-fill {
         transition: none;
     }
-}
-
-.chat-menu-mark[data-kind="issue"],
-.chat-menu-mark[data-kind="pull"] {
-    color: var(--live);
 }

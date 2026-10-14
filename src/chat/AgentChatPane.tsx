@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { errorText } from "../lib/format";
 import { acpApi } from "../api/acp";
 import { effortConfig, sessionConfigs, type SessionConfig } from "./sessionConfig";
 import type { Agent, ProviderProfile } from "../state/types";
@@ -16,11 +17,10 @@ import { activeToolLabel } from "./toolLabels";
 import { runningSubagents, subagentsById } from "./transcript";
 import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort } from "./chatStatus";
 import { ChatAgentContext, ChatSubagentsContext, ReaderScrollContext } from "./chatAgent";
-import { warmTranscript } from "./ChatMessageRow";
+import { MessageEditor, warmTranscript } from "./ChatMessageRow";
 import { ChatTranscript } from "./ChatTranscript";
-import { ChatFailureActions } from "./ChatFailureActions";
-import { BackgroundTasks, QueuedMessages, RunningSubagents } from "./LiveStack";
-import { ChatComposer } from "./ChatComposer";
+import { ChatComposer, ComposerMenu, DictationPreview } from "./ChatComposer";
+import { PickerMenu } from "./ComposerPickers";
 import { useMessageArrival } from "./useMessageArrival";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
@@ -30,9 +30,10 @@ import { useStickToBottom } from "./useStickToBottom";
 import { mentionContext, useMates } from "./agentMentions";
 import { deliverToAgent } from "../agents/agentInbox";
 import type { AgentQuestion } from "../agents/agentQuestions";
-import { AssumedQuestion, JustAnswered, OpenQuestion } from "./AgentQuestions";
 import type { OutgoingMessage } from "./queuedMessages";
 import { useChatQuestions } from "./useChatQuestions";
+import { ResumeActions } from "./ResumeActions";
+import { lazyPart, whenIdle } from "../lib/lazyPart";
 
 /* Reading a whole transcript is one round trip to the parser, so this waits
    at most this long before showing it anyway. */
@@ -79,8 +80,9 @@ function answerText({ text, paths, context }: OutgoingMessage): string {
         .join("\n\n");
 }
 
-const isEditable = (target: EventTarget | null): boolean =>
-    target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+const ChatFailureActions = lazyPart(() => import("./ChatFailureActions").then((module) => module.ChatFailureActions));
+const LiveStack = lazyPart(() => import("./LiveStack").then((module) => module.default));
+const QuestionRows = lazyPart(() => import("./QuestionRows").then((module) => module.default));
 
 const ChatFind = lazy(() => import("./ChatFind"));
 const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
@@ -224,6 +226,15 @@ export function AgentChatPane({
         send,
         onError: setComposerError,
     });
+    useEffect(
+        () =>
+            whenIdle(() =>
+                [LiveStack, QuestionRows, ChatFailureActions, ComposerMenu, PickerMenu, DictationPreview, MessageEditor].forEach(
+                    (part) => void part.preload(),
+                ),
+            ),
+        [],
+    );
     const sentHistory = useMemo(
         () =>
             sentPrompts(
@@ -259,44 +270,27 @@ export function AgentChatPane({
             dispatch({ type: "rewind", messageId });
             dispatch({ type: "local_prompt", text, paths, messageId });
             acpApi.edit(agentRef.current.id, messageId, text, paths, mentionContext(text, mates)).catch((error: unknown) => {
-                dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+                dispatch({ type: "error", message: errorText(error) });
             });
         },
         [agentRef, dispatch, mates],
     );
 
     const questions = useChatQuestions(agent.id, state.messages, setComposerError);
-    const focusComposer = () =>
-        window.requestAnimationFrame(() => paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus());
-    const chooseAnswer = (question: AgentQuestion, choice: number) =>
-        void questions.answer(question, { choice }, question.choices[choice]?.label ?? null);
+    const focusComposer = () => paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
     const writeAnswer = (question: AgentQuestion) => {
         questions.write(question);
-        focusComposer();
+        window.requestAnimationFrame(focusComposer);
     };
     const answerByKey = (question: AgentQuestion | null | undefined, digit: number, offersWriting: boolean): boolean => {
         if (!question || questions.writing || questions.busy) return false;
-        if (digit <= question.choices.length) chooseAnswer(question, digit - 1);
+        if (digit <= question.choices.length) questions.choose(question, digit - 1);
         else if (offersWriting && digit === question.choices.length + 1) writeAnswer(question);
         else return false;
         return true;
     };
-    const answerByKeyRef = useRef<(digit: number) => boolean>(() => false);
-    answerByKeyRef.current = (digit) => answerByKey(questions.open[0], digit, true);
     const answerFromComposer =
         questions.composing && !questions.writing ? (digit: number) => answerByKey(questions.composing, digit, false) : undefined;
-    const asking = questions.open.length > 0;
-    useEffect(() => {
-        if (!active || !asking) return;
-        const onKey = (event: KeyboardEvent) => {
-            if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || !/^[1-9]$/.test(event.key)) return;
-            const held = document.activeElement;
-            if (isEditable(event.target) || (held && held !== document.body && !paneRef.current?.contains(held))) return;
-            if (answerByKeyRef.current(Number(event.key))) event.preventDefault();
-        };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [active, asking]);
     const sendMessage = (message: OutgoingMessage, steerNow: boolean): boolean => {
         const question = questions.composing;
         if (!question) return worktree.sendMessage(message, steerNow);
@@ -309,7 +303,7 @@ export function AgentChatPane({
     };
 
     const stop = () => {
-        void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
+        void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(errorText(failure)));
     };
 
     const stopTask = async (taskId: string) => {
@@ -317,7 +311,7 @@ export function AgentChatPane({
         try {
             await acpApi.stopTask(agent.id, taskId);
         } catch (error) {
-            setComposerError(error instanceof Error ? error.message : String(error));
+            setComposerError(errorText(error));
         } finally {
             setStoppingTasks((current) => current.filter((candidate) => candidate !== taskId));
         }
@@ -329,7 +323,7 @@ export function AgentChatPane({
             await acpApi.permissionReply(agent.id, requestId, optionId);
             dispatch({ type: "permission_cleared", requestId });
         } catch (error) {
-            setComposerError(error instanceof Error ? error.message : String(error));
+            setComposerError(errorText(error));
         } finally {
             setReplyingPermission(null);
         }
@@ -350,7 +344,7 @@ export function AgentChatPane({
             const effort = effortConfig(options, agent.type)?.currentValue ?? agent.effort;
             cmd.setAgentModelPreferences(agent.id, model, knownEffort(effort));
         } catch (error) {
-            if (sessionIdRef.current === sessionId) setComposerError(error instanceof Error ? error.message : String(error));
+            if (sessionIdRef.current === sessionId) setComposerError(errorText(error));
         } finally {
             configPending.current = false;
             setChangingConfig(false);
@@ -363,32 +357,15 @@ export function AgentChatPane({
     const disconnected = displayState.connection === "error" || displayState.connection === "stopped";
     const resuming = recovery?.phase === "resuming";
     const failure = recovery?.phase === "failed" ? recovery : null;
+    const recoveryLabel = resuming ? "Resuming…" : failure ? "Couldn't resume this chat" : null;
     const welcoming = displayState.messages.length === 0 && (displayState.connection === "ready" || (!agent.resumeId && !disconnected));
-    const startNewChat = () =>
-        cmd.addAgent(agent.type, undefined, undefined, {
-            permissionMode: agent.permissionMode,
-            profileId: agent.profileId,
-            detectedExecutablePath: profile?.executablePath || agent.executablePath,
-            cwd,
-        });
     const chatAgent = useMemo(() => ({ id: agent.id, type: agent.type }), [agent.id, agent.type]);
     const composerPlaceholder = placeholderFor(state, {
         resuming,
         disconnected,
         commands: state.connection !== "ready" || state.commands.length > 0,
     });
-    const sessionActions = (
-        <div className="chat-connection-actions">
-            <button type="button" onClick={retry}>
-                {failure ? "Retry" : "Reconnect"}
-            </button>
-            {agent.resumeId && (
-                <button type="button" onClick={startNewChat}>
-                    Start new chat
-                </button>
-            )}
-        </div>
-    );
+    const sessionActions = <ResumeActions agent={agent} profile={profile} cwd={cwd} retry={failure ? "Retry" : "Reconnect"} onRetry={retry} />;
     const failureDetail = failure?.detail && <span className="chat-recovery-detail">{failure.detail}</span>;
 
     return (
@@ -406,7 +383,7 @@ export function AgentChatPane({
                                         scrollRef={scrollRef}
                                         onClose={() => {
                                             setFindRequest(0);
-                                            paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
+                                            focusComposer();
                                         }}
                                     />
                                 </Suspense>
@@ -438,14 +415,11 @@ export function AgentChatPane({
                                             <div className={`chat-connection-state ${displayState.connection}`} role="status">
                                                 {(connecting || resuming) && <span className="chat-activity-loader" aria-hidden="true" />}
                                                 <span>
-                                                    {resuming
-                                                        ? "Resuming…"
-                                                        : failure
-                                                          ? "Couldn't resume this chat"
-                                                          : (connecting ??
-                                                            (displayState.connection === "error"
-                                                                ? "Structured session unavailable."
-                                                                : "Agent session stopped."))}
+                                                    {recoveryLabel ??
+                                                        connecting ??
+                                                        (displayState.connection === "error"
+                                                            ? "Structured session unavailable."
+                                                            : "Agent session stopped.")}
                                                 </span>
                                                 {failureDetail}
                                                 {disconnected && !resuming && sessionActions}
@@ -460,38 +434,23 @@ export function AgentChatPane({
                                                 <IconWarning size={14} />
                                                 <span>{displayState.error}</span>
                                                 {displayState.failure && profile && (
-                                                    <ChatFailureActions agent={agent} profile={profile} failure={displayState.failure} />
+                                                    <ChatFailureActions.Part agent={agent} profile={profile} failure={displayState.failure} />
                                                 )}
                                             </div>
                                         )}
-                                        {questions.answered.map(({ question, answer }) => (
-                                            <JustAnswered key={question.id} question={question} answer={answer} />
-                                        ))}
-                                        {questions.open.map((question) => (
-                                            <OpenQuestion
-                                                key={question.id}
-                                                question={question}
-                                                busy={questions.busy === question.id}
-                                                writing={questions.writing && questions.composing?.id === question.id}
-                                                onChoose={(choice) => chooseAnswer(question, choice)}
-                                                onSomethingElse={() => writeAnswer(question)}
+                                        {(questions.open.length > 0 || questions.assumed.length > 0 || questions.answered.length > 0) && (
+                                            <QuestionRows.Part
+                                                questions={questions}
+                                                active={active}
+                                                paneRef={paneRef}
+                                                onWrite={writeAnswer}
+                                                onDigit={(digit) => answerByKey(questions.open[0], digit, true)}
                                             />
-                                        ))}
-                                        {questions.assumed.map((question) => (
-                                            <AssumedQuestion
-                                                key={question.id}
-                                                question={question}
-                                                busy={questions.busy === question.id}
-                                                onFine={() => void questions.answer(question, { fine: true }, null)}
-                                                onChange={() => writeAnswer(question)}
-                                            />
-                                        ))}
+                                        )}
                                         {displayState.messages.length > 0 && (resuming || disconnected) && (
                                             <div className="chat-reconnect" role="status">
                                                 {resuming ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
-                                                <span>
-                                                    {resuming ? "Resuming…" : failure ? "Couldn't resume this chat" : "This session dropped."}
-                                                </span>
+                                                <span>{recoveryLabel ?? "This session dropped."}</span>
                                                 {failureDetail}
                                                 {!resuming && sessionActions}
                                             </div>
@@ -507,21 +466,19 @@ export function AgentChatPane({
                                     </button>
                                 )}
                                 {(subagents.length > 0 || displayState.tasks.length > 0 || queued.length > 0) && (
-                                    <div className="chat-live-stack">
-                                        <RunningSubagents subagents={subagents} folds={liveFolds} />
-                                        <BackgroundTasks
-                                            tasks={displayState.tasks}
-                                            stopping={stoppingTasks}
-                                            onStop={(taskId) => void stopTask(taskId)}
-                                            folds={liveFolds}
-                                        />
-                                        <QueuedMessages
-                                            messages={queued}
-                                            steerable={steerable && state.running}
-                                            onSteer={(messages) => void steer(messages)}
-                                            onDrop={drop}
-                                        />
-                                    </div>
+                                    <LiveStack.Part
+                                        subagents={subagents}
+                                        tasks={displayState.tasks}
+                                        folds={liveFolds}
+                                        stopping={stoppingTasks}
+                                        onStop={(taskId) => void stopTask(taskId)}
+                                        queue={{
+                                            messages: queued,
+                                            steerable: steerable && state.running,
+                                            onSteer: (messages) => void steer(messages),
+                                            onDrop: drop,
+                                        }}
+                                    />
                                 )}
                                 {!started && !agent.worktree && worktree.step === null && (
                                     <Suspense fallback={null}>

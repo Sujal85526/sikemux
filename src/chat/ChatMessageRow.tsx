@@ -16,10 +16,9 @@ import {
     IconWorkflow,
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
-import { isAgentType } from "../agents/catalog";
+import { AgentMark } from "../agents/AgentMark";
 import { messageLetters, type AgentLetter } from "./agentLetters";
 import { AnsweredQuestion } from "./AgentQuestions";
-import { MessageEditor } from "./MessageEditor";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
 import { localImagePath, useImagePreview } from "./imagePreview";
@@ -45,6 +44,7 @@ import {
 import type { AccountMove, AcpSubagent, AcpTaskNotice, AgentNotice, ChatMessage, ChatPart } from "./types";
 import { ContextChipLabel } from "./ContextChip";
 import { Shimmer } from "./Shimmer";
+import { lazyPart } from "../lib/lazyPart";
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;
@@ -80,6 +80,8 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     }
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
+
+export const MessageEditor = lazyPart(() => import("./MessageEditor").then((module) => module.MessageEditor));
 
 const warmed = new WeakSet<ChatMessage>();
 let warming: Promise<void> = Promise.resolve();
@@ -279,7 +281,7 @@ function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[];
                         <Fragment key={index}>
                             <div className="chat-letter-from" title={letter.agentId}>
                                 <span className="chat-letter-rule" />
-                                {isAgentType(letter.cli) && <AgentIcon type={letter.cli} size={14} className={`agent-glyph ${letter.cli}`} />}
+                                <AgentMark cli={letter.cli} />
                                 <span>
                                     Message from <b>{letter.name}</b>
                                 </span>
@@ -332,7 +334,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
         return (
             <article className={`chat-message ${message.role}`}>
                 <div className="chat-message-content">
-                    <MessageEditor
+                    <MessageEditor.Part
                         initial={written}
                         onCancel={() => setEditing(false)}
                         onSend={(text) => {
