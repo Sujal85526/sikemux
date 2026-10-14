@@ -959,6 +959,12 @@
 .agent-rail > .rail-scroll {
     padding-top: var(--space-1);
 }
+.agent-new-kbd {
+    flex: none;
+    font-family: var(--kbd);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+}
 .workspace-rail.agent-rail .agent-actions + *,
 .workspace-rail.agent-rail .agent-stats + * {
     margin-top: var(--space-1h);

@@ -1,10 +1,11 @@
 import { navigateTabs } from "../lib/tabNavigation";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo } from "../api/agents";
 import { usePageVisible } from "../hooks/usePageVisible";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
 import { hasUsage, type UsageAgentType } from "../agents/catalog";
 import * as cmd from "../state/commands";
+import type { KeybindingActionId } from "../commands/keybindings";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { useResource, useResourceEnabled } from "../state/resources";
 import { agentCatalogR, agentUsageR } from "../state/resources.defs";
@@ -357,9 +358,10 @@ export function AgentRailBody() {
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
                 <div className="agent-actions">
                     {selectedType && (
-                        <button
-                            type="button"
-                            className="agent-row agent-new"
+                        <NewRow
+                            icon={<IconPlus size={15} />}
+                            title="New chat"
+                            shortcut="agent.new"
                             onClick={() =>
                                 allAgents || scope === "all"
                                     ? void cmd.startAgent()
@@ -367,25 +369,11 @@ export function AgentRailBody() {
                                           profileId: selectedProviderProfile(selectedType, profiles, profileSelections)?.id,
                                           detectedExecutablePath: selectedProvider?.command,
                                       })
-                            }>
-                            <span className="agent-glyph">
-                                <IconPlus size={15} />
-                            </span>
-                            <span className="agent-title">New chat</span>
-                        </button>
+                            }
+                        />
                     )}
-                    <button type="button" className="agent-row agent-new" onClick={cmd.newTerminal}>
-                        <span className="agent-glyph">
-                            <IconTerminal size={15} />
-                        </span>
-                        <span className="agent-title">New terminal</span>
-                    </button>
-                    <button type="button" className="agent-row agent-new" onClick={cmd.newDeskBrowserTab}>
-                        <span className="agent-glyph">
-                            <IconGlobe size={15} />
-                        </span>
-                        <span className="agent-title">New browser</span>
-                    </button>
+                    <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
+                    <NewRow icon={<IconGlobe size={15} />} title="New browser" shortcut="browser.tabNew" onClick={cmd.newDeskBrowserTab} />
                 </div>
                 <AgentRailStats scope={scope} provider={allAgents ? null : selectedType} />
                 {scope === "all" && <AllProjectsAgents />}
@@ -535,6 +523,17 @@ function AgentAttentionGroup() {
                 );
             })}
         </Panel>
+    );
+}
+
+function NewRow({ icon, title, shortcut, onClick }: { icon: ReactNode; title: string; shortcut: KeybindingActionId; onClick: () => void }) {
+    const label = useShortcutLabel(shortcut);
+    return (
+        <button type="button" className="agent-row agent-new" onClick={onClick}>
+            <span className="agent-glyph">{icon}</span>
+            <span className="agent-title">{title}</span>
+            {label && <span className="agent-new-kbd">{label}</span>}
+        </button>
     );
 }
 
