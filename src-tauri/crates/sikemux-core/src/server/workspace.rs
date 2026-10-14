@@ -404,6 +404,129 @@ impl Workspaces {
     }
 }
 
+/// How a lead runs, for an agent it starts to run the same way.
+pub(crate) struct Lead {
+    pub provider: String,
+    /// Its launch, when it is a chat the core runs.
+    pub launch: Option<ChatLaunch>,
+    pub launcher: Option<String>,
+    pub permission_mode: Option<String>,
+}
+
+/// Agents whose chats keep a private home of their own, which a worker of
+/// theirs must not share.
+const OWN_HOME: [&str; 2] = ["hermes", "grok"];
+
+impl Workspaces {
+    /// How to start an agent of `provider` for `lead` in `cwd`: on the lead's
+    /// account and in its permission mode. The lead may pick the model.
+    pub(crate) fn worker_launch(
+        &self,
+        lead: &Lead,
+        provider: &str,
+        cwd: &Path,
+        model: Option<String>,
+    ) -> Result<(ChatLaunch, Option<String>), String> {
+        let same = lead.provider == provider;
+        let mode = |default: &str| match lead.permission_mode.as_deref() {
+            Some(mode) if same => mode.to_owned(),
+            Some("bypass") => "bypass".to_owned(),
+            Some(_) => "workspace-write".to_owned(),
+            None => default.to_owned(),
+        };
+        let own = lead
+            .launch
+            .as_ref()
+            .filter(|_| same && !OWN_HOME.contains(&provider));
+        if let Some(own) = own {
+            let mut launch = own.clone();
+            launch.cwd = cwd.to_path_buf();
+            launch.resume_id = None;
+            launch.permission_mode = mode(&own.permission_mode);
+            launch.model = model.or(launch.model);
+            return Ok((launch, lead.launcher.clone()));
+        }
+        let published = self.lock();
+        let offered: Vec<&ChatLauncher> = published
+            .launchers
+            .iter()
+            .filter(|launcher| launcher.provider == provider)
+            .collect();
+        let launcher = offered
+            .iter()
+            .find(|launcher| Some(&launcher.id) == lead.launcher.as_ref())
+            .or_else(|| offered.first())
+            .ok_or_else(|| {
+                let known: Vec<&str> = published
+                    .launchers
+                    .iter()
+                    .map(|launcher| launcher.provider.as_str())
+                    .collect();
+                if known.is_empty() {
+                    "Sikemux has not said which agents it can start; open Sikemux once so it can"
+                        .to_owned()
+                } else {
+                    format!("cli must be one of {}", known.join(", "))
+                }
+            })?;
+        match launcher.status.as_deref() {
+            Some("missing") => {
+                return Err(format!("{} is not installed on this host", launcher.label))
+            }
+            Some("signedOut") => {
+                return Err(format!(
+                    "{} is signed out on this host; ask the person to sign in",
+                    launcher.label
+                ))
+            }
+            Some("broken") => {
+                return Err(format!("{} does not start on this host", launcher.label))
+            }
+            _ => {}
+        }
+        let (account, fallbacks, model) = match lead.launch.as_ref().filter(|_| same) {
+            Some(own) => (
+                own.account.clone(),
+                own.fallbacks.clone(),
+                model.or_else(|| own.model.clone()),
+            ),
+            None => (launcher.account.clone(), launcher.fallbacks.clone(), model),
+        };
+        Ok((
+            ChatLaunch {
+                agent_id: String::new(),
+                provider: launcher.provider.clone(),
+                cwd: cwd.to_path_buf(),
+                program: launcher.program.clone(),
+                args: launcher.args.clone(),
+                env: launcher.env.clone(),
+                mcp_servers: Vec::new(),
+                resume_id: None,
+                permission_mode: mode(&launcher.permission_mode),
+                model,
+                effort: None,
+                account,
+                fallbacks,
+            },
+            Some(launcher.id.clone()),
+        ))
+    }
+}
+
+/// Gives `launch` to `agent_id`, with the secret and tools that are its own.
+pub(crate) fn own_launch(core: &Core, launch: &mut ChatLaunch, agent_id: &str) {
+    let secret = core.agent_key.secret(agent_id);
+    launch.agent_id = agent_id.to_owned();
+    launch.mcp_servers = cli_endpoint(core)
+        .and_then(|endpoint| tools_server(agent_id, &secret, &endpoint))
+        .into_iter()
+        .collect();
+    launch
+        .env
+        .insert("SIKEMUX_AGENT_ID".into(), agent_id.to_owned());
+    launch.env.insert("SIKEMUX_AGENT_SECRET".into(), secret);
+}
+
 /// The agents' own tools, served by this binary run as an MCP server, the
 /// same way the app wires them into a chat it starts.
 fn tools_server(agent_id: &str, secret: &str, endpoint: &Path) -> Option<Value> {

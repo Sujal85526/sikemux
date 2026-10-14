@@ -44,6 +44,8 @@ struct Letter {
     cli: String,
     text: String,
     at: u64,
+    /// What the agent reading it is told about it, when not the usual.
+    note: Option<String>,
 }
 
 /// The messages still waiting, as each agent reads them, for a core that
@@ -188,13 +190,32 @@ fn attribute(value: &str) -> String {
 /// A message as the agent reads it. The app reads the same form back out of
 /// a transcript to show who sent it.
 fn wrapped(letter: &Letter) -> String {
-    let name = attribute(&letter.from_name);
+    let name = &letter.from_name;
+    let note = letter.note.clone().unwrap_or_else(|| {
+        format!("Sent by {name}, another agent in Sikemux, not by the person. Reply with agent_send to {name} if it needs an answer.")
+    });
     format!(
-        "<agent-message from=\"{name}\" agent-id=\"{}\" cli=\"{}\" note=\"Sent by {name}, another agent in Sikemux, not by the person. Reply with agent_send to {name} if it needs an answer.\">\n{}\n</agent-message>",
+        "<agent-message from=\"{}\" agent-id=\"{}\" cli=\"{}\" note=\"{}\">\n{}\n</agent-message>",
+        attribute(name),
         attribute(&letter.from_id),
         attribute(&letter.cli),
+        attribute(&note),
         letter.text.replace("</agent-message", "&lt;/agent-message"),
     )
+}
+
+/// The task a lead gives an agent it started, as that agent reads it.
+pub(crate) fn task(lead_id: &str, lead_name: &str, lead_cli: &str, text: String) -> String {
+    wrapped(&Letter {
+        from_id: lead_id.to_owned(),
+        from_name: lead_name.to_owned(),
+        cli: lead_cli.to_owned(),
+        text,
+        at: unix_ms(),
+        note: Some(format!(
+            "{lead_name}, another agent in Sikemux, started you to do this; it is your lead, not the person. When your turn ends, your final answer goes to {lead_name} by itself. Message {lead_name} with agent_send if you need to ask it something first."
+        )),
+    })
 }
 
 /// How an agent can be reached.
@@ -448,21 +469,71 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             if target.agent_id == from {
                 return Err("That agent is you".into());
             }
-            let sender = agents.iter().find(|agent| agent.agent_id == from);
-            let letter = Letter {
-                from_name: sender
-                    .and_then(|agent| agent.name.clone())
-                    .unwrap_or_else(|| from.clone()),
-                cli: sender.map_or_else(|| "agent".to_owned(), |agent| agent.cli.clone()),
-                from_id: from,
-                text,
-                at: unix_ms(),
-            };
+            let letter = letter_from(&agents, from, text, None);
             Ok((target, letter))
         })
         .await
         .map_err(|error| error.to_string())?
     };
+    deliver(core, &target, letter).await
+}
+
+fn letter_from(agents: &[Listed], from: String, text: String, note: Option<String>) -> Letter {
+    let sender = agents.iter().find(|agent| agent.agent_id == from);
+    Letter {
+        from_name: sender
+            .and_then(|agent| agent.name.clone())
+            .unwrap_or_else(|| from.clone()),
+        cli: sender.map_or_else(|| "agent".to_owned(), |agent| agent.cli.clone()),
+        from_id: from,
+        text,
+        at: unix_ms(),
+        note,
+    }
+}
+
+/// Hands `text` from `worker` to the agent that started it, as a message
+/// about how its turn ended. Nothing is sent once the lead has stopped.
+pub(crate) async fn report(core: &Arc<Core>, worker: String, lead: String, text: String) {
+    let name = core.names.name(&worker);
+    report_as(core, worker, name, lead, text).await;
+}
+
+/// [`report`] for a worker that may be gone, under the name it had.
+pub(crate) async fn report_as(
+    core: &Arc<Core>,
+    worker: String,
+    name: Option<String>,
+    lead: String,
+    text: String,
+) {
+    let found = {
+        let core = core.clone();
+        blocking(move || {
+            let agents = listed(&core);
+            let target = agents
+                .iter()
+                .find(|agent| agent.agent_id == lead && agent.reach != Reach::Stopped)
+                .cloned();
+            let name = name.unwrap_or_else(|| worker.clone());
+            let note = format!(
+                "{name} is an agent you started, and this is how its turn ended, sent by Sikemux. Reply with agent_send to {name} if it needs more."
+            );
+            let mut letter = letter_from(&agents, worker, text, Some(note));
+            letter.from_name = name;
+            Ok(target.map(|target| (target, letter)))
+        })
+        .await
+    };
+    let Ok(Some((target, letter))) = found else {
+        return;
+    };
+    if let Err(error) = deliver(core, &target, letter).await {
+        eprintln!("sikemux core: an agent's report did not reach its lead: {error}");
+    }
+}
+
+async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Value, String> {
     let name = target
         .name
         .clone()

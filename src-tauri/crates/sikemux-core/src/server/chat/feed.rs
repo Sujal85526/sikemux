@@ -559,6 +559,39 @@ impl Replay {
             .is_some_and(|history| history.first().is_some())
     }
 
+    /// What the agent wrote last in its latest turn: its text after its last
+    /// tool call, or before it when it wrote nothing after.
+    fn last_answer(&self) -> Option<String> {
+        let mut pieces: Vec<&str> = Vec::new();
+        for entry in self.entries.iter().rev() {
+            match entry.event.kind {
+                ChatEventKind::TurnStarted | ChatEventKind::Prompt => break,
+                ChatEventKind::SessionUpdate => {}
+                _ => continue,
+            }
+            let payload = &entry.event.payload;
+            if self.work.in_subagent(payload) {
+                continue;
+            }
+            match session_update_kind(payload) {
+                Some("user_message_chunk") => break,
+                Some("tool_call" | "tool_call_update") if !pieces.is_empty() => break,
+                Some("agent_message_chunk") => {
+                    if let Some(text) = payload
+                        .pointer("/update/content/text")
+                        .and_then(Value::as_str)
+                    {
+                        pieces.push(text);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let answer: String = pieces.into_iter().rev().collect();
+        let answer = answer.trim();
+        (!answer.is_empty()).then(|| answer.to_owned())
+    }
+
     /// The last turns, as many as fit, and whatever set how the chat stands
     /// before them. A chat that has gone a whole replay without a turn
     /// starting is cut where a page of its history can start.
@@ -1156,6 +1189,11 @@ impl Feed {
     /// What the agent last called this session, as the host's rail shows it.
     pub(crate) fn title(&self) -> Option<String> {
         self.inner.lock().ok()?.title.clone()
+    }
+
+    /// What the agent wrote last in its latest turn.
+    pub(crate) fn last_answer(&self) -> Option<String> {
+        self.inner.lock().ok()?.replay.last_answer()
     }
 
     pub(crate) fn running_subagents(&self) -> u32 {

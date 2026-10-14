@@ -20,6 +20,10 @@ const FILE: &str = "agent-names.json";
 /// How many of a project's past agents keep their names out of use, newest first.
 const KEPT_PAST: usize = 100;
 const MAX_NAME_CHARS: usize = 24;
+/// How many agents below one the person started may start agents of their own.
+const MAX_DEPTH: usize = 2;
+const MAX_CHILDREN: usize = 6;
+const MAX_SPAWNED_PER_PROJECT: usize = 8;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +34,10 @@ struct Entry {
     /// The agent that started this one.
     #[serde(default)]
     parent: Option<String>,
+    /// Its turns end without its final answer going to the agent that
+    /// started it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    quiet: bool,
     #[serde(default)]
     provider: Option<String>,
     /// The provider's own session, so a chat opened again from the recent
@@ -68,6 +76,15 @@ pub(crate) struct AgentName {
     pub name: String,
     pub project: String,
     pub parent: Option<String>,
+}
+
+/// An agent another agent starts.
+pub(crate) struct Worker<'a> {
+    pub agent_id: &'a str,
+    pub lead: &'a str,
+    pub provider: &'a str,
+    /// Its final answer goes to its lead each time its turn ends.
+    pub reports: bool,
 }
 
 /// An agent that wants a name.
@@ -133,6 +150,76 @@ impl Names {
             self.save(&book);
         }
         (named, changed)
+    }
+
+    /// Names a worker for `worker.lead`, in the lead's project, unless the
+    /// lead may not start another. `running` holds the agents running here.
+    pub(crate) fn hire(
+        &self,
+        worker: Worker<'_>,
+        running: HashSet<String>,
+    ) -> Result<AgentName, String> {
+        let mut book = self.lock();
+        let open = book.open(running);
+        let lead = book
+            .agents
+            .iter()
+            .find(|entry| entry.agent_id == worker.lead)
+            .cloned()
+            .ok_or("Sikemux has not named you yet; try again in a moment")?;
+        if book.depth(worker.lead) >= MAX_DEPTH {
+            return Err(format!(
+                "{} is already {MAX_DEPTH} levels below an agent the person started, so it cannot start agents; do this work yourself or hand it back to your lead",
+                lead.name
+            ));
+        }
+        let live = |entry: &&Entry| open.contains(&entry.agent_id);
+        let children = book
+            .agents
+            .iter()
+            .filter(live)
+            .filter(|entry| entry.parent.as_deref() == Some(worker.lead))
+            .count();
+        if children >= MAX_CHILDREN {
+            return Err(format!(
+                "{} already has {MAX_CHILDREN} agents of its own open, the most one agent may have; give one of them the work, or ask the person to close one that is done",
+                lead.name
+            ));
+        }
+        let spawned = book
+            .agents
+            .iter()
+            .filter(live)
+            .filter(|entry| entry.project == lead.project && entry.parent.is_some())
+            .count();
+        if spawned >= MAX_SPAWNED_PER_PROJECT {
+            return Err(format!(
+                "this project already has {MAX_SPAWNED_PER_PROJECT} agents that agents started open, the most it may have; give one of them the work, or ask the person to close one that is done"
+            ));
+        }
+        let entry = Entry {
+            agent_id: worker.agent_id.to_owned(),
+            name: book.fresh(&lead.project, worker.agent_id, &open),
+            project: lead.project,
+            parent: Some(worker.lead.to_owned()),
+            quiet: !worker.reports,
+            provider: Some(worker.provider.to_owned()),
+            session_id: None,
+            at: unix_ms(),
+        };
+        let named = entry.view();
+        book.agents.push(entry);
+        self.save(&book);
+        Ok(named)
+    }
+
+    /// The agent that hears how the agent's turns end, if any.
+    pub(crate) fn reports_to(&self, agent_id: &str) -> Option<String> {
+        self.lock()
+            .agents
+            .iter()
+            .find(|entry| entry.agent_id == agent_id && !entry.quiet)
+            .and_then(|entry| entry.parent.clone())
     }
 
     /// Takes the app's word for which agents it holds.
@@ -213,6 +300,25 @@ impl Book {
         running
     }
 
+    /// How many agents up the chain of leads the person's own agent is.
+    fn depth(&self, agent_id: &str) -> usize {
+        let mut depth = 0;
+        let mut current = agent_id;
+        while let Some(parent) = self
+            .agents
+            .iter()
+            .find(|entry| entry.agent_id == current)
+            .and_then(|entry| entry.parent.as_deref())
+        {
+            depth += 1;
+            if depth > self.agents.len() {
+                break;
+            }
+            current = parent;
+        }
+        depth
+    }
+
     fn entry_mut(&mut self, agent_id: &str) -> Option<&mut Entry> {
         self.agents
             .iter_mut()
@@ -277,6 +383,7 @@ impl Book {
             name,
             project,
             parent: None,
+            quiet: false,
             provider: provider.map(str::to_owned),
             session_id: resume_id.map(str::to_owned),
             at: unix_ms(),

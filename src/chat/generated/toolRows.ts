@@ -79,6 +79,7 @@ export const TOOL_ROWS = {
     events_wait: { verb: "wait", kind: "think", icon: "clock", target: ["for {executionId}", "for events"] },
     agent_list: { verb: "list", kind: "read", icon: "status", target: ["agents"] },
     agent_send: { verb: "message", kind: "edit", icon: "message", target: ["{to}"], detail: ["{text}"] },
+    agent_spawn: { verb: "start", kind: "execute", icon: "square-plus", target: ["{cli} agent"], detail: ["{prompt}"] },
     skills: { verb: "skills", kind: "edit", icon: "book", target: ["{action} {name}", "{action} from {source}", "{action}"] },
     app_console: { verb: "read", kind: "read", icon: "terminal", target: ["the app console"] },
     bitbucket_pulls: {

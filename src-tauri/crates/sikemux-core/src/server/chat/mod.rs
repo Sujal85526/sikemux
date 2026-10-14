@@ -146,7 +146,8 @@ pub(crate) struct Asked {
     pub reply: Value,
 }
 
-/// Who started a chat, and with which of the app's launchers.
+/// Who started a chat, a paired device or another agent, and with which of
+/// the app's launchers.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Origin {
@@ -235,8 +236,17 @@ impl Chat {
                 )),
                 _ => None,
             };
+            let ended = match &activity {
+                Some(Activity::Finished { cancelled }) => Some(*cancelled),
+                _ => None,
+            };
             if let Some(activity) = activity {
                 core.note_activity(self.agent_id(), activity);
+            }
+            if let Some(cancelled) = ended {
+                self.feed.emit(kind, payload);
+                super::spawn::turn_ended(&core, self.agent_id(), cancelled);
+                return;
             }
         }
         self.feed.emit(kind, payload);
@@ -271,6 +281,7 @@ impl Chat {
                 return;
             }
             core.note_activity(&agent_id, Activity::Finished { cancelled: false });
+            super::spawn::turn_ended(&core, &agent_id, false);
         });
     }
 
@@ -574,6 +585,16 @@ impl Chat {
 
     fn kept_by_provider(&self) -> bool {
         self.turned.load(Ordering::Acquire) || self.launch.resume_id.is_some()
+    }
+
+    /// The launch the agent runs with now, in the mode, model and effort
+    /// chosen since it started.
+    pub(crate) fn current_now(&self) -> ChatLaunch {
+        let current = self.current_launch();
+        self.relaunch(&current).unwrap_or_else(|| ChatLaunch {
+            permission_mode: self.feed.permission_mode(),
+            ..current
+        })
     }
 
     /// `launch` brought up to where the chat is: its session, once a turn has
@@ -1135,11 +1156,34 @@ pub(crate) fn begin(
     subscriber: Option<&Arc<ClientConn>>,
     launcher: Option<String>,
 ) -> CoreResult<Arc<Chat>> {
-    validate(&launch_spec)?;
     let origin = Origin {
         started_by: subscriber.and_then(|client| client.peer.device_id()),
         launcher,
     };
+    start(core, launch_spec, origin, subscriber)
+}
+
+/// Starts a chat agent another agent asked for, with `lead` as who started it.
+pub(crate) fn begin_worker(
+    core: &Arc<Core>,
+    launch_spec: ChatLaunch,
+    lead: &str,
+    launcher: Option<String>,
+) -> CoreResult<Arc<Chat>> {
+    let origin = Origin {
+        started_by: Some(lead.to_owned()),
+        launcher,
+    };
+    start(core, launch_spec, origin, None)
+}
+
+fn start(
+    core: &Arc<Core>,
+    launch_spec: ChatLaunch,
+    origin: Origin,
+    subscriber: Option<&Arc<ClientConn>>,
+) -> CoreResult<Arc<Chat>> {
+    validate(&launch_spec)?;
     let resume_id = launch_spec.resume_id.clone();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
     let naming = (

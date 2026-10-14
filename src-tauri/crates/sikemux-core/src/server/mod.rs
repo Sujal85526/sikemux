@@ -20,6 +20,7 @@ mod remote;
 mod seen;
 mod session;
 mod share;
+mod spawn;
 mod tools;
 mod upgrade;
 mod window;

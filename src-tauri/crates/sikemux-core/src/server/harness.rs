@@ -25,6 +25,7 @@ use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 
 use super::connection::blocking;
 use super::messages::{self, Mailbox, MailboxRecord};
+use super::spawn;
 use super::window::{self, Call};
 use super::{session, Core};
 use crate::skills;
@@ -142,6 +143,7 @@ pub(crate) struct Harness {
     plugin_waits: AtomicUsize,
     /// Messages between agents waiting for their turn to end.
     pub(crate) mailbox: Mailbox,
+    pub(crate) spawning: spawn::Spawning,
 }
 
 impl Harness {
@@ -161,6 +163,7 @@ impl Harness {
             plugins: watch::channel(0).0,
             plugin_waits: AtomicUsize::new(0),
             mailbox: Mailbox::default(),
+            spawning: spawn::Spawning::default(),
         }
     }
 
@@ -437,6 +440,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "events.wait" => events_wait(core, &request).await,
         "agent.list" => messages::list(core, &request).await,
         "agent.send" => messages::send(core, &request).await,
+        "agent.spawn" => spawn::spawn(core, &request).await,
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
         "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,

@@ -799,6 +799,40 @@ happened:
 An asleep agent is woken first, or once Sikemux is open again. Do not wait for
 an answer in a loop: carry on, and a reply arrives as a message of its own.
 
+### Starting an agent
+
+`agent_spawn` starts a new agent in your project and hands it `prompt`, its
+task, at most 64 KB. `cli` picks which agent, such as `claude` or `codex`, and
+`model` its model; leave `model` out for your own when it is your CLI, else the
+CLI's default. It opens in its own tab without taking the person there, runs on
+your account and in your permission mode, which you cannot change, and records
+you as the agent that started it: you are its lead. The answer gives its `name`
+and `agentId` at once; it gets the prompt, from you, once it is ready.
+
+Each time its turn ends, its final answer comes to you as a message from it,
+cut to about 4 KB, and saying when it was stopped before it finished. Pass
+`report: false` for an agent whose answers you do not need. Do not wait in a
+loop for it: carry on, and its answer arrives as a message. Message it with
+`agent_send` to steer it or give it more.
+
+Write the prompt as a full brief, since the new agent knows nothing of your
+conversation: the goal, the files and constraints, and what to answer with.
+Start one for work that is its own and runs alongside yours, not for a quick
+lookup your own subagents can do.
+
+Limits: an agent you started may start agents of its own, but one of theirs
+may not; one agent has at most six of its own open, and a project at most
+eight that agents started. A refusal says which limit it hit. When the person
+closes a lead, Sikemux asks them whether to stop its agents or keep them.
+
+### When an agent started you
+
+A prompt from your lead arrives as a message from it, and its note says it
+started you. Your final answer goes to your lead by itself each time your turn
+ends, so finish a turn with what your lead needs: what you did, what you
+found, and anything left open. Message your lead with `agent_send` only to ask
+it something mid-task.
+
 ### Messages you get
 
 A message from another agent arrives in your prompt like this:

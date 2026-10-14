@@ -1160,7 +1160,7 @@
       "name": "workspace_inspect",
       "row": {"verb": "inspect", "kind": "read", "icon": "folder", "target": ["the workspace"]},
       "method": "workspace.inspect",
-      "description": "Inspect the open project: tasks, runs, listening ports and the event cursor.",
+      "description": "Inspect the open project: tasks, runs and listening ports.",
       "properties": {},
       "required": []
     },
@@ -1168,7 +1168,7 @@
       "name": "task_start",
       "row": {"verb": "start", "kind": "execute", "icon": "run", "target": ["{taskId}", "{label}", "{command}"], "detail": ["{command}"]},
       "method": "task.start",
-      "description": "Start a sikemux.json task or any shell command in a managed terminal.",
+      "description": "Start a sikemux.json task or any shell command.",
       "properties": {
         "taskId": {
           "type": "string"
@@ -1408,6 +1408,36 @@
       "required": [
         "to",
         "text"
+      ]
+    },
+    {
+      "name": "agent_spawn",
+      "row": {"verb": "start", "kind": "execute", "icon": "square-plus", "target": ["{cli} agent"], "detail": ["{prompt}"]},
+      "method": "agent.spawn",
+      "description": "Start a Sikemux agent.",
+      "properties": {
+        "cli": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "report": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cli",
+        "prompt"
       ]
     },
     {
