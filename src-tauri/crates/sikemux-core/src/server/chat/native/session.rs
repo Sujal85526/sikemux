@@ -195,14 +195,13 @@ impl Sink {
             }
             TurnEnd::Failed { failure, response } => {
                 settle();
+                let failure = failure.payload(self.account.as_deref());
+                chat.turn_failing(&failure);
                 chat.emit(
                     ChatEventKind::TurnCompleted,
                     response.unwrap_or_else(|| json!({ "stopReason": "end_turn" })),
                 );
-                chat.emit(
-                    ChatEventKind::Error,
-                    failure.payload(self.account.as_deref()),
-                );
+                chat.emit(ChatEventKind::Error, failure);
             }
             TurnEnd::Refused(message) => {
                 settle();
@@ -537,12 +536,16 @@ pub(crate) async fn run<B: Backend>(
             Woke::Command(None) => break Outcome::Ended(SessionEnd::Requested),
             Woke::Closed(reason) => {
                 if chat.running.load(Ordering::Acquire) {
-                    chat.emit(ChatEventKind::Error, error_message(&reason));
+                    let failure = error_message(&reason);
+                    chat.turn_failing(&failure);
+                    chat.emit(ChatEventKind::Error, failure);
                 }
                 break Outcome::Ended(SessionEnd::Exited);
             }
             Woke::Broken(reason) => {
-                chat.emit(ChatEventKind::Error, error_message(reason));
+                let failure = error_message(reason);
+                chat.turn_failing(&failure);
+                chat.emit(ChatEventKind::Error, failure);
                 break Outcome::Ended(SessionEnd::Exited);
             }
             Woke::Failed(failed) => {
@@ -581,22 +584,21 @@ pub(crate) async fn run<B: Backend>(
                     break Outcome::Rebind(Box::new(rebind));
                 }
                 chat.running.store(false, Ordering::Release);
+                let failure = failed.failure.payload(current.as_deref());
+                chat.turn_failing(&failure);
                 if let Some(response) = failed.response {
                     chat.emit(ChatEventKind::TurnCompleted, response);
                 }
-                chat.emit(
-                    ChatEventKind::Error,
-                    failed.failure.payload(current.as_deref()),
-                );
+                chat.emit(ChatEventKind::Error, failure);
                 state.failed_prompt = state.last_prompt.take();
                 continue;
             }
             Woke::Stalled(stalled) => {
                 if chat.running.load(Ordering::Acquire) && state.turn == stalled {
-                    chat.emit(
-                        ChatEventKind::Error,
-                        error_message("The agent did not stop, so its session was restarted"),
-                    );
+                    let failure =
+                        error_message("The agent did not stop, so its session was restarted");
+                    chat.turn_failing(&failure);
+                    chat.emit(ChatEventKind::Error, failure);
                     break Outcome::Ended(SessionEnd::Exited);
                 }
                 continue;

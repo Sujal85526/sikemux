@@ -187,8 +187,7 @@ pub(crate) struct Chat {
     releasing: AtomicBool,
     /// A turn has started that the agent's lead has not yet heard the end of.
     unreported: AtomicBool,
-    /// Why the turn in progress went wrong, for the lead when the chat ends
-    /// before the turn does.
+    /// Why the turn in progress failed, said before the turn or the chat ends.
     failure: Mutex<Option<String>>,
 }
 
@@ -245,7 +244,10 @@ impl Chat {
                 _ => None,
             };
             let ended = match &activity {
-                Some(Activity::Finished { cancelled: false }) => Some(Ending::Finished),
+                Some(Activity::Finished { cancelled: false }) => Some(match self.take_failure() {
+                    Some(failure) => Ending::Failed(failure),
+                    None => Ending::Finished,
+                }),
                 Some(Activity::Finished { cancelled: true }) => Some(Ending::Stopped),
                 Some(Activity::Problem(message)) => self.turn_failed(message),
                 _ => None,
@@ -295,23 +297,32 @@ impl Chat {
         });
     }
 
-    /// How a turn ends when an error arrives: failed, once nothing is at work
-    /// on it any more. An error mid-turn is kept for when the chat ends first.
+    /// An error that arrives once nothing is at work on the turn any more
+    /// ended it.
     fn turn_failed(&self, message: &str) -> Option<Ending> {
-        if !self.unreported.load(Ordering::Acquire) {
-            return None;
-        }
-        if self.turn_running() || self.held.load(Ordering::Acquire) {
-            self.set_failure(Some(message.to_owned()));
-            return None;
-        }
-        Some(Ending::Failed(message.to_owned()))
+        let over = !self.turn_running() && !self.held.load(Ordering::Acquire);
+        (over && self.unreported.load(Ordering::Acquire))
+            .then(|| Ending::Failed(message.to_owned()))
+    }
+
+    /// The turn in progress failed, which the lead hears in place of its end,
+    /// or of the chat's when that comes first.
+    pub(crate) fn turn_failing(&self, failure: &Value) {
+        let message = failure
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        self.set_failure(Some(message.to_owned()));
     }
 
     fn set_failure(&self, failure: Option<String>) {
         if let Ok(mut slot) = self.failure.lock() {
             *slot = failure;
         }
+    }
+
+    fn take_failure(&self) -> Option<String> {
+        self.failure.lock().ok().and_then(|mut slot| slot.take())
     }
 
     /// Tells the agent's lead how its turn ended, once per turn.
@@ -332,7 +343,7 @@ impl Chat {
         let reason = match result {
             Err(error) => Some(error.clone()),
             Ok(SessionEnd::Requested) => None,
-            Ok(_) => self.failure.lock().ok().and_then(|mut slot| slot.take()),
+            Ok(_) => self.take_failure(),
         };
         super::spawn::turn_ended(core, self.agent_id(), Ending::Gone { reason, mid_turn });
     }
