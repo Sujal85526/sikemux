@@ -28,6 +28,11 @@ import { usePromptQueue } from "./usePromptQueue";
 import { useChatWorktree } from "./useChatWorktree";
 import { useStickToBottom } from "./useStickToBottom";
 import { mentionContext, useMates } from "./agentMentions";
+import { deliverToAgent } from "../agents/agentInbox";
+import type { AgentQuestion } from "../api/agentQuestions";
+import { AssumedQuestion, JustAnswered, OpenQuestion } from "./AgentQuestions";
+import type { OutgoingMessage } from "./queuedMessages";
+import { useChatQuestions } from "./useChatQuestions";
 
 /* Reading a whole transcript is one round trip to the parser, so this waits
    at most this long before showing it anyway. */
@@ -62,6 +67,20 @@ function useReadAfterReplay(replaying: boolean, messages: readonly ChatMessage[]
 function heldTranscript(shown: ChatState, next: ChatState): ChatState {
     return { ...next, messages: shown.messages, revision: shown.revision };
 }
+
+/** What the person sent as the answer to a question, with what they attached named in it. */
+function answerText({ text, paths, context }: OutgoingMessage): string {
+    return [
+        text,
+        ...(paths.length > 0 ? [`Attached:\n${paths.map((path) => `- ${path}`).join("\n")}`] : []),
+        ...context.map((item) => `${item.title}:\n${item.text}`),
+    ]
+        .filter(Boolean)
+        .join("\n\n");
+}
+
+const isEditable = (target: EventTarget | null): boolean =>
+    target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
 
 const ChatFind = lazy(() => import("./ChatFind"));
 const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
@@ -246,6 +265,48 @@ export function AgentChatPane({
         [agentRef, dispatch, mates],
     );
 
+    const questions = useChatQuestions(agent.id, state.messages, setComposerError);
+    const focusComposer = () =>
+        window.requestAnimationFrame(() => paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus());
+    const chooseAnswer = (question: AgentQuestion, choice: number) =>
+        void questions.answer(question, { choice }, question.choices[choice]?.label ?? null);
+    const writeAnswer = (question: AgentQuestion) => {
+        questions.write(question);
+        focusComposer();
+    };
+    const answerByKey = (digit: number): boolean => {
+        const question = questions.open[0];
+        if (!question || questions.writing || questions.busy) return false;
+        if (digit <= question.choices.length) chooseAnswer(question, digit - 1);
+        else if (digit === question.choices.length + 1) writeAnswer(question);
+        else return false;
+        return true;
+    };
+    const answerByKeyRef = useRef(answerByKey);
+    answerByKeyRef.current = answerByKey;
+    const asking = questions.open.length > 0;
+    useEffect(() => {
+        if (!active || !asking) return;
+        const onKey = (event: KeyboardEvent) => {
+            if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || !/^[1-9]$/.test(event.key)) return;
+            const held = document.activeElement;
+            if (isEditable(event.target) || (held && held !== document.body && !paneRef.current?.contains(held))) return;
+            if (answerByKeyRef.current(Number(event.key))) event.preventDefault();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [active, asking]);
+    const sendMessage = (message: OutgoingMessage, steerNow: boolean): boolean => {
+        const question = questions.composing;
+        if (!question) return worktree.sendMessage(message, steerNow);
+        const text = answerText(message);
+        if (!text) return false;
+        void questions.answer(question, { answer: text }, text).then((answered) => {
+            if (!answered) deliverToAgent(agent.id, message);
+        });
+        return true;
+    };
+
     const stop = () => {
         void acpApi.cancel(agent.id).catch((failure: unknown) => setComposerError(failure instanceof Error ? failure.message : String(failure)));
     };
@@ -402,6 +463,28 @@ export function AgentChatPane({
                                                 )}
                                             </div>
                                         )}
+                                        {questions.answered.map(({ question, answer }) => (
+                                            <JustAnswered key={question.id} question={question} answer={answer} />
+                                        ))}
+                                        {questions.open.map((question) => (
+                                            <OpenQuestion
+                                                key={question.id}
+                                                question={question}
+                                                busy={questions.busy === question.id}
+                                                writing={questions.writing && questions.composing?.id === question.id}
+                                                onChoose={(choice) => chooseAnswer(question, choice)}
+                                                onSomethingElse={() => writeAnswer(question)}
+                                            />
+                                        ))}
+                                        {questions.assumed.map((question) => (
+                                            <AssumedQuestion
+                                                key={question.id}
+                                                question={question}
+                                                busy={questions.busy === question.id}
+                                                onFine={() => void questions.answer(question, { fine: true }, null)}
+                                                onChange={() => writeAnswer(question)}
+                                            />
+                                        ))}
                                         {displayState.messages.length > 0 && (resuming || disconnected) && (
                                             <div className="chat-reconnect" role="status">
                                                 {resuming ? <span className="chat-activity-loader" aria-hidden="true" /> : <IconPlug size={13} />}
@@ -459,10 +542,10 @@ export function AgentChatPane({
                                     changingConfig={changingConfig}
                                     changingPermissions={changingPermissions}
                                     permissionApplied={state.connection !== "ready" || permissionMode === appliedPermissionMode}
-                                    placeholder={composerPlaceholder}
+                                    placeholder={questions.composing ? `Answer ${questions.composing.name}` : composerPlaceholder}
                                     error={composerError}
                                     onError={setComposerError}
-                                    onSend={worktree.sendMessage}
+                                    onSend={sendMessage}
                                     onSteerQueued={() => {
                                         if (queued.length > 0) void steer(queued);
                                     }}
@@ -472,6 +555,15 @@ export function AgentChatPane({
                                     onConfig={changeConfig}
                                     history={sentHistory}
                                     worktree={worktree}
+                                    answering={
+                                        questions.composing && {
+                                            name: questions.composing.name,
+                                            cli: questions.composing.cli,
+                                            question: questions.composing.text,
+                                            onRemove: questions.stopComposing,
+                                        }
+                                    }
+                                    onDigit={asking ? answerByKey : undefined}
                                 />
                             </div>
                             <div className="chat-drop-target" aria-hidden="true">

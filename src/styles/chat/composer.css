@@ -149,6 +149,11 @@
     color: var(--ink-dim);
 }
 
+.chat-context-chip.answering {
+    width: auto;
+    max-width: min(100%, 360px);
+}
+
 .chat-context-chip > span:not(.chat-context-mark) {
     overflow: hidden;
     font-size: calc(10.5px * var(--chat-text-em, 1));

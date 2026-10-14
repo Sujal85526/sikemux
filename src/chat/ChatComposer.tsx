@@ -24,6 +24,7 @@ import { imagesInClipboard, savePastedClipboard } from "./pasteImage";
 import { arrowsBrowse, recallPrompt, type HistoryPosition } from "./promptHistory";
 import { commandMatches, entryName, mergePaths, projectEntries, rankEntries, removeToken, tokenAt, type ProjectEntry } from "./composerInput";
 import { canSwitchMode } from "../agents/agentLaunch";
+import { isAgentType } from "../agents/catalog";
 import { receiveForAgent } from "../agents/agentInbox";
 import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
 import type { OutgoingMessage } from "./queuedMessages";
@@ -169,6 +170,29 @@ function ComposerContextChip({ item, onRemove }: { item: ComposerContext; onRemo
     );
 }
 
+export interface ComposerAnswering {
+    name: string;
+    cli: string;
+    question: string;
+    onRemove: () => void;
+}
+
+function AnsweringChip({ answering }: { answering: ComposerAnswering }) {
+    return (
+        <span className="chat-context-chip answering" title={answering.question}>
+            <span className="chat-context-mark">
+                {isAgentType(answering.cli) && <AgentIcon type={answering.cli} size={14} className={`agent-glyph ${answering.cli}`} />}
+            </span>
+            <span>
+                Answering {answering.name} · {answering.question}
+            </span>
+            <button type="button" aria-label="Stop answering" onClick={answering.onRemove}>
+                <IconClose size={11} />
+            </button>
+        </span>
+    );
+}
+
 /* The composer keeps the draft to itself: a keystroke redraws these few rows
    rather than the transcript above them. */
 export function ChatComposer({
@@ -197,6 +221,8 @@ export function ChatComposer({
     onConfig,
     history,
     worktree,
+    answering,
+    onDigit,
 }: {
     agent: Agent;
     profile?: ProviderProfile;
@@ -223,6 +249,10 @@ export function ChatComposer({
     onConfig: (config: SessionConfig, value: string) => void;
     history: readonly string[];
     worktree?: { state: WorktreeSwitchState; toggle: () => void };
+    /** The question an agent asked that whatever is sent answers. */
+    answering?: ComposerAnswering | null;
+    /** A number key pressed in the empty box; true when it answered something. */
+    onDigit?: (digit: number) => boolean;
 }) {
     const [draft, setDraft] = useState("");
     const [historyPosition, setHistoryPosition] = useState<HistoryPosition | null>(null);
@@ -581,8 +611,9 @@ export function ChatComposer({
             )}
             {menu && <ComposerMenu menu={menu} selected={selected} />}
             <div className="chat-field">
-                {(attachments.length > 0 || contexts.length > 0) && (
+                {(attachments.length > 0 || contexts.length > 0 || answering) && (
                     <div className="chat-attachments">
+                        {answering && <AnsweringChip answering={answering} />}
                         {attachments.map((path) => (
                             <ComposerAttachment
                                 key={path}
@@ -649,6 +680,10 @@ export function ChatComposer({
                             }
                         }
                         const plainKey = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing;
+                        if (plainKey && onDigit && /^[1-9]$/.test(event.key) && !event.currentTarget.value && onDigit(Number(event.key))) {
+                            event.preventDefault();
+                            return;
+                        }
                         // Escape first lets go of a selection. It stops a running turn only from an empty box, so a half-written message never stops the agent.
                         if (event.key === "Escape" && plainKey) {
                             const box = event.currentTarget;

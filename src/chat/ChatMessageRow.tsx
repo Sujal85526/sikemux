@@ -18,6 +18,7 @@ import {
 import { Tooltip } from "../ui/Tooltip";
 import { isAgentType } from "../agents/catalog";
 import { messageLetters, type AgentLetter } from "./agentLetters";
+import { AnsweredQuestion } from "./AgentQuestions";
 import { MessageEditor } from "./MessageEditor";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
@@ -269,21 +270,27 @@ function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[];
     return (
         <article className="chat-message agent-letter">
             <div className="chat-message-content">
-                {letters.map((letter, index) => (
-                    <Fragment key={index}>
-                        <div className="chat-letter-from" title={letter.agentId}>
-                            <span className="chat-letter-rule" />
-                            {isAgentType(letter.cli) && <AgentIcon type={letter.cli} size={14} className={`agent-glyph ${letter.cli}`} />}
-                            <span>
-                                Message from <b>{letter.name}</b>
-                            </span>
-                            <span className="chat-letter-rule" />
+                {letters.map((letter, index) =>
+                    letter.kind === "answer" ? (
+                        <div key={index} className="chat-letter-answer">
+                            <AnsweredQuestion letter={letter} />
                         </div>
-                        <div className="chat-markdown">
-                            <FoldedMarkdown id={`${id}-letter-${index}`} text={letter.text} live={false} />
-                        </div>
-                    </Fragment>
-                ))}
+                    ) : (
+                        <Fragment key={index}>
+                            <div className="chat-letter-from" title={letter.agentId}>
+                                <span className="chat-letter-rule" />
+                                {isAgentType(letter.cli) && <AgentIcon type={letter.cli} size={14} className={`agent-glyph ${letter.cli}`} />}
+                                <span>
+                                    Message from <b>{letter.name}</b>
+                                </span>
+                                <span className="chat-letter-rule" />
+                            </div>
+                            <div className="chat-markdown">
+                                <FoldedMarkdown id={`${id}-letter-${index}`} text={letter.text} live={false} />
+                            </div>
+                        </Fragment>
+                    ),
+                )}
                 <div className="chat-message-meta">
                     <CopyButton value={letters.map((letter) => letter.text).join("\n\n")} label="message" size={15} />
                     {at !== null && <SentTime at={at} took={null} />}
