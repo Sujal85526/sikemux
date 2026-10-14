@@ -14,41 +14,9 @@ import { basename } from "../lib/paths";
 import { SendToAgentMenu } from "../agents/SendToAgentMenu";
 import { getState } from "../state/store";
 import { terminalName, terminalSelectionDelivery } from "./selectionDelivery";
-import { whenStageStill } from "../state/nativeViews";
 
 export const TERMINAL_RENDERER_RETENTION = Object.freeze({ keepaliveMs: 15_000, maxHidden: 3 });
 const hiddenRendererEvictions = new Map<symbol, () => void>();
-
-/*
- * Starting a terminal lays out the page and draws every row, and a screen that
- * comes back starts all of its terminals at once. Doing that while the screen
- * slides in froze the slide, so they start once the stage stops, one a frame,
- * the focused one first.
- */
-const waitingToStart: Array<() => void> = [];
-let startFrame = 0;
-
-function startNext(): void {
-    startFrame = 0;
-    waitingToStart.shift()?.();
-    if (waitingToStart.length > 0) startFrame = requestAnimationFrame(startNext);
-}
-
-function startInTurn(start: () => void, first: boolean): () => void {
-    let queued = false;
-    const stopWaiting = whenStageStill(() => {
-        queued = true;
-        if (first) waitingToStart.unshift(start);
-        else waitingToStart.push(start);
-        if (!startFrame) startFrame = requestAnimationFrame(startNext);
-    });
-    return () => {
-        stopWaiting();
-        if (!queued) return;
-        const at = waitingToStart.indexOf(start);
-        if (at >= 0) waitingToStart.splice(at, 1);
-    };
-}
 
 function enforceHiddenRendererBudget() {
     while (hiddenRendererEvictions.size > TERMINAL_RENDERER_RETENTION.maxHidden) {
@@ -175,8 +143,8 @@ export function TerminalPane({
         };
         if (visible) {
             hiddenRendererEvictions.delete(token);
-            if (shouldMount) return;
-            return startInTurn(() => setShouldMount(true), active);
+            setShouldMount(true);
+            return;
         }
         if (!shouldMount) return;
         hiddenRendererEvictions.delete(token);
@@ -187,7 +155,7 @@ export function TerminalPane({
             window.clearTimeout(id);
             hiddenRendererEvictions.delete(token);
         };
-    }, [visible, shouldMount, active]);
+    }, [visible, shouldMount]);
 
     const controller = useXterm({
         hostRef,

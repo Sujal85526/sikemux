@@ -41,6 +41,41 @@ const MAX_RENDERER_BACKLOG_CHUNKS = 512;
 const RENDERER_STABLE_RESET_MS = 5_000;
 const WEBGL_REQUESTED = terminalWebglRequested(import.meta.env.VITE_TERMINAL_WEBGL);
 
+/*
+ * Starting a terminal lays out the page and draws every row, and a screen that
+ * comes on stage starts all of its terminals at once. Doing that while the
+ * screen slides in froze the slide, so they start once the stage stops, one a
+ * frame, the focused one first.
+ */
+const waitingToStart: Array<() => void> = [];
+let startFrame = 0;
+
+function startNext(): void {
+    startFrame = 0;
+    waitingToStart.shift()?.();
+    if (waitingToStart.length > 0) startFrame = requestAnimationFrame(startNext);
+}
+
+function startInTurn(start: () => void, first: boolean): () => void {
+    let queued = false;
+    const stopWaiting = whenStageStill(() => {
+        queued = true;
+        if (first) waitingToStart.unshift(start);
+        else waitingToStart.push(start);
+        if (!startFrame) startFrame = requestAnimationFrame(startNext);
+    });
+    return () => {
+        stopWaiting();
+        if (!queued) return;
+        const at = waitingToStart.indexOf(start);
+        if (at >= 0) waitingToStart.splice(at, 1);
+        if (waitingToStart.length === 0 && startFrame) {
+            cancelAnimationFrame(startFrame);
+            startFrame = 0;
+        }
+    };
+}
+
 function settlePtyOperation(operation: Promise<unknown>): void {
     // PtyLifecycleController records the operation failure. Renderer event
     // handlers only need to contain the rejection so it cannot reach window.
@@ -186,6 +221,7 @@ export function useXterm(opts: {
         let restartTimer: number | null = null;
         let stableTimer: number | null = null;
         const restartBackoff = new RendererRestartBackoff();
+        let startNow = () => {};
 
         const scheduleRendererRestart = () => {
             if (disposed || restartTimer !== null) return;
@@ -197,7 +233,7 @@ export function useXterm(opts: {
             restartTimer = window.setTimeout(() => {
                 restartTimer = null;
                 delete host.dataset.terminalOutput;
-                bootRef.current();
+                startNow();
             }, decision.delayMs);
         };
 
@@ -731,12 +767,22 @@ export function useXterm(opts: {
                     ]).catch(() => {});
                 }, 0);
             }, boot);
-        bootRef.current = fontsThenBoot;
+        let stopWaitingToStart: (() => void) | null = null;
+        const startWhenStill = () => {
+            if (disposed || termRef.current || bootingRef.current || stopWaitingToStart) return;
+            stopWaitingToStart = startInTurn(() => {
+                stopWaitingToStart = null;
+                fontsThenBoot();
+            }, activeRef.current);
+        };
+        bootRef.current = startWhenStill;
+        startNow = fontsThenBoot;
 
-        fontsThenBoot();
+        startWhenStill();
 
         return () => {
             disposed = true;
+            stopWaitingToStart?.();
             bootRef.current = () => {};
             if (restartTimer !== null) window.clearTimeout(restartTimer);
             if (stableTimer !== null) window.clearTimeout(stableTimer);
