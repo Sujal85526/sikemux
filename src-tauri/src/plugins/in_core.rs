@@ -10,7 +10,7 @@ use sikemux_core::server::plugins::{Answer, Failure, Listing, Plugins, Sink};
 use sikemux_plugin_api::{AgentTool, StreamSink};
 use sikemux_process::user_environment::UserEnvironment;
 
-use super::PluginHost;
+use super::host::PluginHost;
 use crate::error::AppError;
 
 struct InCore(PluginHost);
@@ -29,7 +29,6 @@ fn failure(plugin: &str, error: AppError) -> Failure {
 
 impl Plugins for InCore {
     fn manifests(&self) -> Vec<Value> {
-        self.0.read_disabled();
         self.0
             .manifests()
             .iter()
@@ -47,7 +46,6 @@ impl Plugins for InCore {
 
     fn call<'a>(&'a self, plugin: &'a str, method: &'a str, params: Value) -> Answer<'a, Value> {
         Box::pin(async move {
-            self.0.read_disabled();
             self.0
                 .call(plugin, method, params)
                 .await
@@ -63,7 +61,6 @@ impl Plugins for InCore {
         sink: Sink,
     ) -> Answer<'a, ()> {
         Box::pin(async move {
-            self.0.read_disabled();
             self.0
                 .stream(plugin, method, params, StreamSink::new(sink))
                 .await
@@ -72,15 +69,11 @@ impl Plugins for InCore {
     }
 
     fn agent_tools<'a>(&'a self, remotes: &'a [String]) -> Listing<'a> {
-        Box::pin(async move {
-            self.0.read_disabled();
-            describe(self.0.agent_tools_for(remotes).await)
-        })
+        Box::pin(async move { describe(self.0.agent_tools_for(remotes).await) })
     }
 
     fn call_agent_tool<'a>(&'a self, name: &'a str, arguments: Value) -> Answer<'a, Value> {
         Box::pin(async move {
-            self.0.read_disabled();
             self.0
                 .call_agent_tool(name, arguments)
                 .await

@@ -63,7 +63,7 @@ mod without_page_script;
 use acp::AcpManager;
 use browser::BrowserManager;
 use observability::UiWatchdogState;
-use plugins::PluginHost;
+use plugins::PluginStreams;
 use pty::PtyManager;
 use sikemux_process as bounded_process;
 use sim::SimManager;
@@ -180,7 +180,7 @@ pub fn run() {
                 if let Some(browser) = window.try_state::<BrowserManager>() {
                     browser.drain("the window closed");
                 }
-                if let Some(plugins) = window.try_state::<PluginHost>() {
+                if let Some(plugins) = window.try_state::<PluginStreams>() {
                     plugins.drain();
                 }
                 lsp::drain_all();
@@ -213,7 +213,7 @@ pub fn run() {
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
                     browser.drain(&format!("the window started loading {}", payload.url()));
                 }
-                if let Some(plugins) = webview.try_state::<PluginHost>() {
+                if let Some(plugins) = webview.try_state::<PluginStreams>() {
                     plugins.drain();
                 }
                 if let Some(sim) = webview.try_state::<SimManager>() {
@@ -226,10 +226,7 @@ pub fn run() {
             _app.manage(UiWatchdogState::start()?);
             model_providers::init(&_app.path().app_data_dir()?);
             skills::watch_global(_app.handle().clone());
-            _app.manage(PluginHost::with_builtins(
-                &_app.path().app_data_dir()?.join("plugins"),
-                &_app.package_info().version,
-            )?);
+            _app.manage(PluginStreams::default());
             let sim = SimManager::default();
             _app.manage(sim.clone());
             _app.manage(SimulatorManager::for_app(_app.handle().clone(), sim));
@@ -577,7 +574,7 @@ pub fn run() {
                 if let Some(browser) = app_handle.try_state::<BrowserManager>() {
                     browser.drain("Sikemux is quitting");
                 }
-                if let Some(plugins) = app_handle.try_state::<PluginHost>() {
+                if let Some(plugins) = app_handle.try_state::<PluginStreams>() {
                     plugins.drain();
                 }
                 if let Some(voice) = app_handle.try_state::<VoiceManager>() {

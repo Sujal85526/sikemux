@@ -13,7 +13,6 @@ use tauri::async_runtime::spawn_blocking;
 
 use crate::{
     error::{AppError, AppResult},
-    plugins,
     pty::PtyManager,
     state::state_load_sync,
 };
@@ -25,17 +24,12 @@ use crate::{
 /// launched from a terminal that already has the right PATH.
 ///
 /// So every child gets the `PATH` the user's login shell resolves, its
-/// locale, the SSH agent it points at, plus any variable a plugin reads that
-/// the app was not already started with. Reading the shell takes as long as
+/// locale and the SSH agent it points at. Reading the shell takes as long as
 /// the user's rc files do, so it runs beside window creation rather than ahead
 /// of it.
 pub fn user_environment() -> UserEnvironment {
     let shell = login_shell_environment();
-    let mut variables: HashMap<String, String> = plugins::shell_variables()
-        .into_iter()
-        .filter(|name| std::env::var_os(name).is_none())
-        .filter_map(|name| Some((name.clone(), shell.get(&name)?.clone())))
-        .collect();
+    let mut variables = HashMap::new();
     // An app opened from the Dock has no locale, so tools fall back to ASCII.
     for (key, value) in sikemux_pty::user_shell::login_shell_locale() {
         variables.insert(key.clone(), value.clone());
@@ -342,7 +336,7 @@ fn current_fd_limit() -> (Option<u64>, Option<u64>) {
 #[tauri::command]
 pub async fn runtime_diagnostics(
     ptys: tauri::State<'_, PtyManager>,
-    plugins: tauri::State<'_, crate::plugins::PluginHost>,
+    plugins: tauri::State<'_, crate::plugins::PluginStreams>,
 ) -> AppResult<RuntimeDiagnostics> {
     // Counting /dev/fd is a directory read, so it goes to the blocking pool
     // even though everything else here is in-memory bookkeeping.
@@ -373,7 +367,7 @@ pub async fn runtime_diagnostics(
         lsp_idle_servers,
         repo_watchers: crate::fs_watch::watch_count(),
         agent_session_watchers: crate::agents::watch_count(),
-        plugin_streams: plugins.stream_count(),
+        plugin_streams: plugins.count(),
         observability: crate::observability::global_observability().snapshot(),
     })
 }
