@@ -127,6 +127,14 @@ impl Board {
             .ok_or_else(|| format!("There is no card #{id} on this project's board"))
     }
 
+    fn blocked(&self) -> Vec<u64> {
+        self.cards
+            .iter()
+            .filter(|card| !self.waits_on(card).is_empty())
+            .map(|card| card.id)
+            .collect()
+    }
+
     fn card_mut(&mut self, id: u64) -> Result<&mut Card, String> {
         self.cards
             .iter_mut()
@@ -219,6 +227,9 @@ struct State {
     told_window: Option<ClientId>,
     /// Each card the board told an idle agent of, by project, card and agent.
     offered: HashSet<(String, u64, String)>,
+    /// Agents whose turn the board started to offer them cards, and that have
+    /// done nothing on the board since.
+    woken: HashSet<String>,
 }
 
 pub(crate) struct Boards {
@@ -741,6 +752,9 @@ fn add_card(
     board.cards.push(card);
     let card = board.card(id)?;
     let mut view = agent_view(core, board, card, true);
+    if let By::Agent(agent) = by {
+        state.woken.remove(agent);
+    }
     boards.save(&mut state, project);
     if let (Some(note), Some(fields)) = (note, view.as_object_mut()) {
         fields.insert("note".into(), note.into());
@@ -789,6 +803,7 @@ fn claim_card(core: &Core, project: &str, agent: &str, id: u64) -> Result<Value,
     take(core, card, agent);
     let card = board.card(id)?;
     let view = agent_view(core, board, card, true);
+    state.woken.remove(agent);
     boards.save(&mut state, project);
     Ok(view)
 }
@@ -828,12 +843,7 @@ fn change_card(
     if let Some(parent) = changes.parent {
         board.check_parent(Some(id), parent)?;
     }
-    let blocked_before: Vec<u64> = board
-        .cards
-        .iter()
-        .filter(|card| !board.waits_on(card).is_empty())
-        .map(|card| card.id)
-        .collect();
+    let blocked_before = board.blocked();
     let card = board.card_mut(id)?;
     if let Some(title) = changes.title {
         card.title = title;
@@ -871,17 +881,26 @@ fn change_card(
     card.updated_at = unix_ms();
     let after = card.clone();
     let mut notices = Vec::new();
-    if let (By::Person, Some(owner)) = (by, before.owner.as_deref()) {
+    let changer = match by {
+        By::Person => Some("The person".to_owned()),
+        By::Agent(agent) if before.owner.as_deref() != Some(agent.as_str()) => {
+            Some(name_of(core, agent))
+        }
+        By::Agent(_) => None,
+    };
+    if let (Some(changer), Some(owner), Status::Progress) =
+        (changer, before.owner.as_deref(), before.status)
+    {
         let text = if after.owner.is_none() {
             format!(
-                "The person moved your card {} back to Open, so it is no longer yours. Stop working on it unless they tell you otherwise.",
+                "{changer} moved your card {} back to Open, so it is no longer yours. Stop working on it unless they tell you otherwise.",
                 before.label()
             )
-        } else if after.status == Status::Done && before.status != Status::Done {
-            format!("The person marked your card {} done.", after.label())
+        } else if after.status == Status::Done {
+            format!("{changer} marked your card {} done.", after.label())
         } else {
             format!(
-                "The person changed your card {}; board_list with card {id} shows it as it is now.",
+                "{changer} changed your card {}; board_list with card {id} shows it as it is now.",
                 after.label()
             )
         };
@@ -890,26 +909,20 @@ fn change_card(
             text,
         });
     }
-    for card in &board.cards {
-        if !blocked_before.contains(&card.id) || !board.waits_on(card).is_empty() {
-            continue;
-        }
-        let Some(owner) = card.owner.as_deref() else {
-            continue;
-        };
-        if matches!(by, By::Agent(agent) if agent == owner) {
-            continue;
-        }
-        notices.push(Notice {
-            to: owner.to_owned(),
-            text: format!(
-                "Every card your card {} waits on is done, so it can go ahead.",
-                card.label()
-            ),
-        });
+    notices.extend(unblocked(board, &blocked_before, by));
+    if after.status == Status::Open && before.status != Status::Open {
+        state
+            .offered
+            .retain(|(other, card, _)| !(other == project && *card == id));
     }
-    let card = board.card(id)?;
-    let view = agent_view(core, board, card, true);
+    let board = state
+        .boards
+        .get(project)
+        .ok_or_else(|| format!("There is no card #{id} on this project's board"))?;
+    let view = agent_view(core, board, board.card(id)?, true);
+    if let By::Agent(agent) = by {
+        state.woken.remove(agent);
+    }
     boards.save(&mut state, project);
     Ok((view, notices))
 }
@@ -922,6 +935,7 @@ fn remove_card(core: &Core, project: &str, id: u64) -> Result<Vec<Notice>, Strin
         .get_mut(project)
         .ok_or_else(|| format!("There is no card #{id} on this project's board"))?;
     let removed = board.card(id)?.clone();
+    let blocked_before = board.blocked();
     board.cards.retain(|card| card.id != id);
     for card in &mut board.cards {
         card.depends_on.retain(|other| *other != id);
@@ -929,20 +943,45 @@ fn remove_card(core: &Core, project: &str, id: u64) -> Result<Vec<Notice>, Strin
             card.parent = removed.parent;
         }
     }
+    let mut notices = unblocked(board, &blocked_before, &By::Person);
     boards.save(&mut state, project);
-    let label = removed.label();
-    Ok(removed
-        .owner
-        .filter(|_| removed.status == Status::Progress)
-        .map(|owner| Notice {
+    if let (Some(owner), Status::Progress) = (removed.owner.clone(), removed.status) {
+        notices.push(Notice {
             to: owner,
             text: format!(
                 "The person took your card {} off the board. Stop working on it unless they tell you otherwise.",
-                label
+                removed.label()
             ),
+        });
+    }
+    Ok(notices)
+}
+
+/// Tells the owner of each card in progress that waited on others before a
+/// change and no longer does.
+fn unblocked(board: &Board, blocked_before: &[u64], by: &By) -> Vec<Notice> {
+    board
+        .cards
+        .iter()
+        .filter(|card| {
+            card.status == Status::Progress
+                && blocked_before.contains(&card.id)
+                && board.waits_on(card).is_empty()
         })
-        .into_iter()
-        .collect())
+        .filter_map(|card| {
+            let owner = card.owner.as_deref()?;
+            if matches!(by, By::Agent(agent) if agent == owner) {
+                return None;
+            }
+            Some(Notice {
+                to: owner.to_owned(),
+                text: format!(
+                    "Every card your card {} waits on is done, so it can go ahead.",
+                    card.label()
+                ),
+            })
+        })
+        .collect()
 }
 
 fn send_notices(core: &Arc<Core>, notices: Vec<Notice>) {
@@ -1248,7 +1287,10 @@ fn offer(core: &Arc<Core>) {
     {
         let mut state = core.boards.lock();
         let State {
-            boards, offered, ..
+            boards,
+            offered,
+            woken,
+            ..
         } = &mut *state;
         for (agent, project) in workers {
             let Some(board) = boards.get(&project) else {
@@ -1283,6 +1325,7 @@ fn offer(core: &Arc<Core>) {
             for card in &free {
                 offered.insert((project.clone(), card.id, agent.clone()));
             }
+            woken.insert(agent.clone());
             offers.push((
                 agent,
                 free.iter().map(|card| card.label()).collect(),
@@ -1300,15 +1343,34 @@ fn offer(core: &Arc<Core>) {
         );
         let core = core.clone();
         tokio::spawn(async move {
-            let _ = messages::from_board(&core, agent, text, note).await;
+            let sent = messages::from_board(&core, agent.clone(), text, note).await;
+            let new_turn = sent.is_ok_and(|sent| sent["delivery"] == "newTurn");
+            if !new_turn {
+                core.boards.lock().woken.remove(&agent);
+            }
         });
     }
+}
+
+/// Whether the agent's turn was one the board started to offer it cards, in
+/// which it took none and changed nothing on the board. Ends that turn's mark.
+pub(crate) fn offer_turn_ignored(core: &Core, agent_id: &str) -> bool {
+    core.boards.lock().woken.remove(agent_id)
+}
+
+/// Something besides the board's offer reached the agent in the turn the
+/// offer started, so that turn's end is worth reporting.
+pub(crate) fn reached_by_more_than_offer(core: &Core, agent_id: &str) {
+    core.boards.lock().woken.remove(agent_id);
 }
 
 /// Offers idle workers their team's free cards and sends the window the
 /// boards that changed.
 pub(crate) fn tick(core: &Arc<Core>) {
     offer(core);
+    if !core.boards.lock().dirty.is_empty() {
+        core.harness.questions.boards_changed();
+    }
     tell_window(core);
 }
 

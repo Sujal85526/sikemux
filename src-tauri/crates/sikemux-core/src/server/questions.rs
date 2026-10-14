@@ -183,6 +183,14 @@ impl Questions {
             .any(|question| question.agent_id == agent_id && question.blocked)
     }
 
+    /// The boards changed, which may change the ticket a question names.
+    pub(crate) fn boards_changed(&self) {
+        let mut state = self.lock();
+        if !state.open.is_empty() {
+            state.dirty = true;
+        }
+    }
+
     /// A lead's message to its agent answers what that agent asked it.
     pub(crate) fn lead_replied(&self, lead: &str, agent_id: &str) {
         let mut state = self.lock();

@@ -24,6 +24,7 @@ use super::{agent, workspace, Core};
 
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_WAITING: usize = 10;
+const BOARD: &str = "board";
 /// The same text to the same agent again within this long is dropped.
 const REPEAT_WINDOW_MS: u64 = 2 * 60 * 1000;
 /// Two agents answering each other forever stop here.
@@ -123,8 +124,10 @@ impl Mailbox {
             .iter()
             .rev()
             .find(|sent| sent.digest == digest && now.saturating_sub(sent.at) < REPEAT_WINDOW_MS);
-        // Each answer closes a question of its own, however alike two answers read.
-        if let Some(repeat) = repeat.filter(|_| letter.answers.is_none()) {
+        // Each answer closes a question of its own, however alike two answers
+        // read, and a board note repeats only because the same change happened again.
+        if let Some(repeat) = repeat.filter(|_| letter.answers.is_none() && letter.from_id != BOARD)
+        {
             return Ok(Admitted::Repeat {
                 seconds_ago: now.saturating_sub(repeat.at) / 1000,
             });
@@ -615,7 +618,7 @@ pub(crate) async fn from_board(
         .map_err(|error| error.to_string())?
     };
     let letter = Letter {
-        from_id: "board".to_owned(),
+        from_id: BOARD.to_owned(),
         from_name: "Board".to_owned(),
         cli: "sikemux".to_owned(),
         text,
@@ -736,6 +739,9 @@ async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Va
         }
     }
     mailbox.note_sent(&letter, &target.agent_id);
+    if letter.from_id != BOARD {
+        super::board::reached_by_more_than_offer(core, &target.agent_id);
+    }
     let text = wrapped(&letter);
     if held.is_none() && mailbox.has_waiting(&target.agent_id) {
         held = Some("already has messages waiting");
