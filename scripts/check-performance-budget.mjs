@@ -149,9 +149,10 @@ const budgets = [
     // of its own, chat, which a shared chat's pane loads too.
     // Main went past this budget on its own; this restores the room.
     // Agents messaging, asking and spawning each other added real chat UI: questions, the @ menu's agents and earlier chats.
+    // The model picker's row of who pays for a chat's turns added the last 2 KB.
     label: "ACP chat lazy chunk",
     pattern: /^(?:AgentSurface|chat)-.*\.js$/,
-    raw: 170_000,
+    raw: 172_000,
     gzip: 54_000,
   },
   {
