@@ -3,8 +3,8 @@ use serde::Serialize;
 
 use super::branches::{read_branches, GitBranch};
 use super::status::{
-    cached_walk, overview_cache, read_status, status_cache, store_walk, watched_generation,
-    GitStatus,
+    cached_status, cached_walk, moves_only_itself, read_status, store_walk, stored_walk,
+    watched_generation, watched_status, GitStatus, WalkCache,
 };
 use super::{git_walk_permit, open_repo, run_blocking};
 
@@ -20,6 +20,8 @@ pub struct GitCommit {
     /// Stable key for the author colour chip (initials avatar).
     author_email: String,
     date: String,
+    #[serde(skip)]
+    time: i64,
     pub(super) subject: String,
     /// The agents its trailers say wrote it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -229,6 +231,7 @@ pub(super) fn describe_commits(
             author: commit.author().name().unwrap_or("").to_string(),
             author_email: commit.author().email().unwrap_or("").to_string(),
             date: relative_time(commit.time().seconds()),
+            time: commit.time().seconds(),
             subject: commit.summary().ok().flatten().unwrap_or("").to_string(),
             agents: sikemux_core::trailers::agents(commit.message().unwrap_or_default()),
             unpushed: unpushed.contains(&oid),
@@ -244,32 +247,74 @@ pub async fn git_log(repo: String) -> Result<Vec<GitCommit>, String> {
     run_blocking(move || read_log(&open_repo(&repo)?, 60)).await
 }
 
+/// The branches and recent commits, which only a change under `.git` moves.
+#[derive(Clone)]
+struct History {
+    branches: Vec<GitBranch>,
+    log: Vec<GitCommit>,
+}
+
+impl History {
+    fn read(repo: &Repository) -> Result<Self, String> {
+        Ok(Self {
+            branches: read_branches(repo)?,
+            log: read_log(repo, 60)?,
+        })
+    }
+
+    fn with_status(mut self, status: GitStatus) -> GitOverview {
+        for commit in &mut self.log {
+            commit.date = relative_time(commit.time);
+        }
+        GitOverview {
+            status,
+            branches: self.branches,
+            log: self.log,
+        }
+    }
+}
+
+fn history_cache() -> &'static WalkCache<History> {
+    static C: std::sync::OnceLock<WalkCache<History>> = std::sync::OnceLock::new();
+    C.get_or_init(Default::default)
+}
+
+/// The watched repo `key`'s history at `generation`, read again only when
+/// something other than its working tree moved since the last read.
+fn watched_history(repo: &Repository, key: &str, generation: u64) -> Result<History, String> {
+    let kept = stored_walk(history_cache(), key).filter(|(read_at, _)| {
+        *read_at == generation
+            || crate::fs_watch::changed_paths_since(key, *read_at)
+                .is_some_and(|moved| moved.iter().all(|path| moves_only_itself(path)))
+    });
+    let history = match kept {
+        Some((_, history)) => history,
+        None => History::read(repo)?,
+    };
+    store_walk(history_cache(), key.to_owned(), generation, history.clone());
+    Ok(history)
+}
+
 #[tauri::command]
 pub async fn git_overview(repo: String) -> Result<GitOverview, String> {
     let watched = watched_generation(&repo);
     if let Some((key, generation)) = &watched {
-        if let Some(hit) = cached_walk(overview_cache(), key, *generation) {
-            return Ok(hit);
+        let status = cached_status(key, *generation);
+        let history = cached_walk(history_cache(), key, *generation);
+        if let (Some(status), Some(history)) = (status, history) {
+            return Ok(history.with_status(status));
         }
     }
     let _permit = git_walk_permit().await?;
     run_blocking(move || -> Result<GitOverview, String> {
         let r = open_repo(&repo)?;
-        let overview = GitOverview {
-            status: read_status(&r)?,
-            branches: read_branches(&r)?,
-            log: read_log(&r, 60)?,
-        };
-        if let Some((key, generation)) = watched {
-            store_walk(
-                status_cache(),
-                key.clone(),
-                generation,
-                overview.status.clone(),
-            );
-            store_walk(overview_cache(), key, generation, overview.clone());
+        match watched {
+            Some((key, generation)) => {
+                let status = watched_status(&r, &key, generation)?;
+                Ok(watched_history(&r, &key, generation)?.with_status(status))
+            }
+            None => Ok(History::read(&r)?.with_status(read_status(&r)?)),
         }
-        Ok(overview)
     })
     .await
 }
