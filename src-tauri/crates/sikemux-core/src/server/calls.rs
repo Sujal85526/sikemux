@@ -301,6 +301,8 @@ struct CheckoutParams {
     /// The asker's name for the checkout's current state, when it watches it.
     #[serde(default)]
     generation: Option<String>,
+    #[serde(default)]
+    moved: Option<edits::Moved>,
 }
 
 /// Which agent wrote each uncommitted line of a checkout.
@@ -308,7 +310,13 @@ async fn change_owners(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<O
     let core = core.clone();
     blocking(move || {
         Ok(match &params.generation {
-            Some(generation) => edits::owners_at(&core, &params.dir, params.staged, generation),
+            Some(generation) => edits::owners_at(
+                &core,
+                &params.dir,
+                params.staged,
+                generation,
+                params.moved.as_ref(),
+            ),
             None => edits::owners(&core, &params.dir, params.staged),
         }?)
     })

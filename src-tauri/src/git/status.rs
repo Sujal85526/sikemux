@@ -281,18 +281,12 @@ fn patched_status(
     if walk.walked_at.elapsed() > PATCHED_STATUS_LIFETIME {
         return None;
     }
-    let moved = crate::fs_watch::changed_paths_since(key, since)?;
-    if moved.len() > MAX_PATCHED_PATHS || !moved.iter().all(|path| moves_only_itself(path)) {
-        return None;
-    }
     // A staged rename is listed under its old path, so an edit to its new
     // path changes an entry the moved path does not name.
     if walk.status.files.iter().any(|file| file.index == "R") {
         return None;
     }
-    if !is_plain_checkout(repo, key) {
-        return None;
-    }
+    let moved = moved_since(repo, key, since)?;
     let mut status = walk.status.clone_head();
     if moved.is_empty() {
         status.files = walk.status.files.clone();
@@ -305,6 +299,16 @@ fn patched_status(
     let fresh = read_files(repo, &moved).ok()?;
     status.files = merge_files(&walk.status.files, fresh, &moved, ignore_case);
     Some(status)
+}
+
+/// The paths moved in the watched checkout `key` after change `since`, when
+/// asking git again of only them gives what asking of everything would.
+pub(super) fn moved_since(repo: &Repository, key: &str, since: u64) -> Option<Vec<String>> {
+    let moved = crate::fs_watch::changed_paths_since(key, since)?;
+    let patchable = moved.len() <= MAX_PATCHED_PATHS
+        && moved.iter().all(|path| moves_only_itself(path))
+        && is_plain_checkout(repo, key);
+    patchable.then_some(moved)
 }
 
 /// A checkout whose own `.git` folder sits at the watched root, with no

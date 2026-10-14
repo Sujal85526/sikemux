@@ -1,6 +1,9 @@
 //! Which agent wrote what in a checkout, as the core works it out from its
 //! record of agents' edits.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock, PoisonError};
+
 use serde_json::{json, Value};
 use tauri::State;
 
@@ -15,19 +18,45 @@ pub async fn git_change_owners(
     repo: String,
     staged: bool,
 ) -> AppResult<Value> {
-    let generation = super::status::watched_generation(&repo).map(|(_, generation)| {
-        // Change numbers start again with the app, and the core outlives it.
-        static RUN: std::sync::OnceLock<uuid::Uuid> = std::sync::OnceLock::new();
-        format!("{}:{generation}", RUN.get_or_init(uuid::Uuid::new_v4))
-    });
+    let (generation, moved) = match super::status::watched_generation(&repo) {
+        Some((key, generation)) => (Some(named(generation)), moved(&key, staged, generation)),
+        None => (None, None),
+    };
     let client = manager.client().await?;
     call(
         &client,
         "changeOwners".to_owned(),
-        json!({ "dir": repo, "staged": staged, "generation": generation }),
+        json!({ "dir": repo, "staged": staged, "generation": generation, "moved": moved }),
     )
     .await
 }
+
+/// The core's name for the watched state `generation`. Change numbers start
+/// again with the app, and the core outlives it.
+fn named(generation: u64) -> String {
+    static RUN: OnceLock<uuid::Uuid> = OnceLock::new();
+    format!("{}:{generation}", RUN.get_or_init(uuid::Uuid::new_v4))
+}
+
+/// The paths of the watched checkout `key` that moved since its owners were
+/// last asked for, when the core can ask git again of only them.
+fn moved(key: &str, staged: bool, generation: u64) -> Option<Value> {
+    static ASKED: Mutex<Option<HashMap<(String, bool), u64>>> = Mutex::new(None);
+    let since = {
+        let mut asked = ASKED.lock().unwrap_or_else(PoisonError::into_inner);
+        let asked = asked.get_or_insert_with(HashMap::new);
+        let at = (key.to_owned(), staged);
+        if asked.len() >= REMEMBERED_CHECKOUTS && !asked.contains_key(&at) {
+            asked.clear();
+        }
+        asked.insert(at, generation)?
+    };
+    let repo = git2::Repository::open(key).ok()?;
+    let paths = super::status::moved_since(&repo, key, since)?;
+    Some(json!({ "since": named(since), "paths": paths }))
+}
+
+const REMEMBERED_CHECKOUTS: usize = 32;
 
 /// The trailer lines naming the agents whose work is staged in `repo`; none
 /// when the core cannot be asked.

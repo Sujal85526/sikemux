@@ -6,9 +6,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::{line_count, read_text, Edit};
 use crate::server::names::project_of;
@@ -80,11 +80,14 @@ pub(crate) fn owners(core: &Core, dir: &Path, staged: bool) -> Result<Owners, St
 
 /// `owners`, reusing what git said of the checkout when last asked at the same
 /// `generation`: a name the asker gives each state of the checkout it watches.
+/// With `moved`, a read at its earlier state is brought up to date by asking
+/// git again only of the paths that moved since.
 pub(crate) fn owners_at(
     core: &Core,
     dir: &Path,
     staged: bool,
     generation: &str,
+    moved: Option<&Moved>,
 ) -> Result<Owners, String> {
     type Read = HashMap<(PathBuf, bool), (String, Arc<Diff>)>;
     static READ: Mutex<Option<Read>> = Mutex::new(None);
@@ -93,12 +96,20 @@ pub(crate) fn owners_at(
     let kept = lock()
         .get_or_insert_with(HashMap::new)
         .get(&key)
-        .filter(|(at, _)| at == generation)
-        .map(|(_, diff)| diff.clone());
+        .map(|(at, diff)| (at.clone(), diff.clone()));
     let diff = match kept {
-        Some(diff) => diff,
-        None => {
-            let diff = Arc::new(read_diff(dir, staged)?);
+        Some((at, diff)) if at == generation => diff,
+        kept => {
+            let patched = kept
+                .zip(moved)
+                .filter(|((at, diff), moved)| {
+                    *at == moved.since && diff.read_at.elapsed() < PATCHED_LIFETIME
+                })
+                .map(|((_, diff), moved)| patched_diff(&diff, staged, &moved.paths));
+            let diff = Arc::new(match patched {
+                Some(diff) => diff?,
+                None => read_diff(dir, staged, true)?,
+            });
             let mut read = lock();
             let read = read.get_or_insert_with(HashMap::new);
             if read.len() >= REMEMBERED_CHECKOUTS && !read.contains_key(&key) {
@@ -111,9 +122,23 @@ pub(crate) fn owners_at(
     Ok(record_over(core, dir, staged, &diff))
 }
 
+/// The paths of a watched checkout that moved after the state named `since`,
+/// as its top folder names them.
+#[derive(Deserialize)]
+pub(crate) struct Moved {
+    pub since: String,
+    pub paths: Vec<String>,
+}
+
+/// How long a read may be carried forward by asking again only of moved
+/// paths. The watcher cannot see ignore rules kept outside the checkout, so
+/// it is read whole again after this.
+const PATCHED_LIFETIME: Duration = Duration::from_secs(30);
+
 const REMEMBERED_CHECKOUTS: usize = 32;
 
 /// The diff `traced` laid the record over.
+#[derive(Clone)]
 pub(super) struct Diff {
     pub top: PathBuf,
     /// The commit it compared with, none before the first.
@@ -122,37 +147,53 @@ pub(super) struct Diff {
     pub untracked: HashSet<String>,
     /// What the working tree changed beyond the index, read only for staged.
     unstaged: HashMap<String, Vec<Hunk>>,
+    /// The files whose index entry differs from `base`, when asked for and
+    /// not staged.
+    staged_files: Option<HashSet<String>>,
+    /// When git was last asked of the whole checkout.
+    read_at: Instant,
 }
 
 pub(super) fn traced(core: &Core, dir: &Path, staged: bool) -> Result<(Owners, Diff), String> {
-    let diff = read_diff(dir, staged)?;
+    let diff = read_diff(dir, staged, false)?;
     Ok((record_over(core, dir, staged, &diff), diff))
 }
 
-fn read_diff(dir: &Path, staged: bool) -> Result<Diff, String> {
+/// What git says changed in `dir`'s checkout, with the files it has staged
+/// when `list_staged`, which `patched_diff` needs to stay quick.
+fn read_diff(dir: &Path, staged: bool, list_staged: bool) -> Result<Diff, String> {
     let (top, base) = top_and_base(dir)?;
     let against = base.as_deref().unwrap_or(EMPTY_TREE);
-    let (changed, others) = std::thread::scope(|scope| {
-        let others = scope.spawn(|| {
-            if staged {
-                git(&top, &diff_args(false, None))
-            } else {
-                git(&top, &["ls-files", "-z", "--others", "--exclude-standard"])
-            }
-        });
-        let changed = git(&top, &diff_args(staged, Some(against)));
-        let others = others
-            .join()
-            .unwrap_or_else(|_| Err("git did not run".to_owned()));
-        (changed, others)
-    });
-    let changed = hunks(&changed?);
-    let others = others?;
+    let mut runs = vec![diff_args(staged, Some(against))];
+    if staged {
+        runs.push(diff_args(false, None));
+    } else {
+        runs.push(UNTRACKED.to_vec());
+        if list_staged {
+            runs.push(vec![
+                "diff",
+                "--cached",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                against,
+            ]);
+        }
+    }
+    let runs = runs.into_iter().map(|args| (args, &[][..])).collect();
+    let mut outputs = in_parallel(&top, runs).into_iter();
+    let mut next = || outputs.next().unwrap_or_else(|| Ok(String::new()));
+    let changed = hunks(&next()?);
+    let others = next()?;
     let (unstaged, untracked) = if staged {
         (hunks(&others), HashSet::new())
     } else {
-        let others = others.split('\0').filter(|path| !path.is_empty());
-        (HashMap::new(), others.map(str::to_owned).collect())
+        (HashMap::new(), split_paths(&others).collect())
+    };
+    let staged_files = if list_staged && !staged {
+        Some(split_paths(&next()?).collect())
+    } else {
+        None
     };
     Ok(Diff {
         top,
@@ -160,7 +201,102 @@ fn read_diff(dir: &Path, staged: bool) -> Result<Diff, String> {
         changed,
         untracked,
         unstaged,
+        staged_files,
+        read_at: Instant::now(),
     })
+}
+
+const UNTRACKED: [&str; 4] = ["ls-files", "-z", "--others", "--exclude-standard"];
+
+fn split_paths(paths: &str) -> impl Iterator<Item = String> + '_ {
+    paths
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+}
+
+/// Each of `runs` of git in `top` at once, each limited to its paths when
+/// it names any.
+fn in_parallel(top: &Path, runs: Vec<(Vec<&str>, &[&str])>) -> Vec<Result<String, String>> {
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = runs
+            .into_iter()
+            .map(|(args, paths)| {
+                let args = if paths.is_empty() {
+                    args
+                } else {
+                    let mut scoped = vec!["--literal-pathspecs"];
+                    scoped.extend(args);
+                    scoped.push("--");
+                    scoped.extend(paths);
+                    scoped
+                };
+                scope.spawn(move || git(top, &args))
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| Err("git did not run".to_owned()))
+            })
+            .collect()
+    })
+}
+
+/// `diff` with what git now says of `moved` and the paths below them.
+fn patched_diff(diff: &Diff, staged: bool, moved: &[String]) -> Result<Diff, String> {
+    let at_or_below = |path: &str, moved: &str| {
+        path.strip_prefix(moved)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    };
+    let outside = |path: &&String| !moved.iter().any(|moved| at_or_below(path, moved));
+    let kept = |files: &HashMap<String, Vec<Hunk>>| -> HashMap<String, Vec<Hunk>> {
+        files
+            .iter()
+            .filter(|(path, _)| outside(path))
+            .map(|(path, hunks)| (path.clone(), hunks.clone()))
+            .collect()
+    };
+    let mut patched = diff.clone();
+    let all: Vec<&str> = moved.iter().map(String::as_str).collect();
+    if all.is_empty() {
+        return Ok(patched);
+    }
+    if staged {
+        let mut unstaged = in_parallel(&diff.top, vec![(diff_args(false, None), &all)]);
+        patched.unstaged = kept(&diff.unstaged);
+        patched.unstaged.extend(hunks(&unstaged.remove(0)?));
+        return Ok(patched);
+    }
+    // Comparing with the index skips walking the whole commit, and says the
+    // same as comparing with the commit wherever nothing is staged.
+    let (from_commit, from_index): (Vec<&str>, Vec<&str>) = all.iter().partition(|moved| {
+        diff.staged_files
+            .as_ref()
+            .is_none_or(|files| files.iter().any(|file| at_or_below(file, moved)))
+    });
+    let against = diff.base.as_deref().unwrap_or(EMPTY_TREE);
+    let mut runs = vec![(UNTRACKED.to_vec(), &all[..])];
+    for (args, paths) in [
+        (diff_args(false, Some(against)), &from_commit),
+        (diff_args(false, None), &from_index),
+    ] {
+        if !paths.is_empty() {
+            runs.push((args, paths));
+        }
+    }
+    let mut outputs = in_parallel(&diff.top, runs).into_iter();
+    patched.untracked = diff.untracked.iter().filter(outside).cloned().collect();
+    patched
+        .untracked
+        .extend(split_paths(&outputs.next().unwrap_or(Ok(String::new()))?));
+    patched.changed = kept(&diff.changed);
+    for changed in outputs {
+        patched.changed.extend(hunks(&changed?));
+    }
+    Ok(patched)
 }
 
 /// The checkout's top folder and its `HEAD` commit, none before the first,
