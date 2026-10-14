@@ -95,8 +95,7 @@ pub(super) fn tick(core: &Arc<Core>) {
                             comment,
                         }
                     }
-                    _ if card.status != Status::Done && since("look") >= UPSTREAM_EVERY_MS =>
-                    {
+                    _ if card.status != Status::Done && since("look") >= UPSTREAM_EVERY_MS => {
                         Work::Look
                     }
                     _ => continue,
@@ -110,7 +109,10 @@ pub(super) fn tick(core: &Arc<Core>) {
         for (project, id, _, work) in &due {
             match work {
                 Work::Push { .. } => state.syncing.insert((project.clone(), *id)),
-                Work::Look => state.polled.insert((project.clone(), *id, "look"), now).is_none(),
+                Work::Look => state
+                    .polled
+                    .insert((project.clone(), *id, "look"), now)
+                    .is_none(),
             };
         }
         due
