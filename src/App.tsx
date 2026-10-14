@@ -13,6 +13,7 @@ import { RailPeek } from "./rail/RailPeek";
 import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
 import { AgentSessionSync } from "./agents/AgentSessionSync";
 import { watchTerminalAgentExits } from "./agents/tuiResume";
+import { watchSshLinks } from "./terminal/sshLinks";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
 import { syncAgentAccounts } from "./agents/accountBook";
 import { agentApi, type AgentAccountBook } from "./api/agents";
@@ -852,6 +853,7 @@ export default function App() {
     useEffect(() => recordAgentTurns(), []);
 
     useEffect(() => watchTerminalAgentExits(), []);
+    useEffect(() => watchSshLinks(), []);
     useEffect(() => watchFocusForAgentStatus(), []);
     /* Fetched ahead so the first chat opened draws at once; a failure here leaves opening one to fetch it again. */
     useEffect(() => whenIdle(() => void import("./chat/AgentSurface").catch(() => undefined)), []);

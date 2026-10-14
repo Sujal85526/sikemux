@@ -30,6 +30,7 @@ import { PROJECT_SURFACE_ORDER, PROJECT_SURFACES } from "../workbench/surfaces";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
 import type { PluginSignIn } from "../plugin-api/signInState";
 import { StatusDot, type StatusTone } from "../ui/StatusDot";
+import { useSshTone } from "../terminal/sshLinks";
 import { useInstalledPlugins } from "../plugins/installed";
 import { railGroupOf, type RailGroup } from "../state/railGroups";
 import { isPluginKind, pluginIdOf } from "../plugins/kinds";
@@ -338,7 +339,15 @@ interface SubRow {
 }
 
 function renderSession(s: Session) {
-    return s.kind === "project" ? <ProjectBlock key={s.id} s={s} /> : <SimpleRow key={s.id} s={s} />;
+    if (s.kind === "project") return <ProjectBlock key={s.id} s={s} />;
+    return <SimpleRow key={s.id} s={s} status={s.kind === "ssh" ? <SshDot sessionId={s.id} /> : undefined} />;
+}
+
+const SSH_TONE_LABEL: Record<StatusTone, string> = { ok: "Connected", pending: "Connecting", off: "Disconnected" };
+
+function SshDot({ sessionId }: { sessionId: string }) {
+    const tone = useSshTone(sessionId);
+    return <StatusDot tone={tone} label={SSH_TONE_LABEL[tone]} />;
 }
 
 const SIGN_IN_TONE: Record<PluginSignIn, { tone: StatusTone; label: string }> = {
