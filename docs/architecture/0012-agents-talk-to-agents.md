@@ -26,10 +26,10 @@ MCP server every agent is launched with.
   core's harness, so they work for every CLI and with the window closed. The A2A protocol
   is left for a later adapter at the edge, for agents outside Sikemux.
 - **Every agent has a name.** The core gives each agent a short noun from a built-in list
-  (Otter, Maple, Flint) when it starts, unique among the project's agents and not reused
-  while a past agent of that name is still in the recent list. Leads do not choose names.
-  The person can rename one. Tools, `@` mentions in the composer, tabs and the rail all
-  use the name.
+  (Otter, Maple, Flint) when it starts, unique among the project's open agents. An agent
+  holds its name only while it is open: closing it frees the name, and a chat opened again
+  gets a new one. Leads do not choose names. The person can rename one. Tools, `@`
+  mentions in the composer, tabs and the rail all use the name.
 - **A tool call proves who is calling.** Each agent is launched with its own secret, and
   the core checks it on every harness call. An agent id the caller merely states is not
   trusted.

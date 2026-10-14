@@ -1,12 +1,11 @@
 //! What each agent is called: a word the core gives it from a built-in list
-//! when it starts. No two agents of a project share one, and a name is not
-//! given again while the agent that had it is among the project's recent
-//! ones. Kept in `agent-names.json` in the data folder, so names outlive a
-//! window reload, a restart and an update.
+//! when it starts. No two open agents of a project share one. An agent holds
+//! its name while it is open and lets it go when it closes; opened again, it
+//! gets a new one. Kept in `agent-names.json` in the data folder, so names
+//! outlive a window reload, a restart and an update.
 
 mod words;
 
-use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -17,8 +16,9 @@ use super::remote::unix_ms;
 use words::WORDS;
 
 const FILE: &str = "agent-names.json";
-/// How many of a project's past agents keep their names out of use, newest first.
-const KEPT_PAST: usize = 100;
+/// How long a name given to an agent that has not yet been seen open is kept,
+/// so one still starting keeps it.
+const STARTING_MS: u64 = 10 * 60 * 1000;
 const MAX_NAME_CHARS: usize = 24;
 /// How many agents below one the person started may start agents of their own.
 const MAX_DEPTH: usize = 2;
@@ -40,12 +40,14 @@ struct Entry {
     quiet: bool,
     #[serde(default)]
     provider: Option<String>,
-    /// The provider's own session, so a chat opened again from the recent
-    /// list gets its name back.
+    /// The provider's own session.
     #[serde(default)]
     session_id: Option<String>,
     /// When it was named, in Unix milliseconds.
     at: u64,
+    /// It has been open since it was named, so closing lets its name go.
+    #[serde(default)]
+    seen: bool,
 }
 
 impl Entry {
@@ -153,11 +155,9 @@ impl Names {
     ) -> (AgentName, bool) {
         let mut book = self.lock();
         let open = book.open(running);
-        let (named, changed) = book.give(starting, &open);
+        let (named, mut changed) = book.give(starting, &open);
+        changed |= book.release(&open);
         if changed {
-            if book.in_app.is_some() {
-                book.prune(&named.project, &open);
-            }
             self.save(&book);
         }
         (named, changed)
@@ -172,6 +172,7 @@ impl Names {
     ) -> Result<AgentName, String> {
         let mut book = self.lock();
         let open = book.open(running);
+        book.release(&open);
         let lead = book
             .agents
             .iter()
@@ -217,6 +218,7 @@ impl Names {
             provider: Some(worker.provider.to_owned()),
             session_id: None,
             at: unix_ms(),
+            seen: false,
         };
         let named = entry.view();
         book.agents.push(entry);
@@ -271,13 +273,16 @@ impl Names {
         false
     }
 
-    /// Takes the app's word for which agents it holds.
-    pub(crate) fn set_in_app(&self, agent_ids: HashSet<String>) {
+    /// Takes the app's word for which agents it holds, and lets go of the
+    /// names of agents closed since. `running` holds the agents running here.
+    pub(crate) fn set_in_app(&self, agent_ids: HashSet<String>, running: HashSet<String>) {
         let mut book = self.lock();
         if book.in_app.as_ref() == Some(&agent_ids) {
             return;
         }
         book.in_app = Some(agent_ids);
+        let open = book.open(running);
+        book.release(&open);
         self.save(&book);
     }
 
@@ -302,8 +307,8 @@ impl Names {
         self.save(&book);
     }
 
-    /// The person's own name for the agent. A past agent of the project that
-    /// had it gives it up; an open one keeps it.
+    /// The person's own name for the agent, unless an open agent of the
+    /// project has it.
     pub(crate) fn rename(
         &self,
         agent_id: &str,
@@ -313,6 +318,7 @@ impl Names {
         let name = valid_name(name)?;
         let mut book = self.lock();
         let open = book.open(running);
+        book.release(&open);
         let project = book
             .entry_mut(agent_id)
             .ok_or("Sikemux has not named that agent yet")?
@@ -423,20 +429,6 @@ impl Book {
                 return (entry.view(), changed);
             }
         }
-        let resumed = resume_id.and_then(|session| {
-            self.position(|entry| {
-                entry.project == project
-                    && entry.session_id.as_deref() == Some(session)
-                    && (provider.is_none() || entry.provider.as_deref() == provider)
-                    && !open.contains(&entry.agent_id)
-            })
-        });
-        if let Some(index) = resumed {
-            let entry = &mut self.agents[index];
-            entry.agent_id = agent_id.to_owned();
-            entry.at = unix_ms();
-            return (entry.view(), true);
-        }
         let name = self.fresh(&project, agent_id, open);
         let entry = Entry {
             agent_id: agent_id.to_owned(),
@@ -447,14 +439,11 @@ impl Book {
             provider: provider.map(str::to_owned),
             session_id: resume_id.map(str::to_owned),
             at: unix_ms(),
+            seen: false,
         };
         let named = entry.view();
         self.agents.push(entry);
         (named, true)
-    }
-
-    fn position(&self, find: impl Fn(&Entry) -> bool) -> Option<usize> {
-        self.agents.iter().position(find)
     }
 
     fn taken(&self, project: &str, name: &str, except: &str) -> bool {
@@ -514,25 +503,25 @@ impl Book {
             .unwrap_or_else(|| word.to_owned())
     }
 
-    /// Lets go of the names of the project's oldest past agents.
-    fn prune(&mut self, project: &str, open: &HashSet<String>) {
-        let mut past: Vec<(u64, String)> = self
-            .agents
-            .iter()
-            .filter(|entry| entry.project == project && !open.contains(&entry.agent_id))
-            .map(|entry| (entry.at, entry.agent_id.clone()))
-            .collect();
-        if past.len() <= KEPT_PAST {
-            return;
+    /// Lets go of the names of agents no longer open, and whether the book
+    /// changed. Nothing goes until the app has said which agents it holds.
+    fn release(&mut self, open: &HashSet<String>) -> bool {
+        if self.in_app.is_none() {
+            return false;
         }
-        past.sort_by_key(|(at, _)| Reverse(*at));
-        let dropped: HashSet<String> = past
-            .into_iter()
-            .skip(KEPT_PAST)
-            .map(|(_, agent_id)| agent_id)
-            .collect();
-        self.agents
-            .retain(|entry| !dropped.contains(&entry.agent_id));
+        let now = unix_ms();
+        let mut changed = false;
+        self.agents.retain_mut(|entry| {
+            if open.contains(&entry.agent_id) {
+                changed |= !entry.seen;
+                entry.seen = true;
+                return true;
+            }
+            let keep = !entry.seen && now.saturating_sub(entry.at) < STARTING_MS;
+            changed |= !keep;
+            keep
+        });
+        changed
     }
 }
 

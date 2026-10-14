@@ -223,7 +223,7 @@ struct AgentsInAppParams {
 }
 
 /// Every agent the app holds, sleeping ones included, so their names stay
-/// theirs while nothing of them runs here.
+/// theirs while nothing of them runs here and closed ones' names are free.
 async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResult<()> {
     if params.agent_ids.len() > MAX_AGENTS_IN_APP || params.runs.len() > MAX_AGENTS_IN_APP {
         return Err("the app named more agents than the core keeps".into());
@@ -238,7 +238,8 @@ async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResul
     core.workspaces.publish_runs(params.runs)?;
     let core = core.clone();
     blocking(move || {
-        core.names.set_in_app(params.agent_ids);
+        core.names
+            .set_in_app(params.agent_ids, core.running_agents());
         Ok(())
     })
     .await
