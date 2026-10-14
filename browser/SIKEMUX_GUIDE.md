@@ -52,9 +52,9 @@ from the list below.
   which takes only the lines you wrote and leaves theirs uncommitted; Sikemux
   refuses `git add -A`, `commit -a`, `stash`, `reset --hard` and the like.
 - Plugin tools (`github_*`, `bitbucket_*`, `gitlab_*`, `jira_*`, `signoz_*`,
-  `slack_*`) are listed only when they can work here: signed in, and for a code
-  host a remote of this project on it. If one is missing, ask the person to
-  sign in from its pane and restart you.
+  `slack_*`, `aws_*`) are listed only when they can work here: signed in, and
+  for a code host a remote of this project on it. If one is missing, ask the
+  person to sign in from its pane and restart you.
 
 ## Topics
 
@@ -72,6 +72,7 @@ Pass one of these as `topic`:
 - `browser-debugging` — network, console, `app_console`, `browser_evaluate`
 - `simulator` — driving an iOS simulator with `sim_*`
 - `databases` — the `db_*` tools and SQL
+- `aws` — the `aws_*` tools, profiles and expired sign-ins
 - `skills` — skills every agent in Sikemux gets
 - `agents` — names, `@`, messages
 - `board` — the project's cards: adding, claiming, finishing
@@ -738,6 +739,46 @@ that database's history in Sikemux, marked as an agent's.
 
 Large integers and decimals arrive as text so no digit is lost; binary values
 arrive as the start of their hex.
+
+## aws: AWS through the person's profiles
+
+The `aws_*` tools read AWS through the AWS CLI and the person's own profiles;
+none of them change anything.
+
+- Leave `profile` out for the profile the person picked for agents in the
+  AWS pane, else their own `AWS_PROFILE`, else the only profile, else
+  `default`. When there are several and none of these, the error lists them,
+  and `aws_profiles` gives each one's account, role and region. `region`
+  defaults to the profile's.
+- Your own shell already has `AWS_PROFILE` set to the profile picked for this
+  project, so the `aws` CLI works without `--profile`; never hunt for one in
+  `~/.aws/config`.
+- When a call says the AWS sign-in expired, the AWS CLI is missing or no
+  profile is set up, stop and tell the person: each is fixed from the AWS pane
+  in Sikemux. Never run `aws sso login` or `aws configure` yourself; they need
+  the person and their browser.
+- `aws_ecs` goes one level down per argument: clusters; a `cluster`'s services
+  with their counts, rollout and task definition; a `service`'s deployments
+  and latest events. `tasks` lists `running` or `stopped` tasks, of the
+  service or the whole cluster, with each container's image, health, exit code
+  and the reason it stopped.
+- `aws_task_definition` reads the `family:revision` a service names: images,
+  ports, sizes, log group and stream prefix, and the names of environment
+  variables and secrets, never their values.
+- `aws_logs` keeps the newest `limit` events from `since` back, 1h unless
+  told. Take the group from the task definition; a wrong name answers with
+  groups named like it. `pattern` is CloudWatch filter syntax: `ERROR`,
+  `"timed out"`, `{ $.level = "error" }`. `note` says when more matched.
+- `aws_target_health` with `loadBalancer` gives each listener's rules as
+  `priority: condition -> action` and every target group's targets with their
+  state and reason; `targetGroup` gives one group.
+- `aws_metrics` needs the metric's whole set of `dimensions`, such as
+  `ClusterName` and `ServiceName` for `AWS/ECS`; no points usually means one is
+  missing. The period widens to keep 120 points at most.
+- `aws_ec2` lists instances; `name` keeps those whose name, id or address
+  contains it.
+
+For anything else, run the `aws` CLI yourself, read-only.
 
 ## skills: Skills every agent in Sikemux gets
 
