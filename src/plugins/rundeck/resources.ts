@@ -8,6 +8,7 @@ import {
     type OptionValue,
     type PlanRequest,
     type PlanResult,
+    type ProjectExecutions,
     type RundeckExecution,
     type RundeckJob,
     type RundeckProject,
@@ -66,6 +67,12 @@ export const rndJobCellsR = resource({
 export const rndExecutionsR = resource({
     kind: "rnd.executions",
     fetch: (jobId: string, project: string, max: number): Promise<RundeckExecution[]> => rundeckApi.executions(jobId, project, max),
+    staleAfterMs: 15_000,
+});
+
+export const rndProjectExecutionsR = resource({
+    kind: "rnd.projectExecutions",
+    fetch: (project: string, max: number): Promise<ProjectExecutions> => rundeckApi.projectExecutions(project, max, 0),
     staleAfterMs: 15_000,
 });
 

@@ -176,6 +176,54 @@ pub async fn executions(
     Ok(executions)
 }
 
+#[derive(Deserialize)]
+struct Paging {
+    total: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct PagedExecutionList {
+    executions: Vec<Execution>,
+    paging: Option<Paging>,
+}
+
+#[derive(Serialize)]
+pub struct ProjectExecutions {
+    pub executions: Vec<Execution>,
+    pub total: Option<u64>,
+}
+
+/// One page of every job's runs in a project, newest first. Rundeck leaves
+/// running executions out of this list, so the first page adds them.
+pub async fn project_executions(
+    session: &Session,
+    project: String,
+    max: Option<u32>,
+    offset: Option<u32>,
+) -> RundeckResult<ProjectExecutions> {
+    let limit = max.unwrap_or(50).min(200);
+    let offset = offset.unwrap_or(0);
+    let path = format!("/project/{}/executions", seg(&project)?);
+    let query = [("max", limit.to_string()), ("offset", offset.to_string())];
+    let page: PagedExecutionList = get_json(session, &path, &query).await?;
+    let total = page.paging.and_then(|paging| paging.total);
+    if offset > 0 {
+        return Ok(ProjectExecutions {
+            executions: page.executions,
+            total,
+        });
+    }
+    let running_path = format!("/project/{}/executions/running", seg(&project)?);
+    let running = get_json::<ExecutionList>(session, &running_path, &[])
+        .await
+        .map(|list| list.executions)
+        .unwrap_or_default();
+    Ok(ProjectExecutions {
+        executions: merge_executions(page.executions, running, limit as usize),
+        total,
+    })
+}
+
 fn status_is_running(status: &Option<String>) -> bool {
     status
         .as_deref()

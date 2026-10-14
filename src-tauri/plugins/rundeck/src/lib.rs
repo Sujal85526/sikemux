@@ -9,7 +9,7 @@
 //   auth        — password login, token login, logout, status
 //   projects    — projects, jobs, job index, the matrix
 //   jobs        — job definition and remote option values
-//   executions  — history, run, abort, latest/deployed summaries
+//   executions  — history, a project's runs, run, abort, latest/deployed summaries
 //   watch       — stream of execution state until it finishes
 //   logs        — stream of log output with an offset cursor
 //   plan        — read-only git inspection (dirty / ahead-behind / relation)
@@ -85,6 +85,14 @@ struct ExecutionsParams {
     project: String,
     max: Option<u32>,
     only_succeeded: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectExecutionsParams {
+    project: String,
+    max: Option<u32>,
+    offset: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -224,6 +232,13 @@ impl Plugin for Rundeck {
                         p.project,
                         p.max,
                         p.only_succeeded,
+                    ))
+                    .await
+                }
+                "projectExecutions" => {
+                    let p: ProjectExecutionsParams = params(input)?;
+                    answer(executions::project_executions(
+                        session, p.project, p.max, p.offset,
                     ))
                     .await
                 }
