@@ -1,7 +1,7 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useState } from "react";
 import { notify } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { ContextMenu, EmptyState, IconRefresh, SkeletonRows, type ContextMenuItem } from "../../../plugin-api/ui";
+import { ContextMenu, EmptyState, IconRefresh, SkeletonRows, useCardDrag, type ContextMenuItem } from "../../../plugin-api/ui";
 import { failureMessage, jiraApi, type JiraBoardView, type JiraColumn, type JiraIssueSummary } from "../api";
 import { boardPeople, matchingCards, pickKey, unassignedCount } from "../boardFilter";
 import { jiraBoardR } from "../resources";
@@ -30,8 +30,6 @@ export function sprintLeft(end: string | null, now = Date.now()): string | null 
     return days === 1 ? "1 day left" : `${days} days left`;
 }
 
-const DRAG_START_PX = 5;
-
 export function JiraBoard({
     active,
     boardId,
@@ -50,9 +48,11 @@ export function JiraBoard({
     const whole = useResourceEnabled(active, jiraBoardR, boardId, site, "");
     const found = useResourceEnabled(active, jiraBoardR, boardId, site, pickKey(picked));
     const [moves, setMoves] = useState<Record<string, number>>({});
-    const [dragging, setDragging] = useState<{ key: string; over: number | null } | null>(null);
     const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
-    const justDragged = useRef(false);
+    const drag = useCardDrag((key, column) => {
+        const issue = whole.data?.columns.flatMap((each) => each.issues).find((each) => each.key === key);
+        if (issue) void move(issue, Number(column));
+    });
 
     if (whole.status === "error") return <EmptyState message={whole.error ?? "Jira could not open this board."} tone="error" />;
     if (!whole.data) return <SkeletonRows rows={6} label="Loading the board" />;
@@ -89,67 +89,39 @@ export function JiraBoard({
         }
     };
 
-    const columnAt = (x: number, y: number): number | null => {
-        const element = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-column]");
-        return element ? Number(element.dataset.column) : null;
-    };
-
-    const startDrag = (event: ReactPointerEvent, issue: JiraIssueSummary) => {
-        if (event.button !== 0) return;
-        const start = { x: event.clientX, y: event.clientY };
-        let moved = false;
-        const onMove = (next: PointerEvent) => {
-            if (!moved && Math.hypot(next.clientX - start.x, next.clientY - start.y) < DRAG_START_PX) return;
-            moved = true;
-            setDragging({ key: issue.key, over: columnAt(next.clientX, next.clientY) });
-        };
-        const onUp = (next: PointerEvent) => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-            setDragging(null);
-            if (!moved) return;
-            justDragged.current = true;
-            setTimeout(() => (justDragged.current = false), 0);
-            const to = columnAt(next.clientX, next.clientY);
-            if (to !== null) void move(issue, to);
-        };
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
-    };
-
     const left = sprintLeft(board.sprint?.end ?? null);
 
     return (
-        <section className="jira-board" aria-label={board.name}>
-            <header className="jira-board-head">
-                <div className="jira-board-title">
+        <section className="kanban" aria-label={board.name}>
+            <header className="kanban-head">
+                <div className="kanban-title">
                     <h2>{board.name}</h2>
-                    <span className="jira-chip static">{board.kind}</span>
+                    <span className="kanban-tag">{board.kind}</span>
                     {board.sprint && (
-                        <span className="jira-meta">
+                        <span className="kanban-meta">
                             {board.sprint.name}
                             {left && ` · ${left}`}
                         </span>
                     )}
-                    <span className="jira-grow" />
-                    <button type="button" className="jira-icon-button" title="Refresh" aria-label="Refresh the board" onClick={refresh}>
+                    <span className="kanban-grow" />
+                    <button type="button" className="kanban-icon-button" title="Refresh" aria-label="Refresh the board" onClick={refresh}>
                         <IconRefresh size={13} />
                     </button>
                 </div>
-                {board.sprint?.goal && <p className="jira-board-goal">{board.sprint.goal}</p>}
+                {board.sprint?.goal && <p className="kanban-goal">{board.sprint.goal}</p>}
                 {(narrowed ?? board).truncated && (
-                    <p className="jira-meta">Showing the first 300 issues. Pick people or narrow the board in Jira to see the rest.</p>
+                    <p className="kanban-meta">Showing the first 300 issues. Pick people or narrow the board in Jira to see the rest.</p>
                 )}
-                <div className="jira-board-filter-row" role="group" aria-label="Filter the board">
+                <div className="kanban-filters" role="group" aria-label="Filter the board">
                     <input
-                        className="jira-board-search"
+                        className="kanban-search"
                         value={words}
                         onChange={(event) => setWords(event.target.value)}
                         placeholder="Find a card"
                         aria-label="Find a card"
                         spellCheck={false}
                     />
-                    <button type="button" className="jira-board-pick" aria-pressed={picked.has("me")} onClick={() => toggle("me")}>
+                    <button type="button" className="kanban-pick" aria-pressed={picked.has("me")} onClick={() => toggle("me")}>
                         Only my issues
                     </button>
                     <span className="jira-board-people">
@@ -167,14 +139,14 @@ export function JiraBoard({
                         ))}
                     </span>
                     {nobody > 0 && (
-                        <button type="button" className="jira-board-pick" aria-pressed={picked.has("none")} onClick={() => toggle("none")}>
-                            Unassigned <span className="jira-board-count">{nobody}</span>
+                        <button type="button" className="kanban-pick" aria-pressed={picked.has("none")} onClick={() => toggle("none")}>
+                            Unassigned <span className="kanban-pick-count">{nobody}</span>
                         </button>
                     )}
                     {(picked.size > 0 || words) && (
                         <button
                             type="button"
-                            className="jira-board-clear"
+                            className="kanban-clear"
                             onClick={() => {
                                 setPicked(new Set());
                                 setWords("");
@@ -191,27 +163,27 @@ export function JiraBoard({
             ) : !narrowed ? (
                 <SkeletonRows rows={6} label="Loading their cards" />
             ) : (
-                <div className="jira-columns">
+                <div className="kanban-columns">
                     {columns.map((column, index) => (
                         <div
                             key={column.name}
-                            className={`jira-column${dragging?.over === index ? " drop" : ""}`}
+                            className={`kanban-column${drag.dragging?.over === String(index) ? " drop" : ""}`}
                             data-column={index}
                             role="list"
                             aria-label={column.name}>
-                            <div className="jira-column-head">
+                            <div className="kanban-column-head">
                                 <span>{column.name}</span>
-                                <span className="jira-count">{column.issues.length}</span>
+                                <span className="kanban-count">{column.issues.length}</span>
                             </div>
                             {column.issues.map((issue) => (
                                 <button
                                     key={issue.key}
                                     type="button"
                                     role="listitem"
-                                    className={`jira-card${issue.key === selected ? " active" : ""}${dragging?.key === issue.key ? " dragging" : ""}${issue.key in moves ? " moving" : ""}`}
-                                    onPointerDown={(event) => startDrag(event, issue)}
+                                    className={`kanban-card${issue.key === selected ? " active" : ""}${drag.dragging?.card === issue.key ? " dragging" : ""}${issue.key in moves ? " moving" : ""}`}
+                                    onPointerDown={(event) => drag.startDrag(event, issue.key)}
                                     onClick={() => {
-                                        if (!justDragged.current) onSelect(issue.key);
+                                        if (!drag.wasDragged()) onSelect(issue.key);
                                     }}
                                     onContextMenu={(event) => {
                                         event.preventDefault();
@@ -225,12 +197,12 @@ export function JiraBoard({
                                             })),
                                         });
                                     }}>
-                                    <span className="jira-card-summary">{issue.summary}</span>
-                                    <span className="jira-card-foot">
-                                        <span className="jira-key">{issue.key}</span>
-                                        {issue.issueType && <span className="jira-meta">{issue.issueType}</span>}
-                                        {issue.priority && <span className="jira-meta">{issue.priority}</span>}
-                                        <span className="jira-grow" />
+                                    <span className="kanban-card-summary">{issue.summary}</span>
+                                    <span className="kanban-card-foot">
+                                        <span className="kanban-key">{issue.key}</span>
+                                        {issue.issueType && <span className="kanban-meta">{issue.issueType}</span>}
+                                        {issue.priority && <span className="kanban-meta">{issue.priority}</span>}
+                                        <span className="kanban-grow" />
                                         {issue.assignee && (
                                             <span className="jira-avatar" title={issue.assignee.name}>
                                                 <JiraFace person={issue.assignee} />
