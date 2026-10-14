@@ -1379,6 +1379,17 @@ impl Reader {
         let Some(id) = text(message, "task_id") else {
             return;
         };
+        if let Some(child) = self.data.subagents.get(id).filter(|child| !child.ended) {
+            let tokens = message
+                .get("usage")
+                .and_then(|usage| usage.get("total_tokens"))
+                .and_then(Value::as_u64);
+            if let Some(tokens) = tokens {
+                let update = json!({ "sessionUpdate": "subagent_usage", "subagentSessionId": id, "tokens": tokens });
+                self.sink.update(&child.parent, update);
+            }
+            return;
+        }
         let Some(task) = self.data.tasks.get_mut(id).filter(|task| !task.ended) else {
             return;
         };

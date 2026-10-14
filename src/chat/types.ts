@@ -88,6 +88,7 @@ export interface AcpSubagent {
     state: "running" | "completed" | "failed" | "cancelled" | "disconnected";
     messages: ChatMessage[];
     nextId: number;
+    tokens?: number;
 }
 
 /* What a background task left behind once it ended, kept in the transcript

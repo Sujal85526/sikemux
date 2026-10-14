@@ -423,6 +423,13 @@ function setSubagentState(state: ChatState, update: Record<string, unknown>): Ch
     );
 }
 
+function setSubagentUsage(state: ChatState, update: Record<string, unknown>): ChatState {
+    const subagentSessionId = textOf(update.subagentSessionId);
+    const tokens = update.tokens;
+    if (!subagentSessionId || typeof tokens !== "number") return state;
+    return patchSubagent(state, subagentSessionId, (subagent) => ({ ...subagent, tokens })) ?? state;
+}
+
 function spawnTask(state: ChatState, update: Record<string, unknown>): ChatState {
     const asyncTaskId = textOf(update.asyncTaskId);
     if (!asyncTaskId || state.tasks.some((task) => task.asyncTaskId === asyncTaskId)) return state;
@@ -569,6 +576,7 @@ function endTurn(state: ChatState, stopReason: string | null, at = Date.now()): 
 
 function sessionUpdate(state: ChatState, sessionId: string, update: Record<string, unknown>): ChatState {
     if (update.sessionUpdate === "subagent_state_update") return setSubagentState(state, update);
+    if (update.sessionUpdate === "subagent_usage") return setSubagentUsage(state, update);
     const inSubagent = patchSubagent(state, sessionId, (subagent) => {
         const next =
             update.sessionUpdate === "subagent_spawned"

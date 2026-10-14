@@ -4,7 +4,7 @@ import { AgentIcon, IconCheck, IconChevron, IconClock, IconClose, IconCommand, I
 import { ChatAgentContext } from "./chatAgent";
 import { queuedLabel, type QueuedMessage } from "./queuedMessages";
 import { Shimmer } from "./Shimmer";
-import { groupTasks, subagentActivity, taskDetail, workflowAgentCost, workflowAgentDetail } from "./transcript";
+import { groupTasks, subagentActivity, subagentCost, taskDetail, workflowAgentCost, workflowAgentDetail } from "./transcript";
 import type { AcpAsyncTask, AcpSubagent, AcpWorkflowAgent } from "./types";
 
 export type GroupFolds = {
@@ -107,18 +107,22 @@ function RunningSubagents({ subagents, folds }: { subagents: AcpSubagent[]; fold
                 peek: subagents.map((subagent) => subagent.name),
                 working: true,
             }}>
-            {subagents.map((subagent) => (
-                <div className="chat-task chat-task-agent" key={subagent.sessionId}>
-                    {icon}
-                    <span className="chat-task-name">{subagent.name}</span>
-                    <span className="chat-task-detail chat-shimmer">
-                        <Shimmer>{subagentActivity(subagent)}</Shimmer>
-                    </span>
-                    <span className="chat-task-end">
-                        <span className="chat-task-spinner" aria-hidden="true" />
-                    </span>
-                </div>
-            ))}
+            {subagents.map((subagent) => {
+                const cost = subagentCost(subagent);
+                return (
+                    <div className="chat-task chat-task-agent" key={subagent.sessionId}>
+                        {icon}
+                        <span className="chat-task-name">{subagent.name}</span>
+                        <span className="chat-task-detail chat-shimmer">
+                            <Shimmer>{subagentActivity(subagent)}</Shimmer>
+                        </span>
+                        {cost && <span className="chat-workflow-cost">{cost}</span>}
+                        <span className="chat-task-end">
+                            <span className="chat-task-spinner" aria-hidden="true" />
+                        </span>
+                    </div>
+                );
+            })}
         </Group>
     );
 }

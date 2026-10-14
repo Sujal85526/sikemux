@@ -29,7 +29,6 @@ import { FoldedMarkdown, warmChatMarkdown } from "./ChatMarkdown";
 import { ChatPage } from "./ChatPage";
 import { ToolGroup } from "./ToolGroup";
 import { ToolRow } from "./ToolRow";
-import { callCount } from "./toolView";
 import {
     attachmentName,
     formatDetail,
@@ -38,6 +37,7 @@ import {
     shownParts,
     SUBAGENT_MARKS,
     SUBAGENT_WORDS,
+    subagentCost,
     subagentTask,
     type SubagentMark,
 } from "./transcript";
@@ -224,7 +224,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
     const agentType = useContext(ChatAgentContext).type;
     const [open, setOpen] = useState(false);
     const parts = subagent.messages.flatMap((message) => message.parts);
-    const calls = parts.filter((part) => part.kind === "tool").length;
+    const cost = subagentCost(subagent);
     return (
         <details className={`chat-subagent state-${subagent.state}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
             <summary>
@@ -241,7 +241,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                     <span className="chat-subagent-task">{subagentTask(subagent.task)}</span>
                 )}
                 <span className="chat-subagent-end">
-                    {calls > 0 && <span className="chat-subagent-calls">{callCount(calls)}</span>}
+                    {cost && <span className="chat-subagent-calls">{cost}</span>}
                     <SubagentStateMark state={subagent.state} />
                 </span>
             </summary>

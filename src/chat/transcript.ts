@@ -1,6 +1,7 @@
 import { tokenCount } from "./contextUsage";
 import { isMention, splitSentContext, type SentContext } from "./promptContext";
 import { toolKind, toolTarget } from "./toolLabels";
+import { callCount } from "./toolView";
 import type { AcpAsyncTask, AcpSubagent, AcpWorkflowAgent, ChatMessage, ChatPart } from "./types";
 
 const MAX_DETAIL_CHARS = 120_000;
@@ -263,6 +264,12 @@ export function workflowAgentDetail(agent: AcpWorkflowAgent): string | undefined
 
 export function workflowAgentCost(agent: AcpWorkflowAgent): string | undefined {
     const cost = [agent.tokens && `${tokenCount(agent.tokens)} tokens`, agent.toolCalls && `${agent.toolCalls} tools`];
+    return cost.filter(Boolean).join(" · ") || undefined;
+}
+
+export function subagentCost(subagent: AcpSubagent): string | undefined {
+    const calls = subagent.messages.reduce((count, message) => count + message.parts.filter((part) => part.kind === "tool").length, 0);
+    const cost = [subagent.tokens && `${tokenCount(subagent.tokens)} tokens`, calls > 0 && callCount(calls)];
     return cost.filter(Boolean).join(" · ") || undefined;
 }
 
