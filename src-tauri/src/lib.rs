@@ -2,8 +2,8 @@ mod account;
 mod acp;
 mod activity;
 mod agent_names;
-mod agent_questions;
 mod agent_notification;
+mod agent_questions;
 mod agents;
 #[cfg(target_os = "macos")]
 mod app_menu;
