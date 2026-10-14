@@ -1433,6 +1433,13 @@
         },
         "report": {
           "type": "boolean"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "chat",
+            "terminal"
+          ]
         }
       },
       "required": [

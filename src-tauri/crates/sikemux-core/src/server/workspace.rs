@@ -440,6 +440,20 @@ pub(crate) struct Lead {
     pub permission_mode: Option<String>,
 }
 
+impl Lead {
+    /// The permission mode a worker of the lead running `provider` takes, never
+    /// wider than the lead's, given `default` when the lead's is unknown.
+    pub(crate) fn worker_mode(&self, provider: &str, default: &str) -> String {
+        match self.permission_mode.as_deref() {
+            Some(mode) if self.provider == provider => mode.to_owned(),
+            Some("bypass") => "bypass".to_owned(),
+            Some(_) => "workspace-write".to_owned(),
+            None if matches!(default, "bypass" | "full-access") => "workspace-write".to_owned(),
+            None => default.to_owned(),
+        }
+    }
+}
+
 /// Agents whose chats keep a private home of their own, which a worker of
 /// theirs must not share.
 const OWN_HOME: [&str; 2] = ["hermes", "grok"];
@@ -455,13 +469,7 @@ impl Workspaces {
         model: Option<String>,
     ) -> Result<(ChatLaunch, Option<String>), String> {
         let same = lead.provider == provider;
-        let mode = |default: &str| match lead.permission_mode.as_deref() {
-            Some(mode) if same => mode.to_owned(),
-            Some("bypass") => "bypass".to_owned(),
-            Some(_) => "workspace-write".to_owned(),
-            None if matches!(default, "bypass" | "full-access") => "workspace-write".to_owned(),
-            None => default.to_owned(),
-        };
+        let mode = |default: &str| lead.worker_mode(provider, default);
         let own = lead
             .launch
             .as_ref()

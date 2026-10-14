@@ -1,15 +1,19 @@
 //! What `agent_spawn` answers: an agent starting another as a full chat of
-//! its own, on its account and in its permission mode, which the app shows in
-//! a tab without moving the person there. Each time the new agent's turn ends,
-//! its final answer goes back to the agent that started it.
+//! its own, or in a terminal the app opens, on its account and in its
+//! permission mode, in a tab that does not move the person there. Each time
+//! the new agent's turn ends, its final answer goes back to the agent that
+//! started it.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde_json::{json, Value};
+use sikemux_pty::agent_detection::AgentKind;
 
 use crate::cli::protocol::HarnessRequest;
-use crate::protocol::Event;
+use crate::protocol::{Event, WindowCall};
 
 use super::chat;
 use super::connection::blocking;
@@ -24,10 +28,43 @@ const MAX_MODEL_CHARS: usize = 200;
 /// How much of a worker's final answer its lead is sent.
 const MAX_REPORT_BYTES: usize = 4 * 1024;
 
-/// Spawns one at a time, so two at once cannot both take the last place a
-/// cap leaves.
+/// The window call that opens a terminal agent another agent started.
+const OPEN_TERMINAL_METHOD: &str = "agent.terminal";
+const OPEN_TERMINAL_WAIT: Duration = Duration::from_secs(30);
+/// How long a terminal agent may take to show its prompt box before its lead
+/// hears that it has not got its task yet.
+const TERMINAL_READY_WAIT: Duration = Duration::from_secs(120);
+
 #[derive(Default)]
-pub(crate) struct Spawning(Mutex<()>);
+pub(crate) struct Spawning {
+    /// Spawns one at a time, so two at once cannot both take the last place a
+    /// cap leaves.
+    one_at_a_time: Mutex<()>,
+    /// Terminal agents the window is opening, which count against the caps
+    /// before they run.
+    opening: Mutex<HashSet<String>>,
+}
+
+impl Spawning {
+    fn one_at_a_time(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.one_at_a_time
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn opening(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
+        self.opening
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// The agents running here and those the window is opening.
+fn running(core: &Core) -> HashSet<String> {
+    let mut running = core.running_agents();
+    running.extend(core.harness.spawning.opening().iter().cloned());
+    running
+}
 
 fn text_param<'a>(params: &'a Value, key: &str, max: usize) -> Result<Option<&'a str>, String> {
     match params.get(key) {
@@ -103,12 +140,7 @@ fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> 
         Some(Value::Bool(reports)) => *reports,
         Some(_) => return Err("report must be a boolean".into()),
     };
-    let _one_at_a_time = core
-        .harness
-        .spawning
-        .0
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _one_at_a_time = core.harness.spawning.one_at_a_time();
     let (lead, cwd) = lead_of(core, &lead_id, &request.project)?;
     let (mut launch, launcher) = core
         .workspaces
@@ -121,12 +153,14 @@ fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> 
             provider: &provider,
             reports,
         },
-        core.running_agents(),
+        running(core),
     )?;
     own_launch(core, &mut launch, &agent_id);
     let model = launch.model.clone();
-    let chat =
-        chat::begin_worker(core, launch, &lead_id, launcher).map_err(|error| error.to_string())?;
+    let chat = chat::begin_worker(core, launch, &lead_id, launcher).map_err(|error| {
+        core.names.forget(&agent_id);
+        error.to_string()
+    })?;
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
     core.publish_device_view();
     let lead_name = core.names.name(&lead_id).unwrap_or_else(|| lead_id.clone());
@@ -159,6 +193,14 @@ pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<
         }
         _ => return Err("prompt must be the new agent's task, as nonempty text".into()),
     };
+    match request.params.get("mode") {
+        None | Some(Value::Null) => {}
+        Some(Value::String(mode)) if mode == "chat" => {}
+        Some(Value::String(mode)) if mode == "terminal" => {
+            return spawn_terminal(core, request, prompt).await
+        }
+        Some(_) => return Err("mode must be chat or terminal".into()),
+    }
     let started = {
         let (core, request) = (core.clone(), request.clone());
         blocking(move || start(&core, &request).map_err(Into::into))
@@ -214,6 +256,185 @@ async fn hand_task(core: &Arc<Core>, started: Started, prompt: String) {
         format!("{name} did not start, so it never got your prompt: {failed}"),
     )
     .await;
+}
+
+/// A terminal agent the window is asked to open.
+struct Opening {
+    agent_id: String,
+    name: String,
+    provider: String,
+    model: Option<String>,
+    permission_mode: String,
+    launcher: Option<String>,
+    lead_id: String,
+    lead_name: String,
+    lead_cli: String,
+    project: String,
+    reports: bool,
+}
+
+/// Names a terminal worker and says how it runs, for the window to open it.
+fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, String> {
+    let lead_id = request
+        .agent_id
+        .clone()
+        .ok_or("agent_spawn needs the calling agent's id")?;
+    let params = &request.params;
+    let provider = text_param(params, "cli", 64)?
+        .ok_or("cli must name the agent to start, such as claude or codex")?
+        .trim()
+        .to_lowercase();
+    if AgentKind::from_label(&provider).is_none() {
+        return Err(format!(
+            "{provider} is not an agent Sikemux runs in a terminal"
+        ));
+    }
+    let model = text_param(params, "model", MAX_MODEL_CHARS)?.map(|model| model.trim().to_owned());
+    let reports = match params.get("report") {
+        None | Some(Value::Null) => true,
+        Some(Value::Bool(reports)) => *reports,
+        Some(_) => return Err("report must be a boolean".into()),
+    };
+    if !core.window.is_open() {
+        return Err(super::window::not_open("start an agent in a terminal"));
+    }
+    let _one_at_a_time = core.harness.spawning.one_at_a_time();
+    let (lead, _) = lead_of(core, &lead_id, &request.project)?;
+    let same = lead.provider == provider;
+    let permission_mode = lead.worker_mode(&provider, "workspace-write");
+    let model = model.or_else(|| {
+        lead.launch
+            .as_ref()
+            .filter(|_| same)
+            .and_then(|launch| launch.model.clone())
+    });
+    let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
+    let named = core.names.hire(
+        Worker {
+            agent_id: &agent_id,
+            lead: &lead_id,
+            provider: &provider,
+            reports,
+        },
+        running(core),
+    )?;
+    core.harness.spawning.opening().insert(agent_id.clone());
+    let lead_name = core.names.name(&lead_id).unwrap_or_else(|| lead_id.clone());
+    Ok(Opening {
+        agent_id,
+        name: named.name,
+        model,
+        permission_mode,
+        launcher: lead.launcher.filter(|_| same),
+        lead_cli: if lead.provider.is_empty() {
+            "agent".to_owned()
+        } else {
+            lead.provider
+        },
+        provider,
+        lead_id,
+        lead_name,
+        project: named.project,
+        reports,
+    })
+}
+
+/// Asks the window to open the terminal agent in its lead's project.
+async fn open_terminal(core: &Core, opening: &Opening) -> Result<(), String> {
+    let request = HarnessRequest {
+        id: uuid::Uuid::new_v4().to_string(),
+        project: opening.project.clone(),
+        agent_id: Some(opening.lead_id.clone()),
+        agent_secret: None,
+        method: OPEN_TERMINAL_METHOD.to_owned(),
+        params: json!({
+            "agentId": opening.agent_id,
+            "cli": opening.provider,
+            "name": opening.name,
+            "lead": opening.lead_id,
+            "model": opening.model,
+            "permissionMode": opening.permission_mode,
+            "launcher": opening.launcher,
+        }),
+    };
+    let request = serde_json::to_value(&request).map_err(|error| error.to_string())?;
+    let call = core.window.call(
+        WindowCall::Harness { request },
+        "start an agent in a terminal",
+        false,
+    )?;
+    let id = call.id;
+    match tokio::time::timeout(OPEN_TERMINAL_WAIT, call.answer).await {
+        Ok(Ok(answer)) => answer.map(|_| ()),
+        Ok(Err(_)) => Err("Sikemux's window closed before it opened the terminal".into()),
+        Err(_) => {
+            core.window.forget(id);
+            Err("Sikemux's window did not open the terminal in time".into())
+        }
+    }
+}
+
+async fn spawn_terminal(
+    core: &Arc<Core>,
+    request: &HarnessRequest,
+    prompt: String,
+) -> Result<Value, String> {
+    let opening = {
+        let (core, request) = (core.clone(), request.clone());
+        blocking(move || plan_terminal(&core, &request).map_err(Into::into))
+            .await
+            .map_err(|error| error.to_string())?
+    };
+    let opened = open_terminal(core, &opening).await;
+    core.harness.spawning.opening().remove(&opening.agent_id);
+    if let Err(error) = opened {
+        core.names.forget(&opening.agent_id);
+        return Err(format!("{} did not start: {error}", opening.name));
+    }
+    let task = messages::task(
+        &opening.lead_id,
+        &opening.lead_name,
+        &opening.lead_cli,
+        opening.reports,
+        prompt,
+    );
+    core.harness
+        .mailbox
+        .returned(&opening.agent_id, task.clone());
+    let watcher = core.clone();
+    let (agent_id, name, lead_id) = (
+        opening.agent_id.clone(),
+        opening.name.clone(),
+        opening.lead_id.clone(),
+    );
+    tokio::spawn(async move {
+        tokio::time::sleep(TERMINAL_READY_WAIT).await;
+        if messages::is_waiting(&watcher, &agent_id, &task)
+            && watcher.agent_session(&agent_id).is_some()
+        {
+            messages::report_as(
+                &watcher,
+                agent_id,
+                Some(name.clone()),
+                lead_id,
+                format!("{name} has not shown its prompt in its terminal yet, so it has not got your prompt. It may be waiting on the person, such as to trust the folder; it gets your prompt once it is ready."),
+            )
+            .await;
+        }
+    });
+    Ok(json!({
+        "name": opening.name,
+        "agentId": opening.agent_id,
+        "cli": opening.provider,
+        "model": opening.model,
+        "mode": "terminal",
+        "reportsBack": opening.reports,
+        "note": format!(
+            "{} is starting in a terminal tab and gets your prompt once its prompt box shows.{}",
+            opening.name,
+            if opening.reports { " Each time its turn ends, its final answer comes to you as a message." } else { "" }
+        ),
+    }))
 }
 
 /// How a worker's turn, or the worker, came to an end.

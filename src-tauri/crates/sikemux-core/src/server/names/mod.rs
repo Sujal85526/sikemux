@@ -213,6 +213,16 @@ impl Names {
         Ok(named)
     }
 
+    /// Forgets a worker that never started, so its name is free again.
+    pub(crate) fn forget(&self, agent_id: &str) {
+        let mut book = self.lock();
+        let before = book.agents.len();
+        book.agents.retain(|entry| entry.agent_id != agent_id);
+        if book.agents.len() != before {
+            self.save(&book);
+        }
+    }
+
     /// The agent that hears how the agent's turns end, if any.
     pub(crate) fn reports_to(&self, agent_id: &str) -> Option<String> {
         self.lock()
