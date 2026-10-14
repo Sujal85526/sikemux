@@ -812,6 +812,7 @@ async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Va
             workspace::wake_chat(core, None, target.agent_id.clone())
                 .await
                 .map_err(|error| format!("{name} is asleep and did not wake: {error}"))?;
+            mailbox.lock().wake_failed.remove(&target.agent_id);
             woke = " Sikemux woke it first.";
         }
         Reach::Stopped if letter.answers.is_some() => held = Some("has stopped"),
@@ -936,14 +937,17 @@ fn paste(core: &Arc<Core>, terminal: Arc<Session>, text: &str) -> Delivery {
 pub(crate) fn deliver_waiting(core: &Arc<Core>) {
     let mailbox = &core.harness.mailbox;
     let due: Vec<String> = {
-        let state = mailbox.lock();
-        if state.waiting.is_empty() {
-            return;
-        }
-        state
-            .waiting
+        let mut state = mailbox.lock();
+        let State {
+            waiting,
+            wake_failed,
+            delivering,
+            ..
+        } = &mut *state;
+        wake_failed.retain(|agent_id, _| waiting.contains_key(agent_id));
+        waiting
             .keys()
-            .filter(|agent_id| !state.delivering.contains(*agent_id))
+            .filter(|agent_id| !delivering.contains(*agent_id))
             .cloned()
             .collect()
     };
@@ -992,15 +996,12 @@ fn deliver_later(core: &Arc<Core>, agent_id: String, pending: Pending) {
                 }
             }
             Pending::Asleep => {
-                if workspace::wake_chat(&core, None, agent_id.clone())
-                    .await
-                    .is_err()
-                {
-                    mailbox
-                        .lock()
-                        .wake_failed
-                        .insert(agent_id.clone(), unix_ms());
-                }
+                let woke = workspace::wake_chat(&core, None, agent_id.clone()).await;
+                let mut state = mailbox.lock();
+                match woke {
+                    Ok(_) => state.wake_failed.remove(&agent_id),
+                    Err(_) => state.wake_failed.insert(agent_id.clone(), unix_ms()),
+                };
             }
         }
         mailbox.lock().delivering.remove(&agent_id);
