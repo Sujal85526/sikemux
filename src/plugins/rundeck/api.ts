@@ -300,8 +300,7 @@ export const rundeckApi = {
 
     executions: (jobId: string, project: string, max = 25, onlySucceeded = false) =>
         rndInvoke<RundeckExecution[]>("executions", { jobId, project, max, onlySucceeded }),
-    projectExecutions: (project: string, max: number, offset: number) =>
-        rndInvoke<ProjectExecutions>("projectExecutions", { project, max, offset }),
+    projectExecutions: (project: string, max: number, offset: number) => rndInvoke<ProjectExecutions>("projectExecutions", { project, max, offset }),
     execution: (executionId: number) => rndInvoke<RundeckExecution>("execution", { executionId }),
     executionState: (executionId: number) => rndInvoke<RundeckWorkflowState>("executionState", { executionId }),
     run: (req: RunRequest) => rndInvoke<RunResult>("run", req),

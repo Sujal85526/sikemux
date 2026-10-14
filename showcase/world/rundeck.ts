@@ -313,9 +313,11 @@ function history(id: string) {
         },
       },
       argstring: null,
+      workflowState: running ? workflow : null,
     };
   });
 }
+
 
 export function rundeckStream(
   method: string,

@@ -56,11 +56,6 @@
     background: var(--surface-hover);
     color: var(--text-primary);
 }
-.rnd-table tbody tr.sel td {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
-    color: var(--text-primary);
-}
 .rnd-table tbody tr[data-job] td:first-child {
     border-left: 1px solid transparent;
     border-radius: var(--radius-2) 0 0 var(--radius-2);
@@ -68,10 +63,6 @@
 .rnd-table tbody tr[data-job] td:last-child {
     border-right: 1px solid transparent;
     border-radius: 0 var(--radius-2) var(--radius-2) 0;
-}
-.rnd-table tbody tr.sel td:first-child,
-.rnd-table tbody tr.sel td:last-child {
-    border-color: var(--border-selected);
 }
 .rnd-table tbody tr[data-job]:focus-visible td {
     background: var(--surface-active);
@@ -136,7 +127,6 @@
     opacity: 0;
 }
 tr:hover .rnd-row-deploy,
-tr.sel .rnd-row-deploy,
 .rnd-row-deploy:focus-visible {
     opacity: 1;
 }
@@ -192,10 +182,6 @@ tr.sel .rnd-row-deploy,
 .rnd-compare-cell:hover {
     background: var(--surface-hover);
     border-color: var(--border-strong);
-}
-.rnd-compare-cell.sel {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
 }
 .rnd-compare-cell:focus-visible {
     box-shadow: var(--focus-ring);

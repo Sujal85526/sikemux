@@ -23,14 +23,12 @@ interface Crumb {
     onClick?: () => void;
 }
 
-/** Shows a job picked out in its folder's list, the way a row click does. */
+/** Goes back to a job's own page, or opens it over its folder's list. */
 export function showJob(paneId: string, job: JobRef): void {
     const { stack } = cmd.rundeckView(paneId);
     const index = stack.findIndex((level) => level.kind === "service" && level.jobId === job.jobId);
     if (index >= 0) return cmd.rundeckPopTo(paneId, index);
-    cmd.updateRundeckSettings({ activeProject: job.project, activeGroup: job.group });
-    cmd.selectRundeckJob(paneId, job.jobId);
-    cmd.rundeckHome(paneId);
+    cmd.openRundeckJob(job, { paneId });
 }
 
 function locationCrumbs(paneId: string, project: string, group: string | null): Crumb[] {
