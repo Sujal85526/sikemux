@@ -378,6 +378,7 @@ impl Session {
 
     fn turn_completed(&mut self, ended: &Value) -> Vec<Effect> {
         let id = text(ended, "id");
+        self.retries.remove(id);
         if self.stale.remove(id) {
             return Vec::new();
         }
@@ -461,6 +462,9 @@ impl Session {
             "turn/completed" => self.turn_completed(&params["turn"]),
             "error" if params["willRetry"] == true => {
                 let turn = params["turnId"].as_str().unwrap_or_default().to_owned();
+                if self.stale.contains(&turn) {
+                    return Vec::new();
+                }
                 let attempt = self.retries.entry(turn.clone()).or_default();
                 *attempt += 1;
                 let (category, _) = failure_policy(&params["error"]["codexErrorInfo"]);
