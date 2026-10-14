@@ -109,6 +109,10 @@ export default defineConfig({
         find: /^shiki\/(wasm|engine\/oniguruma)$/,
         replacement: resolve("src/vendor/oniguruma.ts"),
       },
+      {
+        find: /^hast-util-to-html$/,
+        replacement: resolve("src/vendor/hastToHtml.ts"),
+      },
     ],
   },
   define: {
