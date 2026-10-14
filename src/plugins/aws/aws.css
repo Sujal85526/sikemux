@@ -92,9 +92,33 @@
     color: var(--text-tertiary);
 }
 
+.aws-agent-profile {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: auto;
+    padding-bottom: var(--space-3);
+}
+.aws-agent-profile .dd,
+.aws-agent-profile .dd-btn {
+    width: 100%;
+}
+.aws-agent-profile-for {
+    padding: 0 var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.aws-agent-profile-note {
+    margin: 0;
+    padding: 0 var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
 .aws-account-wrap {
     position: relative;
-    margin-top: auto;
 }
 .aws-account {
     display: flex;

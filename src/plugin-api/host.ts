@@ -132,6 +132,12 @@ export function useActiveProjectCwd(): string | null {
     });
 }
 
+/** The project in front, or else the one the person last had in front, or else the first one open. */
+export function useNearestProject(): { name: string; cwd: string } | null {
+    const session = useStore((s) => s.sessions[nearestProjectSessionId(s) ?? ""]);
+    return session?.cwd ? { name: session.name, cwd: session.cwd } : null;
+}
+
 function surfacePane(state: StoreState, kind: PluginKind, activeOnly: boolean): string | null {
     const session = activeOnly ? state.sessions[state.activeSessionId] : Object.values(state.sessions).find((s) => s.kind === kind);
     if (session?.kind !== kind) return null;

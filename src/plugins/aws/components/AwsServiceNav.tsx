@@ -3,6 +3,7 @@ import { useResource, useResourceEnabled } from "../../../plugin-api/resources";
 import { IconChevron } from "../../../plugin-api/ui";
 import { awsIdentityR, awsProfilesR } from "../resources";
 import { AWS_SERVICES, awsSettings, setAwsProfile, setAwsService, useAws, type AwsService } from "../state";
+import { AwsAgentProfile } from "./AwsAgentProfile";
 import { ServiceGlyph } from "./icons";
 import { State } from "./parts";
 
@@ -39,6 +40,7 @@ export function AwsServiceNav({ profile, signedIn }: { profile: string; signedIn
                     </button>
                 );
             })}
+            <AwsAgentProfile />
             <Account profile={profile} />
         </nav>
     );

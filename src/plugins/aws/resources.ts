@@ -1,6 +1,7 @@
 import { resource } from "../../plugin-api/resources";
 import {
     awsApi,
+    type AgentProfilePicks,
     type AwsIdentity,
     type AwsProfile,
     type BillingMonth,
@@ -17,6 +18,11 @@ import {
 export const awsProfilesR = resource({
     kind: "aws.profiles",
     fetch: (): Promise<AwsProfile[]> => awsApi.profiles(),
+});
+
+export const awsAgentProfileR = resource({
+    kind: "aws.agentProfile",
+    fetch: (project: string | null): Promise<AgentProfilePicks> => awsApi.agentProfilePicks(project),
 });
 
 export const awsIdentityR = resource({

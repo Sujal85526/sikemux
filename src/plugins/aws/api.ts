@@ -27,6 +27,15 @@ export interface AwsIdentity {
     message: string | null;
 }
 
+export type AgentProfileSource = "environment" | "project" | "default" | "automatic";
+
+/** What a project's agents start on as AWS_PROFILE, and what the person picked for it. */
+export interface AgentProfilePicks {
+    project: string | null;
+    default: string | null;
+    effective: { profile: string | null; source: AgentProfileSource } | null;
+}
+
 export interface AwsLoginResult {
     success: boolean;
     stdout: string;
@@ -129,6 +138,8 @@ export interface S3Bucket {
 
 export const awsApi = {
     profiles: () => backend.call<AwsProfile[]>("profiles", {}),
+    agentProfilePicks: (project: string | null) => backend.call<AgentProfilePicks>("agentProfilePicks", { project }),
+    pickAgentProfile: (project: string | null, profile: string | null) => backend.call<AgentProfilePicks>("pickAgentProfile", { project, profile }),
     identity: (profile: string, force = false) => backend.call<AwsIdentity>("identity", { profile, force }),
     ecsClusters: (profile: string) => backend.call<EcsCluster[]>("ecsClusters", { profile }),
     ecsServices: (profile: string, cluster: string) => backend.call<EcsService[]>("ecsServices", { profile, cluster }),
