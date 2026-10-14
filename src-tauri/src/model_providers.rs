@@ -11,8 +11,14 @@ use std::time::Duration;
 use reqwest::{Client, StatusCode};
 use serde::Serialize;
 
+/// A development build keeps entries of its own, so it never spends or replaces the
+/// installed app's sign-in.
 #[cfg(not(test))]
-const KEY_SERVICE: &str = "sikemux-model-provider";
+const KEY_SERVICE: &str = if cfg!(debug_assertions) {
+    "sikemux-model-provider-dev"
+} else {
+    "sikemux-model-provider"
+};
 /// Tests keep to an entry of their own, so they never replace or delete a real key.
 #[cfg(test)]
 const KEY_SERVICE: &str = "sikemux-model-provider-test";

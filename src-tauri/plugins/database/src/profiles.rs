@@ -8,8 +8,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{DatabaseError, DatabaseResult};
 
+/// A development build keeps entries of its own, so it never spends or replaces the
+/// installed app's sign-in.
 #[cfg(not(test))]
-const PASSWORD_SERVICE: &str = "sikemux-database-password";
+const PASSWORD_SERVICE: &str = if cfg!(debug_assertions) {
+    "sikemux-database-password-dev"
+} else {
+    "sikemux-database-password"
+};
 /// Tests keep to an entry of their own, so they never replace or delete a real password.
 #[cfg(test)]
 const PASSWORD_SERVICE: &str = "sikemux-database-password-test";
