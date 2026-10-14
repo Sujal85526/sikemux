@@ -630,9 +630,9 @@ export function ChatComposer({
                     setup={setup}
                     agentLocked={agentLocked}
                     disabled={connection !== "ready" || running || changingPermissions || changingConfig || awaitingPermission}
-                    onAgent={(type, profileId) => {
+                    onAgent={(type, profileId, model, modelProvider) => {
                         if (agentLocked || running || awaitingPermission) return;
-                        cmd.configureEmptyAgent(agent.id, type, profileId);
+                        cmd.configureEmptyAgent(agent.id, type, profileId, model, modelProvider);
                     }}
                     onConfig={onConfig}
                 />

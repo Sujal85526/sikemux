@@ -71,6 +71,7 @@ export default function PickerMenu({
     value,
     options,
     agents,
+    payers,
     loading,
     compact,
     query,
@@ -85,6 +86,7 @@ export default function PickerMenu({
     value: string;
     options: Choice[];
     agents?: AgentChoicesProps;
+    payers?: ReactNode;
     loading: boolean;
     compact: boolean;
     query: string;
@@ -143,6 +145,7 @@ export default function PickerMenu({
                 }}
             />
             {agents && <AgentChoices {...agents} />}
+            {payers}
             <div id={listId} role="listbox" aria-label={`${name} options`} className="chat-picker-options">
                 {loading && <div className="chat-picker-hint">Loading models…</div>}
                 {!loading &&

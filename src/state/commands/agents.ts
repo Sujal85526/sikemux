@@ -49,7 +49,9 @@ export function agentSessionMetadataPending(agent: Agent): boolean {
     return title.length <= FALLBACK_AGENT_TITLE_MAX && agent.resumeId.startsWith(title);
 }
 
-export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?: string): void {
+/** Moves a chat with nothing in it to another agent, account or model provider.
+    `model` picks its model there, on `modelProvider` when one is named. */
+export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string): void {
     mutate((d) => {
         const agent = d.agents[id];
         if (!agent || isAgentBusy(d.agentActivity[id])) return;
@@ -63,7 +65,8 @@ export function configureEmptyAgent(id: string, type: ChatAgentType, profileId?:
         agent.permissionMode = mode;
         agent.skipPermissions = mode === "bypass";
         delete agent.resumeId;
-        delete agent.model;
+        agent.model = model;
+        agent.modelProvider = modelProvider;
         delete agent.effort;
         delete agent.baselineSessionIds;
         Object.assign(agent, relaunchSpec(d, agent));

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { errorText } from "../lib/format";
 import { modelProvidersApi, type ModelProvider, type ModelProviderKind } from "../api/modelProviders";
 import { portsApi } from "../api/ports";
+import { agentLabel } from "../agents/catalog";
 import { reportError } from "../state/toast";
 import { SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 
@@ -9,14 +10,20 @@ const KEYED_SECTIONS: { kind: ModelProviderKind; title: string; sub: string }[] 
     {
         kind: "plan",
         title: "Coding plans",
-        sub: "Monthly subscriptions made for coding agents. OpenCode, Pi and OMP list a plan's models once its key is saved here. Keys stay in your Keychain.",
+        sub: "Monthly subscriptions made for coding agents. OpenCode, Pi and OMP list a plan's models once its key is saved here, and a chat's model picker can move Claude Code or Codex onto it. Keys stay in your Keychain.",
     },
     {
         kind: "api",
         title: "Model providers",
-        sub: "Hosted models you pay the provider for by the token. OpenCode, Pi and OMP list a provider's models once its key is saved here. Keys stay in your Keychain.",
+        sub: "Hosted models you pay the provider for by the token. OpenCode, Pi and OMP list a provider's models once its key is saved here, and a chat's model picker can move Claude Code or Codex onto it. Keys stay in your Keychain.",
     },
 ];
+
+/** Which of Claude Code and Codex a chat can move onto the provider, in words. */
+function chatsOn(provider: ModelProvider): string {
+    const agents = provider.agents.map(agentLabel);
+    return agents.length ? `${agents.join(" and ")} chats can run on it from the model picker.` : "";
+}
 
 const openSignUp = (provider: ModelProvider) => void portsApi.openExternal(provider.signUpUrl).catch(reportError("Open link"));
 
@@ -73,7 +80,7 @@ export function ModelProvidersSection() {
                     failed ? (
                         <span className="model-provider-failure">{failed}</span>
                     ) : provider.connected ? (
-                        "Connected. Agents started from now on can use it."
+                        `Connected. Agents started from now on can use it. ${chatsOn(provider)}`.trim()
                     ) : undefined
                 }>
                 {provider.connected ? (
@@ -169,7 +176,7 @@ function RunnerState({ provider }: { provider: ModelProvider }) {
     if (!models.length) return <>Running, with no models downloaded yet.</>;
     return (
         <>
-            Running with <span className="model-provider-models">{models.join(", ")}</span>
+            Running with <span className="model-provider-models">{models.join(", ")}</span>. {chatsOn(provider)}
         </>
     );
 }

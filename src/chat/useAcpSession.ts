@@ -216,6 +216,7 @@ export function useAcpSession({
                         environmentKeys: JSON.parse(environmentKeys) as string[],
                         account: account ? acpAccount(account) : undefined,
                         fallbacks: fallbackAccounts(account, providerProfiles, accountAutoSwitch),
+                        modelProvider: current.modelProvider,
                     });
                 }
                 if (!mounted) return;
@@ -253,6 +254,7 @@ export function useAcpSession({
         agent.id,
         agent.type,
         agent.profileId,
+        agent.modelProvider,
         agent.executablePath,
         cwd,
         profile?.configPath,

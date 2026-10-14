@@ -119,6 +119,8 @@ export interface Agent {
     cwd?: string;
     /** Optional provider model override selected at launch. */
     model?: string;
+    /** The model provider a chat runs on, by catalogue id, in place of its maker's account. */
+    modelProvider?: string;
     /** Optional provider reasoning-effort override selected at launch. */
     effort?: AgentEffort;
     /** @deprecated Compatibility bridge for snapshots and command builders. */

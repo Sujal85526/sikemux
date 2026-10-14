@@ -36,6 +36,7 @@ export type PersistedAgent = Pick<
     | "executablePath"
     | "cwd"
     | "model"
+    | "modelProvider"
     | "effort"
     | "skipPermissions"
     | "keepAlive"

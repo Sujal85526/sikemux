@@ -437,6 +437,8 @@ function toPersistedAgent(value: unknown): PersistedAgent | null {
     if (executablePath) agent.executablePath = executablePath;
     if (cwd) agent.cwd = cwd;
     if (model) agent.model = model;
+    const modelProvider = boundedOptionalString(value.modelProvider, 100);
+    if (modelProvider) agent.modelProvider = modelProvider;
     if (typeof value.effort === "string" && AGENT_EFFORTS.has(value.effort)) agent.effort = value.effort as PersistedAgent["effort"];
     if (value.keepAlive === true) agent.keepAlive = true;
     if (value.renamed === true) agent.renamed = true;
@@ -465,6 +467,7 @@ function persistedAgent(agent: Agent): PersistedAgent {
         ...(agent.executablePath ? { executablePath: agent.executablePath } : {}),
         ...(agent.cwd ? { cwd: agent.cwd } : {}),
         ...(agent.model ? { model: agent.model } : {}),
+        ...(agent.modelProvider ? { modelProvider: agent.modelProvider } : {}),
         ...(agent.effort ? { effort: agent.effort } : {}),
         ...(agent.keepAlive ? { keepAlive: true } : {}),
         ...(agent.renamed ? { renamed: true } : {}),
