@@ -272,6 +272,7 @@ pub fn run() {
         .manage(remote::PublishedAgents::default())
         .manage(remote::PublishedRecentChats::default())
         .manage(remote::PublishedOnScreen::default())
+        .manage(agent_names::AgentsInApp::default())
         .manage(remote::PublishedPalette::default())
         .manage(remote::PublishedBackdrop::default())
         .manage(BrowserManager::default())

@@ -22,4 +22,6 @@ export const agentNamesApi = {
     /** The agent's name, given now when it has none. */
     name: (request: NameRequest) => invoke<AgentName>("agent_name_call", { method: "nameAgent", params: request }),
     rename: (agentId: string, name: string) => invoke<AgentName>("agent_name_call", { method: "renameAgent", params: { agentId, name } }),
+    /** Every agent the app holds, sleeping ones included, so the core keeps their names theirs. */
+    inApp: (agentIds: readonly string[]) => invoke<null>("agent_name_call", { method: "agentsInApp", params: { agentIds } }),
 };

@@ -238,17 +238,6 @@ impl Workspaces {
         })
     }
 
-    /// The agents the app has open, as far as it has said.
-    pub(crate) fn open_agents(&self) -> Vec<String> {
-        let published = self.lock();
-        published
-            .chats
-            .iter()
-            .map(|chat| chat.agent_id.clone())
-            .chain(published.titles.keys().cloned())
-            .collect()
-    }
-
     pub(crate) fn project_paths(&self) -> Vec<PathBuf> {
         self.lock()
             .projects

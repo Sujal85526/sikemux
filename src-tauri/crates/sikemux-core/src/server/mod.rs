@@ -429,21 +429,20 @@ impl Core {
         shown
     }
 
-    /// Every agent running here or open in the app.
-    pub(crate) fn open_agents(&self) -> HashSet<String> {
-        let mut open: HashSet<String> = self.chats.ids().into_iter().collect();
-        open.extend(self.all_sessions().iter().filter_map(|session| {
+    /// Every chat and agent terminal running here.
+    pub(crate) fn running_agents(&self) -> HashSet<String> {
+        let mut running: HashSet<String> = self.chats.ids().into_iter().collect();
+        running.extend(self.all_sessions().iter().filter_map(|session| {
             session
                 .agent
                 .as_ref()
                 .map(|agent| agent.agent_id().to_owned())
         }));
-        open.extend(self.workspaces.open_agents());
-        open
+        running
     }
 
-    /// The agent's name, given now when it has none. Reads the disk to find
-    /// the project `cwd` belongs to.
+    /// The agent's name, given now when it has none. Reads and writes the
+    /// disk, so it belongs on a blocking thread.
     pub(crate) fn name_agent(
         &self,
         agent_id: &str,
@@ -452,15 +451,19 @@ impl Core {
         resume_id: Option<&str>,
     ) -> names::AgentName {
         let project = names::project_of(cwd, &self.workspaces.project_paths());
-        self.names.give(
+        let (named, changed) = self.names.give(
             names::Starting {
                 agent_id,
                 project,
                 provider,
                 resume_id,
             },
-            &self.open_agents(),
-        )
+            self.running_agents(),
+        );
+        if changed {
+            self.publish_device_view();
+        }
+        named
     }
 
     pub(crate) fn agent_session(&self, agent_id: &str) -> Option<Arc<Session>> {

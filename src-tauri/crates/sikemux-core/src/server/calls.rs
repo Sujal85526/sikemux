@@ -2,6 +2,7 @@
 //! device gains a method here without its native code changing, so one a
 //! released app calls is never removed or renamed.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -31,7 +32,8 @@ pub(crate) async fn call(
         "chatFile" => answer(chat_file(&core, peer, parse(params)?).await?),
         "agentSecret" => answer(agent_secret(&core, parse(params)?)?),
         "nameAgent" => answer(name_agent(&core, parse(params)?).await?),
-        "renameAgent" => answer(rename_agent(&core, parse(params)?)?),
+        "renameAgent" => answer(rename_agent(&core, parse(params)?).await?),
+        "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
         "shareChat" => {
             let params: ShareChatParams = parse(params)?;
             answer(share::share_chat(
@@ -170,10 +172,44 @@ struct RenameAgentParams {
     name: String,
 }
 
-fn rename_agent(core: &Core, params: RenameAgentParams) -> CoreResult<AgentName> {
-    let named = core
-        .names
-        .rename(&params.agent_id, &params.name, &core.open_agents())?;
-    core.publish_device_view();
-    Ok(named)
+async fn rename_agent(core: &Arc<Core>, params: RenameAgentParams) -> CoreResult<AgentName> {
+    let core = core.clone();
+    blocking(move || {
+        let named = core
+            .names
+            .rename(&params.agent_id, &params.name, core.running_agents())?;
+        core.publish_device_view();
+        Ok(named)
+    })
+    .await
+}
+
+/// The most agents the app may say it holds.
+const MAX_AGENTS_IN_APP: usize = 4096;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentsInAppParams {
+    agent_ids: HashSet<String>,
+}
+
+/// Every agent the app holds, sleeping ones included, so their names stay
+/// theirs while nothing of them runs here.
+async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResult<()> {
+    if params.agent_ids.len() > MAX_AGENTS_IN_APP {
+        return Err("the app named more agents than the core keeps".into());
+    }
+    if !params
+        .agent_ids
+        .iter()
+        .all(|id| crate::cli::protocol::is_tool_agent_id(id))
+    {
+        return Err("that is not an agent id".into());
+    }
+    let core = core.clone();
+    blocking(move || {
+        core.names.set_in_app(params.agent_ids);
+        Ok(())
+    })
+    .await
 }

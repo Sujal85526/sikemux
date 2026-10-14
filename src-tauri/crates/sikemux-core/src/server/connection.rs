@@ -1062,12 +1062,14 @@ async fn spawn(
     blocking(move || {
         let mut prepared = match *target {
             SpawnTarget::Terminal(spawn) => {
+                let cwd = spawn.cwd.clone();
                 let prepared = prepare_terminal(&launch, spawn)?;
                 let owner = &prepared.owner;
-                if let (Some(agent_id), Some(project)) = (&owner.agent_id, &owner.project) {
+                let folder = cwd.or_else(|| owner.project.clone());
+                if let (Some(agent_id), Some(folder)) = (&owner.agent_id, folder) {
                     core.name_agent(
                         agent_id,
-                        std::path::Path::new(project),
+                        std::path::Path::new(&folder),
                         owner.agent_type.as_deref(),
                         None,
                     );

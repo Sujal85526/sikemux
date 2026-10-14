@@ -11,7 +11,7 @@ const RETRY_MS = 3_000;
 function nameRequests(state: Pick<StoreState, "agents" | "windows" | "sessions" | "sessionOrder" | "windowsBySession">): NameRequest[] {
     return state.sessionOrder.flatMap((sessionId) => {
         const session = state.sessions[sessionId];
-        if (session?.kind !== "project") return [];
+        if (!session) return [];
         return agentIdsOf(state, sessionId).flatMap((agentId) => {
             const agent = state.agents[agentId];
             const cwd = agent && agentCwd(agent, session);
@@ -22,8 +22,9 @@ function nameRequests(state: Pick<StoreState, "agents" | "windows" | "sessions" 
 }
 
 /**
- * Asks the core for every open agent's name. The core names an agent as it starts; this also names the ones restored
- * from before, and tells the core which provider session each runs so a chat opened again gets its old name back.
+ * Tells the core every agent the app holds, then asks for each one's name. The core names an agent as it starts; this
+ * also names the ones restored from before, and tells the core which provider session each runs so a chat opened again
+ * gets its old name back.
  */
 export function AgentNameBridge() {
     const agents = useStore((s) => s.agents);
@@ -31,12 +32,18 @@ export function AgentNameBridge() {
     const sessions = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const windowsBySession = useStore((s) => s.windowsBySession);
+    const held = useMemo(() => JSON.stringify(Object.keys(agents).sort()), [agents]);
     const requests = useMemo(
         () => JSON.stringify(nameRequests({ agents, windows, sessions, sessionOrder, windowsBySession })),
         [agents, windows, sessions, sessionOrder, windowsBySession],
     );
+    const told = useRef<Promise<unknown>>(Promise.resolve());
     const asked = useRef(new Map<string, string>());
     const [retries, setRetries] = useState(0);
+
+    useEffect(() => {
+        told.current = agentNamesApi.inApp(JSON.parse(held) as string[]).catch(swallow("tell the core which agents the app holds"));
+    }, [held]);
 
     useEffect(() => {
         let retry: number | undefined;
@@ -44,15 +51,17 @@ export function AgentNameBridge() {
             const key = JSON.stringify(request);
             if (asked.current.get(request.agentId) === key) continue;
             asked.current.set(request.agentId, key);
-            agentNamesApi.name(request).then(
-                (named) => cmd.setAgentName(request.agentId, named.name),
-                (error: unknown) => {
-                    asked.current.delete(request.agentId);
-                    swallow("name an agent")(error);
-                    window.clearTimeout(retry);
-                    retry = window.setTimeout(() => setRetries((count) => count + 1), RETRY_MS);
-                },
-            );
+            told.current
+                .then(() => agentNamesApi.name(request))
+                .then(
+                    (named) => cmd.setAgentName(request.agentId, named.name),
+                    (error: unknown) => {
+                        asked.current.delete(request.agentId);
+                        swallow("name an agent")(error);
+                        window.clearTimeout(retry);
+                        retry = window.setTimeout(() => setRetries((count) => count + 1), RETRY_MS);
+                    },
+                );
         }
         return () => window.clearTimeout(retry);
     }, [requests, retries]);

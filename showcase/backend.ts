@@ -447,6 +447,7 @@ export class ShowcaseBackend implements IpcTransport {
     );
     const spareNames = ["Lark", "Fern", "Quartz", "Dune", "Pika", "Aster"];
     this.on("agent_name_call", ({ method, params }) => {
+      if (method === "agentsInApp") return null;
       const { agentId, name } = params as { agentId: string; name?: string };
       if (method === "renameAgent" && name) demoNames.set(agentId, name);
       if (!demoNames.has(agentId))

@@ -52,8 +52,13 @@ impl Entry {
 }
 
 #[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Book {
     agents: Vec<Entry>,
+    /// Every agent the app holds, sleeping ones included, as it last said.
+    /// Unknown until the app first says.
+    #[serde(default)]
+    in_app: Option<HashSet<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -103,16 +108,33 @@ impl Names {
             .map(|entry| entry.name.clone())
     }
 
-    /// The agent's name, given now when it has none. `open` holds every agent
-    /// running or open in the app.
-    pub(crate) fn give(&self, starting: Starting<'_>, open: &HashSet<String>) -> AgentName {
+    /// The agent's name, given now when it has none, and whether that changed
+    /// anything. `running` holds the agents running here.
+    pub(crate) fn give(
+        &self,
+        starting: Starting<'_>,
+        running: HashSet<String>,
+    ) -> (AgentName, bool) {
         let mut book = self.lock();
-        let (named, changed) = book.give(starting, open);
+        let open = book.open(running);
+        let (named, changed) = book.give(starting, &open);
         if changed {
-            book.prune(&named.project, open);
+            if book.in_app.is_some() {
+                book.prune(&named.project, &open);
+            }
             self.save(&book);
         }
-        named
+        (named, changed)
+    }
+
+    /// Takes the app's word for which agents it holds.
+    pub(crate) fn set_in_app(&self, agent_ids: HashSet<String>) {
+        let mut book = self.lock();
+        if book.in_app.as_ref() == Some(&agent_ids) {
+            return;
+        }
+        book.in_app = Some(agent_ids);
+        self.save(&book);
     }
 
     pub(crate) fn note_session(&self, agent_id: &str, session_id: &str) {
@@ -133,10 +155,11 @@ impl Names {
         &self,
         agent_id: &str,
         name: &str,
-        open: &HashSet<String>,
+        running: HashSet<String>,
     ) -> Result<AgentName, String> {
         let name = valid_name(name)?;
         let mut book = self.lock();
+        let open = book.open(running);
         let project = book
             .entry_mut(agent_id)
             .ok_or("Sikemux has not named that agent yet")?
@@ -177,6 +200,11 @@ impl Names {
 }
 
 impl Book {
+    fn open(&self, mut running: HashSet<String>) -> HashSet<String> {
+        running.extend(self.in_app.iter().flatten().cloned());
+        running
+    }
+
     fn entry_mut(&mut self, agent_id: &str) -> Option<&mut Entry> {
         self.agents
             .iter_mut()
@@ -353,7 +381,7 @@ fn valid_name(name: &str) -> Result<String, String> {
     let name = name.trim();
     let mut chars = name.chars();
     let fits = chars.next().is_some_and(char::is_alphabetic)
-        && chars.all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        && chars.all(char::is_alphanumeric)
         && name.chars().count() <= MAX_NAME_CHARS;
     if fits {
         Ok(name.to_owned())
@@ -384,11 +412,13 @@ fn load(path: &Path) -> Book {
     }
 }
 
-/// The project an agent working in `cwd` belongs to: the main checkout of a
-/// git worktree, then the app's project that holds it, else `cwd` itself.
+/// The project an agent working in `cwd` belongs to: the app's project that
+/// holds it, else `cwd` itself. A folder in a git worktree counts as the same
+/// folder in the main checkout.
 pub(crate) fn project_of(cwd: &Path, projects: &[PathBuf]) -> String {
     let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
-    let path = canonical(&main_checkout(cwd).unwrap_or_else(|| cwd.to_owned()));
+    let cwd = canonical(cwd);
+    let path = in_main_checkout(&cwd).unwrap_or(cwd);
     projects
         .iter()
         .map(|project| canonical(project))
@@ -399,11 +429,23 @@ pub(crate) fn project_of(cwd: &Path, projects: &[PathBuf]) -> String {
         .into_owned()
 }
 
+/// The folder in the main checkout matching `cwd` in a linked git worktree.
+fn in_main_checkout(cwd: &Path) -> Option<PathBuf> {
+    let root = cwd.ancestors().find(|dir| dir.join(".git").exists())?;
+    let main = main_checkout(root)?;
+    let inside = cwd.strip_prefix(root).ok()?;
+    Some(if inside.as_os_str().is_empty() {
+        main
+    } else {
+        main.join(inside)
+    })
+}
+
 /// Where a linked git worktree's main checkout is. A linked worktree's `.git`
 /// is a file naming its folder under the main checkout's `.git`.
-fn main_checkout(cwd: &Path) -> Option<PathBuf> {
-    let link = std::fs::read_to_string(cwd.join(".git")).ok()?;
-    let gitdir = cwd.join(link.strip_prefix("gitdir:")?.trim());
+fn main_checkout(root: &Path) -> Option<PathBuf> {
+    let link = std::fs::read_to_string(root.join(".git")).ok()?;
+    let gitdir = root.join(link.strip_prefix("gitdir:")?.trim());
     let common = std::fs::read_to_string(gitdir.join("commondir")).ok()?;
     let common = std::fs::canonicalize(gitdir.join(common.trim())).ok()?;
     if common.file_name()? != ".git" {

@@ -1119,12 +1119,16 @@ pub(crate) fn begin(
     };
     let resume_id = launch_spec.resume_id.clone();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
-    core.name_agent(
-        chat.agent_id(),
-        &chat.launch.cwd,
-        Some(chat.provider()),
-        resume_id.as_deref(),
+    let naming = (
+        core.clone(),
+        chat.agent_id().to_owned(),
+        chat.launch.cwd.clone(),
+        chat.provider().to_owned(),
     );
+    tokio::task::spawn_blocking(move || {
+        let (core, agent_id, cwd, provider) = naming;
+        core.name_agent(&agent_id, &cwd, Some(&provider), resume_id.as_deref());
+    });
     core.seen.active(chat.agent_id());
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
