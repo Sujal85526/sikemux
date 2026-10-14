@@ -26,12 +26,14 @@ function chunkName(id: string): string | undefined {
   // them unassigned lets Rolldown split each grammar into its own
   // chunk. Every other @shikijs/* package (core, the two engines,
   // vscode-textmate) is the highlighter's static dependency graph,
-  // not a per-language import, so it stays folded into it.
+  // not a per-language import, so it stays folded into it, and so do
+  // the regex packages the JavaScript engine is built on.
   if (packagePath.startsWith("@shikijs/langs/")) return undefined;
   if (
     packagePath.startsWith("@shikijs/") ||
     packagePath.startsWith("shiki/") ||
-    packagePath.startsWith("oniguruma")
+    packagePath.startsWith("oniguruma") ||
+    packagePath.startsWith("regex")
   ) {
     return "highlighter";
   }
