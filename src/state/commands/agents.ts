@@ -1,6 +1,7 @@
 import { agentApi, type AgentSession } from "../../api/agents";
 import type { AcpChat } from "../../api/acp";
 import { agentNamesApi } from "../../api/agentNames";
+import { runOfAgent } from "../../agents/agentBoard";
 import { waitsOnPerson, type AgentQuestion } from "../../agents/agentQuestions";
 import { profileOfLauncher } from "../../remote/workspace";
 import { isAgentType } from "../../agents/catalog";
@@ -205,9 +206,16 @@ export function adoptChat(chat: AcpChat): boolean {
         if (d.agents[chat.agentId]) return;
         const lead = chat.startedBy ? d.agents[chat.startedBy] : undefined;
         const leadWindowId = lead ? agentWindowId(d, lead.id) : null;
-        const sessionId = (leadWindowId && ownerSessionId(d, leadWindowId)) || projectSessionInBackground(d as unknown as StoreState, chat.cwd);
+        const auto = lead ? null : runOfAgent(d.agentBoards, chat.agentId);
+        const sessionId =
+            (leadWindowId && ownerSessionId(d, leadWindowId)) || projectSessionInBackground(d as unknown as StoreState, auto?.project ?? chat.cwd);
         const leadTree = lead?.worktree;
-        const worktree = leadTree && (chat.cwd === leadTree.path || chat.cwd.startsWith(`${leadTree.path}/`)) ? { ...leadTree } : undefined;
+        const run = auto?.card.auto;
+        const worktree: AgentWorktree | undefined = run
+            ? { repo: run.repo, path: run.worktree, branch: run.branch, base: run.base, startSha: run.startSha }
+            : leadTree && (chat.cwd === leadTree.path || chat.cwd.startsWith(`${leadTree.path}/`))
+              ? { ...leadTree }
+              : undefined;
         const permissionMode = normalizePermissionMode(type, chat.permissionMode as AgentPermissionMode);
         const profileId = profileOfLauncher(chat.launcher, d.providerProfiles, type) ?? (lead?.type === type ? lead.profileId : undefined);
         const profile = profileOf(d, { profileId, type });

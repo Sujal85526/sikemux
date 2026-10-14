@@ -1,5 +1,7 @@
 import { acpApi, type AcpChat } from "../api/acp";
+import { agentBoardApi } from "../api/agentBoard";
 import { coreSessionsApi, type CoreSession } from "../api/coreSessions";
+import { runOfAgent } from "../agents/agentBoard";
 import { chatClaimed } from "../chat/chatClaims";
 import { QUIT_AND_STOP_SHORTCUT } from "../commands/keybindings";
 import * as cmd from "../state/commands";
@@ -29,6 +31,7 @@ export interface CoreSessionRestoreDeps {
     resume(agentId: string, ptyId: number): Promise<void>;
     kill(id: number): Promise<void>;
     chats: { list(): Promise<AcpChat[]>; stop(agentId: string): Promise<void> };
+    boards(): Promise<void>;
     tasks: TaskAdoptionTargets;
     schedule(callback: () => void, delayMs: number): void;
 }
@@ -40,6 +43,7 @@ function defaultDeps(): CoreSessionRestoreDeps {
         resume: relaunchTuiAgent,
         kill: coreSessionsApi.kill,
         chats: { list: acpApi.list, stop: acpApi.stop },
+        boards: () => agentBoardApi.all().then(cmd.setAgentBoards),
         tasks: {
             watch: (ptyId) => backend.watch(ptyId),
             adoptDeckTask: (task, executionId, started) => appTaskRuntime.adopt(task, executionId, started),
@@ -54,7 +58,7 @@ function defaultDeps(): CoreSessionRestoreDeps {
 
 /**
  * Takes back what the core kept while the app was closed or reloading:
- * terminal agents still running come back live, ones that crashed meanwhile
+ * terminal agents still running come back live, as do chats other agents or a board's Auto started, ones that crashed meanwhile
  * are resumed in their pane, running tasks rejoin the
  * command deck or reopen their terminals, chat panes take their chats back
  * as they mount, and terminals from before this page that nothing in the
@@ -69,7 +73,9 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
         return;
     }
     const chats = await deps.chats.list().catch((): AcpChat[] => []);
-    for (const chat of chats) if (chat.startedBy !== null) cmd.adoptChat(chat);
+    if (chats.some((chat) => chat.startedBy === null)) await deps.boards().catch(() => {});
+    const boards = getState().agentBoards;
+    for (const chat of chats) if (chat.startedBy !== null || runOfAgent(boards, chat.agentId)) cmd.adoptChat(chat);
     const plan = agentSessionPlan(getState(), sessions);
     cmd.applyAgentSessionPlan(plan);
     for (const id of plan.resume) {
