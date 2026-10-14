@@ -57,6 +57,7 @@
     "allow-share-access",
     "allow-share-call",
     "allow-agent-name-call",
+    "allow-agent-question-call",
     "allow-remote-answer-pairing",
     "allow-remote-allow-devices",
     "allow-remote-publish-workspace",

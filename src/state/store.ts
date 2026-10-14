@@ -198,6 +198,8 @@ export interface ViewState {
     agentTasks: Record<string, number>;
     /** How many subagents each agent still has going. */
     agentSubagents: Record<string, number>;
+    /** Questions agents asked that wait on an answer, as the core last sent them. */
+    agentQuestions: import("../api/agentQuestions").AgentQuestion[];
 
     commandPaletteOpen: boolean;
     onboardingOpen: boolean;
@@ -327,6 +329,7 @@ export const useStore = create<StoreState>(() => {
         agentActivity: {},
         agentTasks: {},
         agentSubagents: {},
+        agentQuestions: [],
         commandPaletteOpen: false,
         onboardingOpen: false,
         diagnosticsOpen: false,

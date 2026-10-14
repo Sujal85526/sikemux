@@ -175,6 +175,8 @@ export interface AgentRuntimeState {
     confidence: "high" | "medium" | "low";
     reason: string;
     matchedRule?: string;
+    /** What the agent itself last said it was doing, while a question it put to the person shows it as waiting. */
+    reported?: AgentBackendState;
 }
 
 /** Identity Sikemux attaches to every shell it owns. Runtime-only. */

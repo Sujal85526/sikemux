@@ -129,6 +129,9 @@ pub(crate) fn answer_window_call(app: &AppHandle, call_id: CallId, call: WindowC
 }
 
 fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
+    if request.method == crate::agent_questions::CHANGED_METHOD {
+        return crate::agent_questions::changed(app, &request.params);
+    }
     if is_browser_method(&request.method) {
         return crate::browser::tools::execute(app, &request);
     }

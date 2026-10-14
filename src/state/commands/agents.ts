@@ -1,6 +1,7 @@
 import { agentApi, type AgentSession } from "../../api/agents";
 import type { AcpChat } from "../../api/acp";
 import { agentNamesApi } from "../../api/agentNames";
+import { waitsOnPerson, type AgentQuestion } from "../../api/agentQuestions";
 import { profileOfLauncher } from "../../remote/workspace";
 import { isAgentType } from "../../agents/catalog";
 import { agentSupportsChat, effectiveMode, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
@@ -629,8 +630,49 @@ export function noteAgentActivity(id: string, event: "working" | "complete" | im
                       reason: event === "complete" ? "legacy activity settled" : "terminal input or output",
                   }
                 : event;
+        if (semantic.state !== "stopped" && waitsOnPerson(d.agentQuestions, id)) {
+            if (previous && semantic.sequence <= previous.sequence) return;
+            const held = previous?.reported !== undefined ? previous : reduceAgentState(previous, { ...semantic, state: "blocked" }, visible);
+            if (held) d.agentActivity[id] = { ...held, sequence: semantic.sequence, reported: semantic.state };
+            return;
+        }
         const reduced = reduceAgentState(previous, semantic, visible);
         if (reduced) d.agentActivity[id] = reduced;
+    });
+}
+
+/**
+ * Takes the open questions the core sent. An agent waiting on the person's answer shows as needing input whatever it
+ * reports, and goes back to what it last reported once the question is answered.
+ */
+export function setAgentQuestions(questions: AgentQuestion[]): void {
+    mutate((d) => {
+        const before = d.agentQuestions;
+        d.agentQuestions = questions;
+        for (const id of new Set([...before, ...questions].map((question) => question.agentId))) {
+            const asking = waitsOnPerson(questions, id);
+            if (asking === waitsOnPerson(before, id) || !d.agents[id]) continue;
+            const previous = d.agentActivity[id];
+            if (asking) {
+                const visible = activeAgentId(d, d.sessions[d.activeSessionId]) === id;
+                const held = reduceAgentState(
+                    previous,
+                    {
+                        agentId: id,
+                        state: "blocked",
+                        sequence: (previous?.sequence ?? 0) + 1,
+                        source: previous?.source ?? "activity",
+                        confidence: "high",
+                        reason: "asked the person a question",
+                    },
+                    visible,
+                );
+                if (held) d.agentActivity[id] = { ...held, reported: previous?.backendState ?? "idle" };
+            } else if (previous?.reported !== undefined) {
+                const { reported, ...rest } = previous;
+                d.agentActivity[id] = { ...rest, state: reported, backendState: reported, unread: false, reason: "question answered" };
+            }
+        }
     });
 }
 

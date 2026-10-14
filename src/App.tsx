@@ -31,6 +31,7 @@ import { HarnessBridge } from "./shell/HarnessBridge";
 import { GlobalSkillsBridge } from "./shell/GlobalSkillsBridge";
 import { RemoteChatBridge } from "./shell/RemoteChatBridge";
 import { AgentNameBridge } from "./shell/AgentNameBridge";
+import { AgentQuestionBridge } from "./shell/AgentQuestionBridge";
 import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
 import { UpdateRequiredPrompt } from "./shell/UpdateRequiredPrompt";
 import { PairingPrompt } from "./shell/PairingPrompt";
@@ -988,6 +989,7 @@ export default function App() {
             <NotchBridge />
             <RemoteChatBridge />
             <AgentNameBridge />
+            <AgentQuestionBridge />
             <GlobalSkillsBridge />
             <ProjectBridge />
             <AgentSessionSync />

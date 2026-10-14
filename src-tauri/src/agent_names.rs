@@ -52,7 +52,7 @@ pub(crate) async fn connected(app: &AppHandle, client: &Arc<CoreClient>) {
     }
 }
 
-async fn call(client: &CoreClient, method: String, params: Value) -> AppResult<Value> {
+pub(crate) async fn call(client: &CoreClient, method: String, params: Value) -> AppResult<Value> {
     let reply = client
         .submit(Request::Call { method, params }, |reply| reply)
         .map_err(core_error)?
@@ -62,7 +62,7 @@ async fn call(client: &CoreClient, method: String, params: Value) -> AppResult<V
     match reply {
         Reply::Response(Response::Called { result }) => Ok(result),
         _ => Err(AppError::Other(
-            "the core answered a name call with something else".into(),
+            "the core answered a call with something else".into(),
         )),
     }
 }
