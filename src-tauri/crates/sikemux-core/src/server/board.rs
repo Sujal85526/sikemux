@@ -1539,7 +1539,6 @@ fn idle(core: &Core, agent_id: &str, now: u64) -> bool {
 /// Tells each idle agent another agent started of the open cards of its team
 /// that nobody holds and nothing holds up, once per card.
 fn offer(core: &Arc<Core>) {
-    forget_stale_offers(core);
     let now = unix_ms();
     let running = core.running_agents();
     let workers: Vec<(String, String)> = running
@@ -1620,36 +1619,6 @@ fn offer(core: &Arc<Core>) {
             }
         });
     }
-}
-
-/// Forgets offers of cards no longer open, or gone, and offers to agents
-/// since closed.
-fn forget_stale_offers(core: &Core) {
-    let mut state = core.boards.lock();
-    if state.offered.is_empty() {
-        return;
-    }
-    let offered_to: HashSet<String> = state
-        .offered
-        .iter()
-        .map(|(_, _, agent)| agent.clone())
-        .collect();
-    let named: HashSet<String> = core
-        .names
-        .of(&offered_to)
-        .into_iter()
-        .map(|named| named.agent_id)
-        .collect();
-    let State {
-        boards, offered, ..
-    } = &mut *state;
-    offered.retain(|(project, id, agent)| {
-        named.contains(agent)
-            && boards
-                .get(project)
-                .and_then(|board| board.card(*id).ok())
-                .is_some_and(|card| card.status == Status::Open)
-    });
 }
 
 /// Whether the agent's turn was one the board started to offer it cards, in

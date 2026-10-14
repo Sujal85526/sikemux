@@ -423,8 +423,13 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
         ))
     } else if step.settings.finish == Finish::Pr {
         Some("Its pull request waits for you to review and merge it".to_owned())
+    } else if core.harness.questions.has_open(step.agent()) {
+        Some(format!(
+            "{} has a question or an assumption you have not answered, so its pull request waits for you",
+            step.name(core)
+        ))
     } else {
-        unanswered(core, step)
+        None
     };
     let now = unix_ms();
     change_run(core, &step.project, step.id, step.agent(), |_, run| {
@@ -638,30 +643,7 @@ async fn ask(
     }
 }
 
-/// Why the card waits for the person rather than merging: its agent, or an
-/// agent working under it, has a question or an assumption they have not
-/// answered.
-fn unanswered(core: &Core, step: &Step) -> Option<String> {
-    let team = core.names.team(step.agent());
-    let asker = team
-        .iter()
-        .find(|agent| core.harness.questions.has_open(agent))?;
-    let who = if asker == step.agent() {
-        step.name(core)
-    } else {
-        let name = core.names.name(asker).unwrap_or_else(|| asker.clone());
-        format!("{name}, working under {},", step.name(core))
-    };
-    Some(format!(
-        "{who} has a question or an assumption you have not answered, so its pull request waits for you"
-    ))
-}
-
 async fn merge(core: &Arc<Core>, step: &Step, pull: &super::auto::Pull, head: &str) {
-    if let Some(why) = unanswered(core, step) {
-        step.note(core, Stage::Review, &why);
-        return;
-    }
     step.note(core, Stage::Merging, "Merging its pull request");
     let error = match codehost::merge(pull, head).await {
         Ok(()) => return merged(core, step).await,

@@ -6,7 +6,7 @@
 
 mod words;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
@@ -69,10 +69,6 @@ struct Book {
     /// Unknown until the app first says.
     #[serde(default)]
     in_app: Option<HashSet<String>>,
-    /// The lead of each closed agent that an agent still named was started
-    /// under, so the chain of leads stays whole after a lead in it closes.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    closed_leads: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -88,8 +84,6 @@ pub(crate) struct AgentName {
 pub(crate) struct Worker<'a> {
     pub agent_id: &'a str,
     pub lead: &'a str,
-    /// The project it opens in, when not its lead's.
-    pub project: Option<String>,
     pub provider: &'a str,
     /// Its final answer goes to its lead each time its turn ends.
     pub reports: bool,
@@ -169,8 +163,8 @@ impl Names {
         (named, changed)
     }
 
-    /// Names a worker for `worker.lead`, in the project it opens in, unless
-    /// the lead may not start another. `running` holds the agents running here.
+    /// Names a worker for `worker.lead`, in the lead's project, unless the
+    /// lead may not start another. `running` holds the agents running here.
     pub(crate) fn hire(
         &self,
         worker: Worker<'_>,
@@ -191,7 +185,6 @@ impl Names {
                 lead.name
             ));
         }
-        let project = worker.project.unwrap_or_else(|| lead.project.clone());
         let live = |entry: &&Entry| open.contains(&entry.agent_id);
         let children = book
             .agents
@@ -209,7 +202,7 @@ impl Names {
             .agents
             .iter()
             .filter(live)
-            .filter(|entry| entry.project == project && entry.parent.is_some())
+            .filter(|entry| entry.project == lead.project && entry.parent.is_some())
             .count();
         if spawned >= MAX_SPAWNED_PER_PROJECT {
             return Err(format!(
@@ -218,8 +211,8 @@ impl Names {
         }
         let entry = Entry {
             agent_id: worker.agent_id.to_owned(),
-            name: book.fresh(&project, worker.agent_id, &open),
-            project,
+            name: book.fresh(&lead.project, worker.agent_id, &open),
+            project: lead.project,
             parent: Some(worker.lead.to_owned()),
             quiet: !worker.reports,
             provider: Some(worker.provider.to_owned()),
@@ -236,7 +229,9 @@ impl Names {
     /// Forgets a worker that never started, so its name is free again.
     pub(crate) fn forget(&self, agent_id: &str) {
         let mut book = self.lock();
-        if book.remove(|entry| entry.agent_id == agent_id) {
+        let before = book.agents.len();
+        book.agents.retain(|entry| entry.agent_id != agent_id);
+        if book.agents.len() != before {
             self.save(&book);
         }
     }
@@ -255,7 +250,7 @@ impl Names {
     pub(crate) fn team_of(&self, agent_id: &str) -> String {
         let book = self.lock();
         let mut current = agent_id;
-        for _ in 0..=book.agents.len() + book.closed_leads.len() {
+        for _ in 0..=book.agents.len() {
             match book.parent(current) {
                 Some(parent) => current = parent,
                 None => break,
@@ -266,20 +261,16 @@ impl Names {
 
     /// Whether `lead` started `agent_id`, or started an agent that did.
     pub(crate) fn leads(&self, lead: &str, agent_id: &str) -> bool {
-        self.lock().leads(lead, agent_id)
-    }
-
-    /// `lead` and every named agent it started, or that one of those started.
-    pub(crate) fn team(&self, lead: &str) -> Vec<String> {
         let book = self.lock();
-        let mut team = vec![lead.to_owned()];
-        team.extend(
-            book.agents
-                .iter()
-                .filter(|entry| entry.agent_id != lead && book.leads(lead, &entry.agent_id))
-                .map(|entry| entry.agent_id.clone()),
-        );
-        team
+        let mut current = agent_id;
+        for _ in 0..=book.agents.len() {
+            match book.parent(current) {
+                Some(parent) if parent == lead => return true,
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+        false
     }
 
     /// Takes the app's word for which agents it holds, and lets go of the
@@ -342,8 +333,8 @@ impl Names {
                 holder.name
             ));
         }
-        book.remove(|entry| {
-            entry.agent_id != agent_id && entry.project == project && same(&entry.name, &name)
+        book.agents.retain(|entry| {
+            entry.agent_id == agent_id || entry.project != project || !same(&entry.name, &name)
         });
         let entry = book
             .entry_mut(agent_id)
@@ -374,60 +365,10 @@ impl Book {
     }
 
     fn parent(&self, agent_id: &str) -> Option<&str> {
-        match self.agents.iter().find(|entry| entry.agent_id == agent_id) {
-            Some(entry) => entry.parent.as_deref(),
-            None => self.closed_leads.get(agent_id).map(String::as_str),
-        }
-    }
-
-    fn leads(&self, lead: &str, agent_id: &str) -> bool {
-        let mut current = agent_id;
-        for _ in 0..=self.agents.len() + self.closed_leads.len() {
-            match self.parent(current) {
-                Some(parent) if parent == lead => return true,
-                Some(parent) => current = parent,
-                None => break,
-            }
-        }
-        false
-    }
-
-    /// Takes out the entries `gone` picks, and whether there were any.
-    fn remove(&mut self, mut gone: impl FnMut(&mut Entry) -> bool) -> bool {
-        let mut removed = Vec::new();
-        self.agents.retain_mut(|entry| {
-            let keep = !gone(entry);
-            if !keep {
-                removed.push((entry.agent_id.clone(), entry.parent.clone()));
-            }
-            keep
-        });
-        if removed.is_empty() {
-            return false;
-        }
-        for (agent_id, parent) in removed {
-            if let Some(parent) = parent {
-                self.closed_leads.insert(agent_id, parent);
-            }
-        }
-        self.prune_closed_leads();
-        true
-    }
-
-    /// Keeps only the closed leads some named agent's chain still runs through.
-    fn prune_closed_leads(&mut self) {
-        let mut needed: HashSet<&str> = HashSet::new();
-        for entry in &self.agents {
-            let mut current = entry.parent.as_deref();
-            while let Some(id) = current {
-                if self.agents.iter().any(|named| named.agent_id == id) || !needed.insert(id) {
-                    break;
-                }
-                current = self.closed_leads.get(id).map(String::as_str);
-            }
-        }
-        let needed: HashSet<String> = needed.into_iter().map(str::to_owned).collect();
-        self.closed_leads.retain(|id, _| needed.contains(id));
+        self.agents
+            .iter()
+            .find(|entry| entry.agent_id == agent_id)
+            .and_then(|entry| entry.parent.as_deref())
     }
 
     /// How many agents up the chain of leads the person's own agent is.
@@ -436,7 +377,7 @@ impl Book {
         let mut current = agent_id;
         while let Some(parent) = self.parent(current) {
             depth += 1;
-            if depth > self.agents.len() + self.closed_leads.len() {
+            if depth > self.agents.len() {
                 break;
             }
             current = parent;
@@ -553,10 +494,7 @@ impl Book {
             .min_by_key(|(_, entry)| entry.at)
             .map(|(index, _)| index);
         if let Some(index) = oldest_past {
-            let name = self.agents[index].name.clone();
-            let gone = self.agents[index].agent_id.clone();
-            self.remove(|entry| entry.agent_id == gone);
-            return name;
+            return self.agents.remove(index).name;
         }
         let word = pick(WORDS).unwrap_or("Agent");
         (2..)
@@ -572,16 +510,18 @@ impl Book {
             return false;
         }
         let now = unix_ms();
-        let mut seen = false;
-        let removed = self.remove(|entry| {
+        let mut changed = false;
+        self.agents.retain_mut(|entry| {
             if open.contains(&entry.agent_id) {
-                seen |= !entry.seen;
+                changed |= !entry.seen;
                 entry.seen = true;
-                return false;
+                return true;
             }
-            entry.seen || now.saturating_sub(entry.at) >= STARTING_MS
+            let keep = !entry.seen && now.saturating_sub(entry.at) < STARTING_MS;
+            changed |= !keep;
+            keep
         });
-        removed || seen
+        changed
     }
 }
 
