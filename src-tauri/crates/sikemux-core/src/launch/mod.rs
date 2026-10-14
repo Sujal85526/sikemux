@@ -71,19 +71,21 @@ impl AgentSpec {
         }
     }
 
-    /// Like [`AgentSpec::launch`], for a chat: the agent in its ACP mode, given
-    /// the skills library in `skills`, a data folder [`skills::ready`] made.
+    /// Like [`AgentSpec::launch`], for a chat: the agent in its ACP mode, on
+    /// the provider `providers` wires it to, given the skills library in
+    /// `skills`, a data folder [`skills::ready`] made.
     pub fn chat(
         &self,
         program: PathBuf,
-        providers: BTreeMap<String, String>,
+        providers: providers::Wiring,
         skills: Option<&Path>,
     ) -> AgentLaunch {
-        let mut launch = self.launch(program, providers);
+        let mut launch = self.launch(program, providers.env);
         launch.args = crate::acp::native::arguments(&self.provider)
             .unwrap_or_default()
             .iter()
             .map(|argument| (*argument).to_owned())
+            .chain(providers.args)
             .collect();
         if let Some(data_dir) = skills {
             skills::chat(data_dir, &self.provider, &mut launch.args, &mut launch.env);
@@ -139,7 +141,8 @@ mod tests {
 
     #[test]
     fn native_agents_run_their_own_binary_in_acp_mode() {
-        let launch = AgentSpec::new("grok").chat(PathBuf::from("/bin/grok"), BTreeMap::new(), None);
+        let launch =
+            AgentSpec::new("grok").chat(PathBuf::from("/bin/grok"), Default::default(), None);
         assert_eq!(launch.program, Path::new("/bin/grok"));
         assert_eq!(launch.args, ["agent", "--no-leader", "stdio"]);
     }

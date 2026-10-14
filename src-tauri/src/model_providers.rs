@@ -1,77 +1,25 @@
 //! Where agents get models besides their makers' own accounts: pay-per-token APIs,
 //! coding plans and runners on this computer. The catalogue in `model-providers.json`
 //! holds every provider's facts. Connecting a keyed provider saves its key in the
-//! Keychain and hands it to OpenCode, Pi and OMP as they start.
+//! Keychain, hands it to OpenCode, Pi and OMP as they start, and lets Claude Code
+//! and Codex chats run on it.
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
-use sikemux_core::launch::providers::{Providers, KEY_SERVICE};
+use sikemux_core::launch::providers::{
+    self, KeySpec, Kind, Provider, Providers, Wiring, KEY_SERVICE, ROUTED_AGENTS,
+};
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 const RUNNER_TIMEOUT: Duration = Duration::from_secs(2);
 
-#[derive(Deserialize, Serialize, Debug, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-enum Kind {
-    Api,
-    Plan,
-    Local,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Provider {
-    id: String,
-    label: String,
-    kind: Kind,
-    sign_up_url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    key: Option<KeySpec>,
-    /// Base URL of its OpenAI-compatible API.
-    openai: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    anthropic: Option<AnthropicApi>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct KeySpec {
-    /// Every name an agent looks for this key under.
-    env: Vec<String>,
-    /// Answers 401 or 403 to a key the provider does not know.
-    check: String,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct AnthropicApi {
-    url: String,
-    auth: AnthropicAuth,
-}
-
-/// How the Anthropic-compatible API wants the key: Claude Code sends
-/// `ANTHROPIC_AUTH_TOKEN` as a bearer token and `ANTHROPIC_API_KEY` as `x-api-key`.
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum AnthropicAuth {
-    Bearer,
-    XApiKey,
-}
-
-static CATALOGUE: LazyLock<Vec<Provider>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../model-providers.json"))
-        .expect("model-providers.json is a valid catalogue")
-});
-
 fn keyed(id: &str) -> Result<(&'static Provider, &'static KeySpec), String> {
-    let provider = CATALOGUE
-        .iter()
-        .find(|provider| provider.id == id)
+    let provider = providers::find(id)
         .ok_or_else(|| format!("Sikemux does not know a provider called {id}"))?;
     let key = provider
         .key
@@ -89,6 +37,8 @@ pub struct ModelProvider {
     /// What a running local runner has installed.
     #[serde(skip_serializing_if = "Option::is_none")]
     models: Option<Vec<String>>,
+    /// The agents Sikemux can run on it in place of their makers' accounts.
+    agents: Vec<&'static str>,
 }
 
 static STORE: OnceLock<Providers> = OnceLock::new();
@@ -103,15 +53,31 @@ fn store() -> Result<&'static Providers, String> {
         .ok_or_else(|| "Model providers are not ready yet".to_string())
 }
 
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce(&'static Providers) -> T + Send + 'static,
+) -> Result<T, String> {
+    let store = store()?;
+    tokio::task::spawn_blocking(move || work(store))
+        .await
+        .map_err(|error| error.to_string())
+}
+
 /// The keys `agent` should start with, under the names it looks for.
 pub async fn environment(agent: &str) -> BTreeMap<String, String> {
-    let Ok(store) = store() else {
-        return BTreeMap::new();
-    };
     let agent = agent.to_owned();
-    tokio::task::spawn_blocking(move || store.environment(&agent))
+    blocking(move |store| store.environment(&agent))
         .await
         .unwrap_or_default()
+}
+
+/// What a chat of `agent` starts with, on `provider` when one is named.
+pub async fn wiring(
+    agent: &str,
+    provider: Option<String>,
+    model: Option<String>,
+) -> Result<Wiring, String> {
+    let agent = agent.to_owned();
+    blocking(move |store| store.wiring(&agent, provider.as_deref(), model.as_deref())).await?
 }
 
 fn client() -> &'static Client {
@@ -160,16 +126,20 @@ struct ListedModel {
     id: String,
 }
 
-/// `None` when nothing answers at the runner's address.
-async fn local_models(provider: &Provider) -> Option<Vec<String>> {
-    let response = client()
+/// What the provider serves, by its OpenAI-compatible model list. `None` when
+/// it does not answer.
+async fn listed_models(
+    provider: &Provider,
+    key: Option<&str>,
+    timeout: Duration,
+) -> Option<Vec<String>> {
+    let mut request = client()
         .get(format!("{}/models", provider.openai))
-        .timeout(RUNNER_TIMEOUT)
-        .send()
-        .await
-        .ok()?
-        .error_for_status()
-        .ok()?;
+        .timeout(timeout);
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let response = request.send().await.ok()?.error_for_status().ok()?;
     let list: ModelList = response.json().await.ok()?;
     Some(list.data.into_iter().map(|model| model.id).collect())
 }
@@ -178,21 +148,38 @@ async fn local_models(provider: &Provider) -> Option<Vec<String>> {
 #[tauri::command]
 pub async fn model_providers() -> Vec<ModelProvider> {
     let saved = store().map(Providers::connected).unwrap_or_default();
-    futures::future::join_all(CATALOGUE.iter().map(|provider| {
+    futures::future::join_all(providers::catalogue().iter().map(|provider| {
         let saved = &saved;
         async move {
             let models = match provider.kind {
-                Kind::Local => local_models(provider).await,
+                Kind::Local => listed_models(provider, None, RUNNER_TIMEOUT).await,
                 Kind::Api | Kind::Plan => None,
             };
             ModelProvider {
                 provider,
                 connected: models.is_some() || saved.contains(&provider.id),
                 models,
+                agents: ROUTED_AGENTS
+                    .iter()
+                    .copied()
+                    .filter(|agent| provider.routes(agent))
+                    .collect(),
             }
         }
     }))
     .await
+}
+
+/// The models a connected provider serves, read with its key.
+#[tauri::command]
+pub async fn model_provider_models(id: String) -> Result<Vec<String>, String> {
+    let (provider, _) = keyed(&id)?;
+    let key = blocking(move |store| store.key(&id))
+        .await?
+        .ok_or_else(|| format!("Connect {} first", provider.label))?;
+    listed_models(provider, Some(&key), CHECK_TIMEOUT)
+        .await
+        .ok_or_else(|| format!("{} did not list its models", provider.label))
 }
 
 /// Saves the key once the provider accepts it. Agents already running keep
@@ -230,36 +217,6 @@ pub async fn model_provider_disconnect(id: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
-
-    #[test]
-    fn every_provider_has_its_own_id_and_key_names() {
-        let ids: BTreeSet<_> = CATALOGUE.iter().map(|provider| &provider.id).collect();
-        assert_eq!(ids.len(), CATALOGUE.len());
-        let envs: Vec<_> = CATALOGUE
-            .iter()
-            .filter_map(|provider| provider.key.as_ref())
-            .flat_map(|spec| &spec.env)
-            .collect();
-        assert_eq!(envs.iter().collect::<BTreeSet<_>>().len(), envs.len());
-        for provider in CATALOGUE.iter() {
-            assert_eq!(
-                provider.key.is_none(),
-                provider.kind == Kind::Local,
-                "{}",
-                provider.id
-            );
-            assert!(
-                provider.sign_up_url.starts_with("https://"),
-                "{}",
-                provider.id
-            );
-            if let Some(spec) = &provider.key {
-                assert!(spec.check.starts_with("https://"), "{}", provider.id);
-                assert!(!spec.env.is_empty(), "{}", provider.id);
-            }
-        }
-    }
 
     #[test]
     fn a_rejected_key_is_told_apart_from_a_provider_that_did_not_answer() {

@@ -268,18 +268,20 @@ async fn core(pty: &PtyManager) -> Result<Arc<CoreClient>, String> {
     pty.client().await.map_err(|error| error.to_string())
 }
 
-/// How the app starts `spec` as a chat, with the skills library and, for
-/// Hermes and Grok, a private home of its own.
+/// How the app starts `spec` as a chat, on `model_provider` when one is named,
+/// with the skills library and, for Hermes and Grok, a private home of its own.
 async fn chat_launch(
     app: &AppHandle,
     agent_id: Option<&str>,
     spec: &AgentSpec,
+    model_provider: Option<String>,
+    model: Option<String>,
 ) -> Result<AgentLaunch, String> {
     if let Some(path) = spec.config_path.as_deref() {
         bounded_text("config path", path, 4_096)?;
     }
     let program = spec.program().await?;
-    let providers = crate::model_providers::environment(&spec.provider).await;
+    let providers = crate::model_providers::wiring(&spec.provider, model_provider, model).await?;
     let mut launch = spec.chat(
         program,
         providers,
@@ -319,6 +321,7 @@ pub async fn acp_start(
     environment_keys: Vec<String>,
     account: Option<AccountRequest>,
     fallbacks: Option<Vec<AccountRequest>>,
+    model_provider: Option<String>,
 ) -> Result<ChatStart, String> {
     bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
     bounded_text("provider", &provider, 64)?;
@@ -331,7 +334,8 @@ pub async fn acp_start(
         config_path: config_path.clone(),
         environment_keys,
     };
-    let mut prepared = match chat_launch(&app, Some(&agent_id), &spec).await {
+    let prepared = chat_launch(&app, Some(&agent_id), &spec, model_provider, model.clone()).await;
+    let mut prepared = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
             manager

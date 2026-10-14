@@ -23,6 +23,7 @@ beforeEach(() => {
             signUpUrl: "https://openrouter.ai/settings/keys",
             openai: "https://openrouter.ai/api/v1",
             connected: false,
+            agents: [],
         },
         {
             id: "baseten",
@@ -31,6 +32,7 @@ beforeEach(() => {
             signUpUrl: "https://app.baseten.co/settings/api_keys",
             openai: "https://inference.baseten.co/v1",
             connected: false,
+            agents: [],
         },
     ];
     transport = new MemoryIpcTransport();

@@ -204,6 +204,7 @@ export const IPC_COMMANDS = [
     "list_project_files_snapshot",
     "scan_project_roots",
     "model_providers",
+    "model_provider_models",
     "model_provider_connect",
     "model_provider_disconnect",
     "skills_overview",

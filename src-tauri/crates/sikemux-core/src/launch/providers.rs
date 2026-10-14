@@ -1,13 +1,14 @@
-//! The keys of the hosted model providers the person connected. They stay in
-//! the Keychain, and the agents that read them get them as they start, through
-//! the one input every launch takes for them.
+//! Where agents get models besides their makers' own accounts: pay-per-token
+//! APIs, coding plans and runners on this computer. The catalogue in
+//! `model-providers.json` holds every provider's facts; the keys the person
+//! connected stay in the Keychain and reach agents as they start.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::time::SystemTime;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// A development build keeps entries of its own, so it never spends or replaces the
 /// installed app's sign-in.
@@ -21,31 +22,145 @@ pub const KEY_SERVICE: &str = if cfg!(debug_assertions) {
 #[cfg(test)]
 pub const KEY_SERVICE: &str = "sikemux-model-provider-test";
 
-/// The agents that read these providers' keys from their environment.
+/// Names the provider a chat runs on in place of its agent's own account.
+pub const ROUTED_ENV: &str = "SIKEMUX_MODEL_PROVIDER";
+
+/// The agents that read every connected provider's key from their environment.
 const READERS: &[&str] = &["opencode", "pi", "omp"];
 
-#[derive(Deserialize)]
-struct Listed {
-    id: String,
-    key: Option<KeyNames>,
+/// The agents Sikemux can point at a provider in place of their makers' accounts.
+pub const ROUTED_AGENTS: &[&str] = &["claude", "codex"];
+
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Api,
+    Plan,
+    Local,
 }
 
-#[derive(Deserialize)]
-struct KeyNames {
-    env: Vec<String>,
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Provider {
+    pub id: String,
+    pub label: String,
+    pub kind: Kind,
+    pub sign_up_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<KeySpec>,
+    /// Base URL of its OpenAI-compatible API.
+    pub openai: String,
+    /// That API also serves OpenAI's Responses API, the only one Codex speaks.
+    #[serde(default, skip_serializing)]
+    pub responses: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anthropic: Option<AnthropicApi>,
 }
 
-/// The names each keyed provider's key goes by, from the app's catalogue.
-static KEY_NAMES: LazyLock<HashMap<String, Vec<String>>> = LazyLock::new(|| {
-    serde_json::from_str::<Vec<Listed>>(include_str!("../../../../model-providers.json"))
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeySpec {
+    /// Every name an agent looks for this key under.
+    pub env: Vec<String>,
+    /// Answers 401 or 403 to a key the provider does not know.
+    pub check: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnthropicApi {
+    pub url: String,
+    pub auth: AnthropicAuth,
+}
+
+/// How the Anthropic-compatible API wants the key: Claude Code sends
+/// `ANTHROPIC_AUTH_TOKEN` as a bearer token and `ANTHROPIC_API_KEY` as `x-api-key`.
+#[derive(Deserialize, Serialize, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+pub enum AnthropicAuth {
+    Bearer,
+    XApiKey,
+}
+
+static CATALOGUE: LazyLock<Vec<Provider>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../model-providers.json"))
         .expect("model-providers.json is a valid catalogue")
-        .into_iter()
-        .filter_map(|listed| Some((listed.id, listed.key?.env)))
-        .collect()
 });
 
-pub fn is_keyed(id: &str) -> bool {
-    KEY_NAMES.contains_key(id)
+pub fn catalogue() -> &'static [Provider] {
+    &CATALOGUE
+}
+
+pub fn find(id: &str) -> Option<&'static Provider> {
+    CATALOGUE.iter().find(|provider| provider.id == id)
+}
+
+fn is_keyed(id: &str) -> bool {
+    find(id).is_some_and(|provider| provider.key.is_some())
+}
+
+/// What a launch adds to the agent's own: variables and arguments.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Wiring {
+    pub env: BTreeMap<String, String>,
+    pub args: Vec<String>,
+}
+
+impl Provider {
+    pub fn routes(&self, agent: &str) -> bool {
+        match agent {
+            "claude" => self.anthropic.is_some(),
+            "codex" => self.kind == Kind::Local || self.responses,
+            _ => false,
+        }
+    }
+
+    /// `agent` pointed at this provider, paying with `key` and running `model`.
+    /// Local runners take any token; Ollama's and LM Studio's guides use their names.
+    fn wiring(&self, agent: &str, key: Option<&str>, model: Option<&str>) -> Option<Wiring> {
+        if !self.routes(agent) {
+            return None;
+        }
+        let mut env = BTreeMap::from([(ROUTED_ENV.to_owned(), self.id.clone())]);
+        let token = key.unwrap_or(&self.id).to_owned();
+        if agent == "claude" {
+            let api = self.anthropic.as_ref()?;
+            let (used, blanked) = match api.auth {
+                AnthropicAuth::Bearer => ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"),
+                AnthropicAuth::XApiKey => ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
+            };
+            env.insert("ANTHROPIC_BASE_URL".into(), api.url.clone());
+            env.insert(used.into(), token);
+            env.insert(blanked.into(), String::new());
+            if let Some(model) = model {
+                for tier in ["OPUS", "SONNET", "HAIKU"] {
+                    env.insert(format!("ANTHROPIC_DEFAULT_{tier}_MODEL"), model.to_owned());
+                }
+            }
+            return Some(Wiring {
+                env,
+                args: Vec::new(),
+            });
+        }
+        let mut args = Vec::new();
+        let mut config = |key: &str, value: &str| {
+            args.push("-c".to_owned());
+            args.push(format!("{key}={}", serde_json::Value::from(value)));
+        };
+        if let Some(spec) = &self.key {
+            let name = spec.env.first()?;
+            let table = format!("model_providers.{}", self.id);
+            config(&format!("{table}.name"), &self.label);
+            config(&format!("{table}.base_url"), &self.openai);
+            config(&format!("{table}.env_key"), name);
+            env.insert(name.clone(), token);
+        }
+        config("model_provider", &self.id);
+        if let Some(model) = model {
+            config("model", model);
+        }
+        Some(Wiring { env, args })
+    }
 }
 
 /// Which providers have a key saved, kept in a file the app and the core both
@@ -123,9 +238,16 @@ impl Providers {
         };
     }
 
-    fn key(&self, id: &str) -> Option<String> {
-        if let Some(key) = self.fresh().keys.get(id).cloned() {
-            return Some(key);
+    /// The key of a connected provider. Reads the Keychain, so it blocks.
+    pub fn key(&self, id: &str) -> Option<String> {
+        {
+            let state = self.fresh();
+            if !state.connected.contains(id) {
+                return None;
+            }
+            if let Some(key) = state.keys.get(id) {
+                return Some(key.clone());
+            }
         }
         let key = match sikemux_keychain::read(KEY_SERVICE, id) {
             Ok(key) => key?,
@@ -146,9 +268,43 @@ impl Providers {
         }
         self.connected()
             .iter()
-            .filter_map(|id| Some((KEY_NAMES.get(id)?, self.key(id)?)))
+            .filter_map(|id| Some((&find(id)?.key.as_ref()?.env, self.key(id)?)))
             .flat_map(|(names, key)| names.iter().map(move |name| (name.clone(), key.clone())))
             .collect()
+    }
+
+    /// What `agent` starts with: the keys it reads and, when `provider` is
+    /// named, what points it there in place of its maker's account. Fails
+    /// rather than let that account pay for a turn meant for the provider.
+    /// Reads the Keychain, so it blocks.
+    pub fn wiring(
+        &self,
+        agent: &str,
+        provider: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<Wiring, String> {
+        let env = self.environment(agent);
+        let Some(id) = provider else {
+            return Ok(Wiring {
+                env,
+                args: Vec::new(),
+            });
+        };
+        let provider =
+            find(id).ok_or_else(|| format!("Sikemux does not know a provider called {id}"))?;
+        let key = match provider.key {
+            Some(_) => Some(self.key(id).ok_or_else(|| {
+                format!("Connect {} in Settings to run chats on it", provider.label)
+            })?),
+            None => None,
+        };
+        let mut wiring = provider
+            .wiring(agent, key.as_deref(), model)
+            .ok_or_else(|| format!("{agent} cannot run on {}", provider.label))?;
+        for (name, value) in env {
+            wiring.env.entry(name).or_insert(value);
+        }
+        Ok(wiring)
     }
 }
 
@@ -173,5 +329,34 @@ mod tests {
             std::fs::read_to_string(&path).expect("read list"),
             r#"["groq"]"#
         );
+    }
+
+    #[test]
+    fn every_provider_has_its_own_id_and_key_names() {
+        let ids: BTreeSet<_> = catalogue().iter().map(|provider| &provider.id).collect();
+        assert_eq!(ids.len(), catalogue().len());
+        let envs: Vec<_> = catalogue()
+            .iter()
+            .filter_map(|provider| provider.key.as_ref())
+            .flat_map(|spec| &spec.env)
+            .collect();
+        assert_eq!(envs.iter().collect::<BTreeSet<_>>().len(), envs.len());
+        for provider in catalogue() {
+            assert_eq!(
+                provider.key.is_none(),
+                provider.kind == Kind::Local,
+                "{}",
+                provider.id
+            );
+            assert!(
+                provider.sign_up_url.starts_with("https://"),
+                "{}",
+                provider.id
+            );
+            if let Some(spec) = &provider.key {
+                assert!(spec.check.starts_with("https://"), "{}", provider.id);
+                assert!(!spec.env.is_empty(), "{}", provider.id);
+            }
+        }
     }
 }

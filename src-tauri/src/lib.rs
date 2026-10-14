@@ -27,6 +27,7 @@ mod fs_watch;
 mod git;
 mod grammars;
 mod harness;
+pub mod headless;
 mod login_item;
 mod lsp;
 mod markdown;

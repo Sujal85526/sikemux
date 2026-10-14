@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use crate::launch::providers::ROUTED_ENV;
 use crate::protocol::ChatLaunch;
 
 use super::super::Respond;
@@ -383,11 +384,16 @@ impl Backend for Claude {
             Some(replaying) => replaying.await.map_err(|error| error.to_string())??,
             None => None,
         };
+        let routed = launch.env.contains_key(ROUTED_ENV);
         let mut models: Vec<Value> = initialized
             .get("models")
             .and_then(Value::as_array)
+            .filter(|_| !routed)
             .cloned()
             .unwrap_or_default();
+        if let Some(wanted) = wanted.as_deref().filter(|_| routed) {
+            config::provider_model(&mut models, wanted);
+        }
         // Without a choice of its own the chat runs what the person's Claude
         // settings name, and the pickers say so.
         let settings = running
@@ -539,6 +545,9 @@ impl Backend for Claude {
     async fn set_config(&mut self, config_id: &str, value: &str) -> Result<Value, String> {
         match config_id {
             "model" => {
+                if self.launch.env.contains_key(ROUTED_ENV) {
+                    config::provider_model(&mut self.models, value);
+                }
                 if !config::offers_model(&self.models, value) {
                     return Err(format!("Invalid value for config option model: {value}"));
                 }

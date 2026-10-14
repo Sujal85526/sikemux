@@ -5,11 +5,15 @@ use sikemux_core::client::{probe, ClientError, CoreClient, ProbeError};
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// `sikemux core …`: the background process that owns terminals. See
-/// [`sikemux_core::server::main`]. `sikemux core stop` ends a running one.
+/// [`sikemux_core::server::main`]. `sikemux core stop` ends a running one;
+/// [`sikemux_lib::headless`] has the rest a host with no window needs.
 pub fn run() -> i32 {
     let mut args = std::env::args().skip(2).peekable();
     if args.peek().is_some_and(|arg| arg == "stop") {
         return stop(args.nth(1).map(PathBuf::from));
+    }
+    if let Some(code) = args.peek().and_then(|arg| sikemux_lib::headless::run(arg)) {
+        return code;
     }
     let args: Vec<String> = args.collect();
     if let Some(data_dir) = args

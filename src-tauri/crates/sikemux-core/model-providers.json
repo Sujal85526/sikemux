@@ -50,6 +50,7 @@
         "signUpUrl": "https://ollama.com/settings/keys",
         "key": { "env": ["OLLAMA_API_KEY"], "check": "https://ollama.com/api/usage?range=24h" },
         "openai": "https://ollama.com/v1",
+        "responses": true,
         "anthropic": { "url": "https://ollama.com", "auth": "bearer" }
     },
     {
@@ -59,6 +60,7 @@
         "signUpUrl": "https://openrouter.ai/settings/keys",
         "key": { "env": ["OPENROUTER_API_KEY"], "check": "https://openrouter.ai/api/v1/key" },
         "openai": "https://openrouter.ai/api/v1",
+        "responses": true,
         "anthropic": { "url": "https://openrouter.ai/api", "auth": "bearer" }
     },
     {
@@ -83,7 +85,8 @@
         "kind": "api",
         "signUpUrl": "https://fireworks.ai/account/api-keys",
         "key": { "env": ["FIREWORKS_API_KEY"], "check": "https://api.fireworks.ai/inference/v1/models" },
-        "openai": "https://api.fireworks.ai/inference/v1"
+        "openai": "https://api.fireworks.ai/inference/v1",
+        "responses": true
     },
     {
         "id": "groq",
@@ -91,7 +94,8 @@
         "kind": "api",
         "signUpUrl": "https://console.groq.com/keys",
         "key": { "env": ["GROQ_API_KEY"], "check": "https://api.groq.com/openai/v1/models" },
-        "openai": "https://api.groq.com/openai/v1"
+        "openai": "https://api.groq.com/openai/v1",
+        "responses": true
     },
     {
         "id": "cerebras",
@@ -133,6 +137,7 @@
         "signUpUrl": "https://vercel.com/dashboard/ai-gateway/api-keys",
         "key": { "env": ["AI_GATEWAY_API_KEY"], "check": "https://ai-gateway.vercel.sh/v1/models" },
         "openai": "https://ai-gateway.vercel.sh/v1",
+        "responses": true,
         "anthropic": { "url": "https://ai-gateway.vercel.sh", "auth": "bearer" }
     },
     {

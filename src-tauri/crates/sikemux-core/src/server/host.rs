@@ -6,7 +6,7 @@ use crate::accounts::protocol::{ChannelVersions, MinimumVersions, Platform};
 use crate::protocol::{BuildChannel, HostInfo};
 
 /// Read once: asking System Information for the model takes a moment.
-pub(crate) fn info() -> HostInfo {
+pub fn info() -> HostInfo {
     static HOST: OnceLock<HostInfo> = OnceLock::new();
     HOST.get_or_init(|| HostInfo {
         name: os::name().unwrap_or_else(|| "Host".into()),

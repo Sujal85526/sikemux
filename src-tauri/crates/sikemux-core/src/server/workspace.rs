@@ -203,7 +203,7 @@ impl Workspaces {
         let providers = self
             .providers
             .as_ref()
-            .map(|providers| providers.environment(&agent.provider))
+            .and_then(|providers| providers.wiring(&agent.provider, None, None).ok())
             .unwrap_or_default();
         let skills = self.data_dir.as_deref().and_then(skills::ready);
         let built = agent.chat(launcher.program.clone(), providers, skills);

@@ -38,6 +38,50 @@ pub(crate) fn label(identifier: &str) -> String {
     format!("{identifier}.core")
 }
 
+/// The app's identifier in `tauri.conf.json`, or in `tauri.dev.conf.json` for dev builds.
+pub(crate) const IDENTIFIER: &str = if cfg!(debug_assertions) {
+    "com.nodelike.sikemux.dev"
+} else {
+    "com.nodelike.sikemux"
+};
+
+/// What the core is started with after its socket, by the app or a login item.
+pub(crate) fn core_args(data_dir: Option<PathBuf>) -> Vec<OsString> {
+    let mut args = Vec::new();
+    if let Some(endpoint) = crate::cli_paths::cli_endpoint_path() {
+        args.extend([OsString::from("--cli-endpoint"), endpoint.into()]);
+    }
+    if let Some(data_dir) = data_dir {
+        args.extend([OsString::from("--data-dir"), data_dir.into()]);
+    }
+    args
+}
+
+/// How this binary starts the core on a host set up from a terminal, with the
+/// folders the app would give it.
+pub(crate) fn headless_launch() -> Option<CoreLaunch> {
+    let home = sikemux_process::paths::home()?;
+    let (data, logs) = if cfg!(target_os = "macos") {
+        (
+            home.join("Library/Application Support").join(IDENTIFIER),
+            home.join("Library/Logs").join(IDENTIFIER),
+        )
+    } else {
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute())
+            .unwrap_or_else(|| home.join(".local/share"))
+            .join(IDENTIFIER);
+        (data.clone(), data.join("logs"))
+    };
+    Some(CoreLaunch {
+        binary: std::env::current_exe().ok()?,
+        socket: sikemux_core::default_socket_path()?,
+        log: logs.join("core.log"),
+        args: core_args(Some(data)),
+    })
+}
+
 /// True when the file was written.
 fn write_if_changed(path: &Path, contents: &str) -> std::io::Result<bool> {
     if std::fs::read_to_string(path).is_ok_and(|current| current == contents) {
@@ -61,30 +105,53 @@ fn quiet(program: &str, args: &[&str]) {
 /// Installs or removes the login item to match `enabled`. Installing takes
 /// effect at the next login; the core already runs for this one.
 pub(crate) fn sync(identifier: &str, launch: Option<&CoreLaunch>, enabled: bool) {
-    let label = label(identifier);
-    let Some(path) = service::path(&label) else {
-        return;
-    };
-    if enabled {
-        let Some(launch) = launch else {
-            return;
-        };
-        let path_env = crate::system::child_path();
-        let contents = service::render(&label, launch, path_env.as_deref());
-        match write_if_changed(&path, &contents) {
-            Ok(true) => service::installed(&label),
-            Ok(false) => {}
-            Err(error) => eprintln!("Sikemux could not start its core at login: {error}"),
+    if !enabled {
+        if let Err(error) = remove(identifier) {
+            eprintln!("Sikemux could not stop starting its core at login: {error}");
         }
         return;
     }
-    if !path.exists() {
+    let Some(launch) = launch else {
         return;
+    };
+    if let Err(error) = install(identifier, launch) {
+        eprintln!("Sikemux could not start its core at login: {error}");
     }
+}
+
+/// Where the login item is, whether or not it is installed.
+pub(crate) fn path(identifier: &str) -> Option<PathBuf> {
+    service::path(&label(identifier))
+}
+
+pub(crate) fn install(identifier: &str, launch: &CoreLaunch) -> std::io::Result<PathBuf> {
+    let label = label(identifier);
+    let path = service::path(&label).ok_or_else(|| std::io::Error::other("HOME is not set"))?;
+    let path_env = crate::system::child_path();
+    let contents = service::render(&label, launch, path_env.as_deref());
+    if write_if_changed(&path, &contents)? {
+        service::installed(&label);
+    }
+    Ok(path)
+}
+
+/// Starts the installed login item now rather than at the next login.
+pub(crate) fn start(identifier: &str) {
+    let label = label(identifier);
+    if let Some(path) = service::path(&label) {
+        service::start(&label, &path);
+    }
+}
+
+/// Stops and removes the login item. False when there was none.
+pub(crate) fn remove(identifier: &str) -> std::io::Result<bool> {
+    let label = label(identifier);
+    let Some(path) = service::path(&label).filter(|path| path.exists()) else {
+        return Ok(false);
+    };
     service::stop(&label);
-    if let Err(error) = std::fs::remove_file(&path) {
-        eprintln!("Sikemux could not stop starting its core at login: {error}");
-    }
+    std::fs::remove_file(&path)?;
+    Ok(true)
 }
 
 #[cfg(target_os = "macos")]
@@ -167,6 +234,15 @@ mod launchd {
     /// launchd reads the folder itself at the next login.
     pub(super) fn installed(_label: &str) {}
 
+    pub(super) fn start(_label: &str, path: &std::path::Path) {
+        // SAFETY: getuid takes no arguments, cannot fail and touches no memory.
+        let uid = unsafe { libc::getuid() };
+        quiet(
+            "/bin/launchctl",
+            &["bootstrap", &format!("gui/{uid}"), &path.to_string_lossy()],
+        );
+    }
+
     pub(super) fn stop(label: &str) {
         // SAFETY: getuid takes no arguments, cannot fail and touches no memory.
         let uid = unsafe { libc::getuid() };
@@ -245,6 +321,10 @@ WantedBy=default.target
                 "Sikemux's core now starts when you log in. To start it at boot, run: loginctl enable-linger"
             );
         }
+    }
+
+    pub(super) fn start(label: &str, _path: &Path) {
+        quiet("systemctl", &["--user", "start", &unit(label)]);
     }
 
     pub(super) fn stop(label: &str) {

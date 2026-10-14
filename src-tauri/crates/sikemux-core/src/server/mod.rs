@@ -34,7 +34,7 @@ mod window;
 mod workspace;
 
 pub use entry::main;
-pub use host::PLATFORM as HOST_PLATFORM;
+pub use host::{info as host_info, PLATFORM as HOST_PLATFORM};
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{DirBuilder, File, OpenOptions};

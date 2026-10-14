@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 use url::Url;
 
 use crate::acp::prompt_blocks;
+use crate::launch::providers::ROUTED_ENV;
 use crate::protocol::ChatLaunch;
 
 use super::super::Respond;
@@ -529,7 +530,11 @@ impl Backend for Codex {
             .await
             .map(|read| read["account"].clone())
             .unwrap_or(Value::Null);
-        let models = list_models(&rpc).await.map_err(failed)?;
+        let models = if launch.env.contains_key(ROUTED_ENV) {
+            Models::default()
+        } else {
+            list_models(&rpc).await.map_err(failed)?
+        };
 
         let cwd = launch.cwd.to_string_lossy().into_owned();
         let configured = rpc

@@ -83,7 +83,8 @@ pub(super) fn modes(current: Mode) -> Value {
     })
 }
 
-/// The models `model/list` offered, in its order.
+/// The models `model/list` offered, in its order. Empty on another provider,
+/// whose models Codex does not list, so any model it names goes.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct Models(pub Vec<Value>);
 
@@ -93,7 +94,7 @@ impl Models {
     }
 
     pub fn offers(&self, model: &str) -> bool {
-        self.find(model).is_some()
+        self.0.is_empty() || self.find(model).is_some()
     }
 
     fn efforts(&self, model: &str) -> &[Value] {
@@ -150,7 +151,7 @@ impl Models {
                 })
             })
             .collect();
-        if !self.offers(model) {
+        if self.find(model).is_none() {
             models.insert(
                 0,
                 json!({ "value": model, "name": model, "description": null }),

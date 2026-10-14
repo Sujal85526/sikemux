@@ -133,13 +133,7 @@ impl PtyManager {
             .app_config_dir()
             .ok()
             .map(|directory| directory.join("agent-detection"));
-        let mut core_args = Vec::new();
-        if let Some(endpoint) = crate::cli_paths::cli_endpoint_path() {
-            core_args.extend([OsString::from("--cli-endpoint"), endpoint.into()]);
-        }
-        if let Ok(data_dir) = app.path().app_data_dir() {
-            core_args.extend([OsString::from("--data-dir"), data_dir.into()]);
-        }
+        let core_args = crate::login_item::core_args(app.path().app_data_dir().ok());
         let _ = self.settings.set(CoreSettings {
             app: app.clone(),
             socket,
