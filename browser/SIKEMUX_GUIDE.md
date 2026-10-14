@@ -827,6 +827,38 @@ may not; one agent has at most six of its own open, and a project at most
 eight that agents started. A refusal says which limit it hit. When the person
 closes a lead, Sikemux asks them whether to stop its agents or keep them.
 
+### Reading what an agent said
+
+`agent_read` takes `agent`, a name or `agentId`, and answers with what that
+agent said over its last few turns: per turn, what it was `asked` and by whom,
+what it `said`, a one-line summary of its `tools`, its final `answer` and its
+`state` (finished, stopped, failed or working). It never returns the whole
+transcript, what its tools returned or its thinking. Pass back the `cursor` it
+gives you to read only what came after; `more: true` means read again with the
+cursor for the rest. Read an agent before you ask it to repeat itself, or to
+see how far one you started has got.
+
+### Waiting for agents
+
+`agent_wait` takes `agents`, up to eight names or ids in one project, and
+waits up to `timeoutMs` (at most 30,000) until one of them gets where `until`
+says:
+
+- `idle` (the default): it stopped working, for any reason.
+- `done`: its turn ended, was stopped or failed, or the agent stopped running.
+- `needs_you`: it waits on the person, such as at a permission prompt.
+- `any`: anything happened to it, including starting work.
+
+Each event names the agent and `what` happened. Pass back the `cursor` it
+gives you, so nothing that happens between two waits is missed; without one, an
+agent already where `until` says answers at once. A timeout is normal: wait
+again, or carry on.
+
+Wait only when you cannot go on without the result, such as when you need two
+agents' work before you can merge it. An agent you started reports to you by
+itself when its turn ends, so after `agent_spawn` carry on with your own work
+rather than waiting, and read its report when it arrives.
+
 ### When an agent started you
 
 A prompt from your lead arrives as a message from it, and its note says it
