@@ -1412,7 +1412,7 @@
     },
     {
       "name": "agent_spawn",
-      "row": {"verb": "start", "kind": "execute", "icon": "square-plus", "target": ["{cli} agent"], "detail": ["{prompt}"]},
+      "row": {"verb": "start", "kind": "execute", "icon": "square-plus", "target": ["{cli} agent", "a helper"], "detail": ["{prompt}"]},
       "method": "agent.spawn",
       "description": "Start a Sikemux agent.",
       "properties": {
@@ -1431,6 +1431,11 @@
           "minLength": 1,
           "maxLength": 200
         },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
         "report": {
           "type": "boolean"
         },
@@ -1443,7 +1448,6 @@
         }
       },
       "required": [
-        "cli",
         "prompt"
       ]
     },

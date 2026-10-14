@@ -630,6 +630,9 @@ pub struct ChatInfo {
     pub launcher: Option<String>,
     pub permission_mode: String,
     pub model: Option<String>,
+    /// The provider its turns are paid with, in place of the agent's own account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_provider: Option<String>,
     pub effort: Option<String>,
     /// The app stopped its agent while idle; `AcpWake` starts it again.
     pub asleep: bool,

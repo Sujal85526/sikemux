@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use sikemux_pty::agent_detection::AgentKind;
 
 use crate::cli::protocol::HarnessRequest;
+use crate::launch::providers::ROUTED_ENV;
 use crate::protocol::{Event, WindowCall};
 
 use super::chat;
@@ -20,7 +21,7 @@ use super::connection::blocking;
 use super::follow::{self, TerminalAnswer};
 use super::messages;
 use super::names::Worker;
-use super::workspace::{own_launch, Lead};
+use super::workspace::{own_launch, Lead, Paid};
 use super::Core;
 
 const MAX_PROMPT_BYTES: usize = 64 * 1024;
@@ -88,11 +89,20 @@ fn text_param<'a>(params: &'a Value, key: &str, max: usize) -> Result<Option<&'a
     }
 }
 
+fn reports_back(params: &Value) -> Result<bool, String> {
+    match params.get("report") {
+        None | Some(Value::Null) => Ok(true),
+        Some(Value::Bool(reports)) => Ok(*reports),
+        Some(_) => Err("report must be a boolean".into()),
+    }
+}
+
 struct Started {
     agent_id: String,
     name: String,
     provider: String,
     model: Option<String>,
+    paid_by: Option<String>,
     lead_name: String,
     lead_cli: String,
     reports: bool,
@@ -140,21 +150,29 @@ fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> 
         .clone()
         .ok_or("agent_spawn needs the calling agent's id")?;
     let params = &request.params;
-    let provider = text_param(params, "cli", 64)?
-        .ok_or("cli must name the agent to start, such as claude or codex")?
-        .trim()
-        .to_lowercase();
+    let cli = text_param(params, "cli", 64)?.map(|cli| cli.trim().to_lowercase());
     let model = text_param(params, "model", MAX_MODEL_CHARS)?.map(|model| model.trim().to_owned());
-    let reports = match params.get("report") {
-        None | Some(Value::Null) => true,
-        Some(Value::Bool(reports)) => *reports,
-        Some(_) => return Err("report must be a boolean".into()),
-    };
+    let named_provider = text_param(params, "provider", 64)?.map(|id| id.trim().to_owned());
+    let reports = reports_back(params)?;
     let _one_at_a_time = core.harness.spawning.one_at_a_time();
     let (lead, cwd) = lead_of(core, &lead_id, &request.project)?;
+    let helper = core.workspaces.helper().filter(|helper| {
+        model.is_none()
+            && named_provider.is_none()
+            && cli.as_ref().is_none_or(|cli| *cli == helper.agent)
+    });
+    let provider = cli
+        .or_else(|| helper.as_ref().map(|helper| helper.agent.clone()))
+        .or_else(|| (!lead.provider.is_empty()).then(|| lead.provider.clone()))
+        .ok_or("cli must name the agent to start, such as claude or codex")?;
+    let (model, paid) = match (helper, named_provider) {
+        (_, Some(id)) => (model, Paid::By(Some(id))),
+        (Some(helper), None) => (helper.model, Paid::By(helper.provider)),
+        (None, None) => (model, Paid::AsLead),
+    };
     let (mut launch, launcher) = core
         .workspaces
-        .worker_launch(&lead, &provider, &cwd, model)?;
+        .worker_launch(&lead, &provider, &cwd, model, paid)?;
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
     let named = core.names.hire(
         Worker {
@@ -167,6 +185,7 @@ fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> 
     )?;
     own_launch(core, &mut launch, &agent_id);
     let model = launch.model.clone();
+    let paid_by = launch.env.get(ROUTED_ENV).cloned();
     let chat = chat::begin_worker(core, launch, &lead_id, launcher).map_err(|error| {
         core.names.forget(&agent_id);
         error.to_string()
@@ -179,6 +198,7 @@ fn start(core: &Arc<Core>, request: &HarnessRequest) -> Result<Started, String> 
         name: named.name,
         provider,
         model,
+        paid_by,
         lead_name,
         lead_cli: if lead.provider.is_empty() {
             "agent".to_owned()
@@ -223,6 +243,7 @@ pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<
         "agentId": started.agent_id,
         "cli": started.provider,
         "model": started.model,
+        "provider": started.paid_by,
         "reportsBack": reports,
         "note": format!(
             "{} is starting in its own tab and gets your prompt once it is ready.{}",
@@ -300,11 +321,10 @@ fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, Strin
         ));
     }
     let model = text_param(params, "model", MAX_MODEL_CHARS)?.map(|model| model.trim().to_owned());
-    let reports = match params.get("report") {
-        None | Some(Value::Null) => true,
-        Some(Value::Bool(reports)) => *reports,
-        Some(_) => return Err("report must be a boolean".into()),
-    };
+    if text_param(params, "provider", 64)?.is_some() {
+        return Err("provider works only for a chat; leave mode out to start one".into());
+    }
+    let reports = reports_back(params)?;
     if !core.window.is_open() {
         return Err(super::window::not_open("start an agent in a terminal"));
     }

@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::agent_accounts::status::{self, AgentStatus};
 use crate::agent_accounts::Book;
 use crate::agent_catalog::AGENTS;
-use crate::launch::providers::Providers;
+use crate::launch::providers::{self, Helper, Providers, Wiring, ROUTED_ENV};
 use crate::launch::{skills, AgentSpec};
 use crate::protocol::{
     Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, Event, LauncherInfo,
@@ -301,18 +301,38 @@ impl Workspaces {
         }
     }
 
+    /// What helpers run on, as the person set it in the app.
+    pub(crate) fn helper(&self) -> Option<Helper> {
+        self.providers.as_ref().and_then(Providers::helper)
+    }
+
     /// A chat of `launcher` running `program` in `cwd`, built afresh, for an
-    /// agent not yet named. Reads the providers' keys from the Keychain, so it blocks.
-    fn chat_launch(&self, launcher: &Launcher, program: PathBuf, cwd: &Path) -> ChatLaunch {
+    /// agent not yet named, on `provider` when one is named, and on `model`
+    /// or the provider's coding model. Reads the providers' keys from the
+    /// Keychain, so it blocks.
+    fn chat_launch(
+        &self,
+        launcher: &Launcher,
+        program: PathBuf,
+        cwd: &Path,
+        provider: Option<&str>,
+        model: Option<String>,
+    ) -> Result<ChatLaunch, String> {
         let agent = &launcher.agent;
-        let providers = self
-            .providers
-            .as_ref()
-            .and_then(|providers| providers.wiring(&agent.provider, None, None).ok())
-            .unwrap_or_default();
+        let model = model.or_else(|| {
+            provider
+                .and_then(providers::find)
+                .and_then(|provider| provider.coding_model(&agent.provider))
+                .map(str::to_owned)
+        });
+        let providers = match &self.providers {
+            Some(providers) => providers.wiring(&agent.provider, provider, model.as_deref())?,
+            None if provider.is_some() => return Err("Sikemux keeps no provider keys here".into()),
+            None => Wiring::default(),
+        };
         let skills = self.data_dir.as_deref().and_then(skills::ready);
         let built = agent.chat(program, providers, skills);
-        ChatLaunch {
+        Ok(ChatLaunch {
             agent_id: String::new(),
             provider: agent.provider.clone(),
             cwd: cwd.to_path_buf(),
@@ -322,11 +342,11 @@ impl Workspaces {
             mcp_servers: Vec::new(),
             resume_id: None,
             permission_mode: launcher.permission_mode.clone(),
-            model: None,
+            model,
             effort: None,
             account: None,
             fallbacks: Vec::new(),
-        }
+        })
     }
 
     fn project_path(&self, id: &str) -> CoreResult<PathBuf> {
@@ -575,6 +595,7 @@ impl Workspaces {
                 launcher: None,
                 permission_mode: String::new(),
                 model: None,
+                model_provider: None,
                 effort: None,
                 asleep: chat.asleep,
                 unread: false,
@@ -666,26 +687,40 @@ impl Lead {
     }
 }
 
+/// Who pays for a worker's turns.
+pub(crate) enum Paid {
+    /// Whoever pays for its lead's, when it runs the lead's agent.
+    AsLead,
+    /// The provider named, or the agent's own account.
+    By(Option<String>),
+}
+
 /// Agents whose chats keep a private home of their own, which a worker of
 /// theirs must not share.
 const OWN_HOME: [&str; 2] = ["hermes", "grok"];
 
 impl Workspaces {
     /// How to start an agent of `provider` for `lead` in `cwd`: on the lead's
-    /// account and in its permission mode. The lead may pick the model.
+    /// account and in its permission mode, paid as `paid` says. The lead may
+    /// pick the model.
     pub(crate) fn worker_launch(
         &self,
         lead: &Lead,
         provider: &str,
         cwd: &Path,
         model: Option<String>,
+        paid: Paid,
     ) -> Result<(ChatLaunch, Option<String>), String> {
         let same = lead.provider == provider;
         let mode = |default: &str| lead.worker_mode(provider, default);
-        let own = lead
-            .launch
-            .as_ref()
-            .filter(|_| same && !OWN_HOME.contains(&provider));
+        let lead_own = lead.launch.as_ref().filter(|_| same);
+        let lead_route = lead_own.and_then(|own| own.env.get(ROUTED_ENV).cloned());
+        let route = match paid {
+            Paid::AsLead => lead_route.clone(),
+            Paid::By(route) => route,
+        };
+        let as_lead = route == lead_route;
+        let own = lead_own.filter(|_| as_lead && !OWN_HOME.contains(&provider));
         if let Some(own) = own {
             let mut launch = own.clone();
             launch.cwd = cwd.to_path_buf();
@@ -738,15 +773,22 @@ impl Workspaces {
             }
             _ => {}
         }
-        let mut launch = self.chat_launch(&launcher, still_there(&launcher)?, cwd);
+        let model = model.or_else(|| {
+            lead_own
+                .filter(|_| as_lead)
+                .and_then(|own| own.model.clone())
+        });
+        let mut launch = self.chat_launch(
+            &launcher,
+            still_there(&launcher)?,
+            cwd,
+            route.as_deref(),
+            model,
+        )?;
         launch.permission_mode = mode(&launcher.permission_mode);
-        match lead.launch.as_ref().filter(|_| same) {
-            Some(own) => {
-                launch.account = own.account.clone();
-                launch.fallbacks = own.fallbacks.clone();
-                launch.model = model.or_else(|| own.model.clone());
-            }
-            None => launch.model = model,
+        if let Some(own) = lead_own {
+            launch.account = own.account.clone();
+            launch.fallbacks = own.fallbacks.clone();
         }
         Ok((launch, Some(launcher.id)))
     }
@@ -764,6 +806,7 @@ impl Workspaces {
         &self,
         launcher: Option<&str>,
         cwd: &Path,
+        provider: Option<&str>,
         model: Option<String>,
     ) -> Result<(ChatLaunch, String), String> {
         let chosen = {
@@ -794,8 +837,7 @@ impl Workspaces {
             Some("broken") => return Err(format!("{} does not start", chosen.label)),
             _ => {}
         }
-        let mut launch = self.chat_launch(&chosen, still_there(&chosen)?, cwd);
-        launch.model = model;
+        let launch = self.chat_launch(&chosen, still_there(&chosen)?, cwd, provider, model)?;
         Ok((launch, chosen.id))
     }
 
@@ -953,7 +995,9 @@ async fn built(core: &Arc<Core>, launcher: &str, cwd: PathBuf) -> CoreResult<(Ch
     let program = launcher.agent.program().await?;
     let core = core.clone();
     blocking(move || {
-        let launch = core.workspaces.chat_launch(&launcher, program, &cwd);
+        let launch = core
+            .workspaces
+            .chat_launch(&launcher, program, &cwd, None, None)?;
         Ok((launch, launcher.id))
     })
     .await
@@ -1111,7 +1155,7 @@ mod tests {
         let launcher = workspaces.launcher(&choice.launcher)?;
         let cwd = workspaces.project_path(&choice.project)?;
         let program = launcher.program.clone().unwrap_or_default();
-        let mut launch = workspaces.chat_launch(&launcher, program, &cwd);
+        let mut launch = workspaces.chat_launch(&launcher, program, &cwd, None, None)?;
         launch.resume_id = choice.resume_id;
         launch.model = choice.model;
         Ok(launch)
@@ -1249,6 +1293,7 @@ mod tests {
             launcher: None,
             permission_mode: String::new(),
             model: None,
+            model_provider: None,
             effort: None,
             asleep: false,
             unread: false,

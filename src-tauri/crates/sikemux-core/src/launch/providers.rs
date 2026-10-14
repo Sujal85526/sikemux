@@ -55,6 +55,12 @@ pub struct Provider {
     pub responses: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anthropic: Option<AnthropicApi>,
+    /// The coding model the provider's own docs recommend, as its API names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The model an agent's own guide from the provider names, where it differs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_models: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -106,7 +112,57 @@ pub struct Wiring {
     pub args: Vec<String>,
 }
 
+/// What helpers run on: workers started without a model named, and Claude
+/// Code's own subagents when the chat runs where the helpers do.
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Helper {
+    pub agent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+impl Helper {
+    pub fn check(&self) -> Result<(), String> {
+        if self.agent.is_empty() || self.agent.len() > 64 {
+            return Err("Pick the agent helpers run as".into());
+        }
+        if self
+            .model
+            .as_ref()
+            .is_some_and(|model| model.trim().is_empty() || model.len() > 200)
+        {
+            return Err("A helper's model is a name of at most 200 characters".into());
+        }
+        match self.provider.as_deref().map(|id| (id, find(id))) {
+            None => Ok(()),
+            Some((id, None)) => Err(format!("Sikemux does not know a provider called {id}")),
+            Some((_, Some(provider))) if !provider.routes(&self.agent) => {
+                Err(format!("{} cannot run on {}", self.agent, provider.label))
+            }
+            Some(_) => Ok(()),
+        }
+    }
+
+    /// The model Claude Code's subagents take in a chat of `agent` on `provider`.
+    fn subagent_model(&self, agent: &str, provider: Option<&str>) -> Option<&str> {
+        (agent == "claude" && self.agent == agent && self.provider.as_deref() == provider)
+            .then_some(self.model.as_deref())
+            .flatten()
+    }
+}
+
 impl Provider {
+    /// The model a chat of `agent` starts on here when none is picked.
+    pub fn coding_model(&self, agent: &str) -> Option<&str> {
+        self.agent_models
+            .get(agent)
+            .or(self.model.as_ref())
+            .map(String::as_str)
+    }
+
     pub fn routes(&self, agent: &str) -> bool {
         match agent {
             "claude" => self.anthropic.is_some(),
@@ -123,6 +179,7 @@ impl Provider {
         }
         let mut env = BTreeMap::from([(ROUTED_ENV.to_owned(), self.id.clone())]);
         let token = key.unwrap_or(&self.id).to_owned();
+        let model = model.or(self.coding_model(agent));
         if agent == "claude" {
             let api = self.anthropic.as_ref()?;
             let (used, blanked) = match api.auth {
@@ -133,7 +190,7 @@ impl Provider {
             env.insert(used.into(), token);
             env.insert(blanked.into(), String::new());
             if let Some(model) = model {
-                for tier in ["OPUS", "SONNET", "HAIKU"] {
+                for tier in ["FABLE", "OPUS", "SONNET", "HAIKU"] {
                     env.insert(format!("ANTHROPIC_DEFAULT_{tier}_MODEL"), model.to_owned());
                 }
             }
@@ -168,6 +225,7 @@ impl Provider {
 /// Keychain tool for every provider every time.
 pub struct Providers {
     path: PathBuf,
+    helper_path: PathBuf,
     state: Mutex<State>,
 }
 
@@ -183,6 +241,7 @@ impl Providers {
     pub fn new(data_dir: &Path) -> Self {
         Self {
             path: data_dir.join("model-providers.json"),
+            helper_path: data_dir.join("model-helper.json"),
             state: Mutex::default(),
         }
     }
@@ -228,6 +287,29 @@ impl Providers {
             .and_then(|metadata| metadata.modified())
             .ok();
         Ok(())
+    }
+
+    /// Read afresh each time: it is small, and asked for only as agents start.
+    pub fn helper(&self) -> Option<Helper> {
+        let bytes = std::fs::read(&self.helper_path).ok()?;
+        serde_json::from_slice::<Helper>(&bytes)
+            .ok()
+            .filter(|helper| helper.check().is_ok())
+    }
+
+    pub fn set_helper(&self, helper: Option<&Helper>) -> Result<(), String> {
+        let Some(helper) = helper else {
+            return match std::fs::remove_file(&self.helper_path) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    Err(error.to_string())
+                }
+                _ => Ok(()),
+            };
+        };
+        helper.check()?;
+        let bytes = serde_json::to_vec(helper).map_err(|error| error.to_string())?;
+        sikemux_process::files::write_atomic(&self.helper_path, &bytes, false)
+            .map_err(|error| error.to_string())
     }
 
     pub fn remember_key(&self, id: &str, key: Option<String>) {
@@ -283,7 +365,14 @@ impl Providers {
         provider: Option<&str>,
         model: Option<&str>,
     ) -> Result<Wiring, String> {
-        let env = self.environment(agent);
+        let mut env = self.environment(agent);
+        if let Some(model) = self
+            .helper()
+            .as_ref()
+            .and_then(|helper| helper.subagent_model(agent, provider))
+        {
+            env.insert("CLAUDE_CODE_SUBAGENT_MODEL".into(), model.to_owned());
+        }
         let Some(id) = provider else {
             return Ok(Wiring {
                 env,

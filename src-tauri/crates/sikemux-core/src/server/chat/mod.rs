@@ -19,6 +19,7 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::acp::{bounded_text, current_choice, native as acp_native, permission, SessionEnd};
+use crate::launch::providers::ROUTED_ENV;
 use crate::protocol::{
     Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatEventKind, ChatInfo,
     ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId, Response,
@@ -656,6 +657,7 @@ impl Chat {
             launcher: self.origin.launcher.clone(),
             permission_mode: self.feed.permission_mode(),
             model: self.launch.model.clone(),
+            model_provider: self.launch.env.get(ROUTED_ENV).cloned(),
             effort: self.launch.effort.clone(),
             asleep: false,
             unread: false,

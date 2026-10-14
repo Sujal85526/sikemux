@@ -809,8 +809,13 @@ an answer in a loop: carry on, and a reply arrives as a message of its own.
 
 `agent_spawn` starts a new agent in your project and hands it `prompt`, its
 task, at most 64 KB. `cli` picks which agent, such as `claude` or `codex`, and
-`model` its model; leave `model` out for your own when it is your CLI, else the
-CLI's default. It opens in its own tab without taking the person there, runs on
+`model` its model. Leave both out for a helper, such as a scout or reviewer: it
+runs as the person set helpers to in Settings, on a cheaper model, else as your
+own CLI. Leave `model` out for the helper's model when `cli` names the helper's
+agent, else your own when it is your CLI, else the CLI's default. `provider`
+names a model provider the person connected, such as `openrouter`, to pay for
+its turns in place of the agent's account; the answer's `provider` says who
+pays. It opens in its own tab without taking the person there, runs on
 your account and in your permission mode, which you cannot change, and records
 you as the agent that started it: you are its lead. The answer gives its `name`
 and `agentId` at once; it gets the prompt, from you, once it is ready.

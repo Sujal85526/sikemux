@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::cli::protocol::HarnessRequest;
+use crate::launch::providers::{self, ROUTED_ENV};
 use crate::protocol::WindowCall;
 
 use super::connection::{blocking, ClientId};
@@ -575,6 +576,13 @@ fn cli_of(core: &Core, agent_id: &str) -> Option<String> {
         })
 }
 
+/// The provider paying for the agent's turns, by name, when not its own account.
+fn paid_by(core: &Core, agent_id: &str) -> Option<&'static str> {
+    let chat = core.chats.get(agent_id)?;
+    let provider = providers::find(chat.launch.env.get(ROUTED_ENV)?)?;
+    Some(&provider.label)
+}
+
 fn name_of(core: &Core, agent_id: &str) -> String {
     core.names
         .name(agent_id)
@@ -645,6 +653,7 @@ fn app_view(core: &Core, board: &Board, card: &Card) -> Value {
         "owner": card.owner,
         "ownerName": card.owner_name(core),
         "ownerCli": card.owner.as_deref().and_then(|owner| cli_of(core, owner)).or_else(|| card.owner_cli.clone()),
+        "paidBy": card.owner.as_deref().and_then(|owner| paid_by(core, owner)),
         "team": team,
         "teamName": team.as_deref().map(|team| name_of(core, team)),
         "parent": card.parent,

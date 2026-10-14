@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 
 use super::review::Review;
 use super::{finish, git, Board, Card, Status};
+use crate::launch::providers;
 use crate::protocol::Event;
 use crate::server::connection::blocking;
 use crate::server::names::Starting;
@@ -65,6 +66,8 @@ pub(crate) struct Settings {
     pub slots: u32,
     /// The app's launcher Auto's agents start with; none for the first that works.
     pub launcher: Option<String>,
+    /// The connected provider its agents run on in place of their own accounts.
+    pub provider: Option<String>,
     pub model: Option<String>,
     pub finish: Finish,
     /// What proves a change sound when no CI runs on its pull request, run in
@@ -79,6 +82,7 @@ impl Default for Settings {
             auto: false,
             slots: DEFAULT_SLOTS,
             launcher: None,
+            provider: None,
             model: None,
             finish: Finish::Merge,
             check: None,
@@ -113,6 +117,15 @@ impl Settings {
         }
         if let Some(launcher) = optional(params, "launcher", MAX_LAUNCHER_CHARS)? {
             settings.launcher = launcher;
+        }
+        if let Some(provider) = optional(params, "provider", MAX_LAUNCHER_CHARS)? {
+            if let Some(id) = provider
+                .as_deref()
+                .filter(|id| providers::find(id).is_none())
+            {
+                return Err(format!("Sikemux does not know a provider called {id}"));
+            }
+            settings.provider = provider;
         }
         if let Some(model) = optional(params, "model", MAX_MODEL_CHARS)? {
             settings.model = model;
@@ -467,6 +480,7 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
             let started = core.workspaces.auto_launch(
                 settings.launcher.as_deref(),
                 &tree.cwd,
+                settings.provider.as_deref(),
                 settings.model.clone(),
             );
             let (mut launch, launcher) = match started {
