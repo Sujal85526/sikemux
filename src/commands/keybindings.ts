@@ -149,14 +149,14 @@ const coreKeybindingActions = [
     {
         id: "terminal.new",
         label: "New terminal",
-        detail: "A shell tab in this project, another login on this host, or a new command session",
+        detail: "A terminal tab in this project, another login on this host, or a new terminal under Terminals",
         category: "Panes",
         defaultBinding: on("Meta+KeyT", "Ctrl+Shift+KeyT"),
     },
     {
         id: "session.command",
-        label: "Focus command session",
-        detail: "Jump to the command terminal",
+        label: "Focus Terminals",
+        detail: "Jump to the terminal under Terminals",
         category: "Panes",
         defaultBinding: on("Meta+Ctrl+KeyT", "Ctrl+Alt+Shift+KeyT"),
     },

@@ -728,7 +728,7 @@ export const SideRail = memo(function SideRail() {
                         addKbd={kb("ssh.open")}
                         action={() => void cmd.openSshConfigEditor()}
                         actionTitle="Edit ~/.ssh/config"
-                        emptyText="no ssh hosts"
+                        emptyText="no SSH hosts"
                     />
                     <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" className="rail-logos" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />

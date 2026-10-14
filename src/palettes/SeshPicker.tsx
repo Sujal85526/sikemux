@@ -87,7 +87,7 @@ export function SeshPicker() {
                 kind: "session",
                 id: s.id,
                 name: s.kind === "project" ? projectLabel(s.cwd, s.name, projectRoots, home) : s.name,
-                sub: s.kind === "project" ? pretty(s.cwd) : s.kind === "ssh" ? "ssh" : isPluginKind(s.kind) ? "plugin" : "command",
+                sub: s.kind === "project" ? pretty(s.cwd) : s.kind === "ssh" ? "SSH" : isPluginKind(s.kind) ? "plugin" : "terminal",
                 sk: s.kind,
                 cwd: s.kind === "project" ? s.cwd : null,
             }));
@@ -194,7 +194,7 @@ export function SeshPicker() {
         mode === "projects"
             ? "find a project…"
             : mode === "ssh"
-              ? "ssh — search hosts from ~/.ssh/config…"
+              ? "SSH — search hosts from ~/.ssh/config…"
               : "jump to a session, project, or ssh host…";
 
     return (
