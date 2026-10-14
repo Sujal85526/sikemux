@@ -281,6 +281,15 @@ fn claude_title(path: &Path) -> Option<String> {
     titles.resolve()
 }
 
+/// Lines the CLI wrote itself: injected context, subagents' turns, the summary
+/// a compacted session starts from, and API errors.
+const ASIDES: [&str; 4] = [
+    "isMeta",
+    "isSidechain",
+    "isCompactSummary",
+    "isApiErrorMessage",
+];
+
 /// What one transcript line adds to what the person and Claude wrote: typed
 /// prompts and Claude's replies, never tool calls, their output or thinking.
 pub(super) fn claude_prose(line: &str, prose: &mut Prose) {
@@ -297,7 +306,7 @@ pub(super) fn claude_prose(line: &str, prose: &mut Prose) {
     };
     let kind = value.get("type").and_then(Value::as_str);
     let aside = |key: &str| value.get(key).and_then(Value::as_bool) == Some(true);
-    if !matches!(kind, Some("user" | "assistant")) || aside("isMeta") || aside("isSidechain") {
+    if !matches!(kind, Some("user" | "assistant")) || ASIDES.into_iter().any(aside) {
         return;
     }
     let Some(content) = value

@@ -219,6 +219,7 @@ pub(super) fn opencode_prose(db: &Path, session_id: &str, prose: &mut Prose) {
     let Ok(mut stmt) = conn.prepare(
         "SELECT substr(json_extract(data, '$.text'), 1, 8192) FROM part \
          WHERE session_id = ?1 AND json_extract(data, '$.type') = 'text' \
+         AND COALESCE(json_extract(data, '$.synthetic'), 0) = 0 \
          ORDER BY time_created, id",
     ) else {
         return;
