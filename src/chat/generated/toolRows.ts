@@ -97,6 +97,7 @@ export const TOOL_ROWS = {
         detail: ["{state}"],
         plugin: "sikemux.bitbucket",
     },
+    bitbucket_pull: { verb: "read", kind: "read", icon: "pull-request", target: ["{name}#{number}"], plugin: "sikemux.bitbucket" },
     bitbucket_pull_files: {
         verb: "diff",
         kind: "read",
@@ -148,6 +149,7 @@ export const TOOL_ROWS = {
         detail: ["{name}"],
         plugin: "sikemux.bitbucket",
     },
+    bitbucket_edit_pull: { verb: "edit", kind: "edit", icon: "pull-request", target: ["{name}#{number}"], plugin: "sikemux.bitbucket" },
     bitbucket_merge: {
         verb: "merge",
         kind: "edit",

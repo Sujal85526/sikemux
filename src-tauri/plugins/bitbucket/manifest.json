@@ -18,6 +18,18 @@
       "required": ["owner", "name"]
     },
     {
+      "name": "bitbucket_pull",
+      "row": {"verb": "read", "kind": "read", "icon": "pull-request", "target": ["{name}#{number}"]},
+      "method": "pull",
+      "description": "One pull request with its reviewers, headSha, builds, and whether it can merge; mergeState says why not.",
+      "properties": {
+        "owner": { "type": "string", "description": "The workspace." },
+        "name": { "type": "string", "description": "The repository slug." },
+        "number": { "type": "integer", "description": "The pull request's id." }
+      },
+      "required": ["owner", "name", "number"]
+    },
+    {
       "name": "bitbucket_pull_files",
       "row": {"verb": "diff", "kind": "read", "icon": "pull-request", "target": ["{name}#{number}"], "detail": ["{paths}"]},
       "method": "pullFiles",
@@ -140,23 +152,40 @@
         "head": { "type": "string", "description": "The branch with the changes." },
         "base": { "type": "string", "description": "The branch to merge into." },
         "body": { "type": "string" },
-        "draft": { "type": "boolean" }
+        "draft": { "type": "boolean" },
+        "closeBranch": { "type": "boolean", "description": "Delete head once merged." }
       },
       "required": ["owner", "name", "title", "head", "base"]
+    },
+    {
+      "name": "bitbucket_edit_pull",
+      "row": {"verb": "edit", "kind": "edit", "icon": "pull-request", "target": ["{name}#{number}"]},
+      "method": "editPull",
+      "description": "Change a pull request's title, markdown body or base. Only the fields given change.",
+      "properties": {
+        "owner": { "type": "string", "description": "The workspace." },
+        "name": { "type": "string", "description": "The repository slug." },
+        "number": { "type": "integer", "description": "The pull request's id." },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "base": { "type": "string" }
+      },
+      "required": ["owner", "name", "number"]
     },
     {
       "name": "bitbucket_merge",
       "row": {"verb": "merge", "kind": "edit", "icon": "pull-request", "target": ["{name}#{number}"], "detail": ["{method}"]},
       "method": "mergePull",
-      "description": "Merge a pull request. sha is the headSha from bitbucket_pulls; the merge is refused if the branch has moved since.",
+      "description": "Merge a pull request. sha is the headSha from bitbucket_pull; the merge is refused if the branch has moved since.",
       "properties": {
         "owner": { "type": "string", "description": "The workspace." },
         "name": { "type": "string", "description": "The repository slug." },
         "number": { "type": "integer", "description": "The pull request's id." },
-        "method": { "type": "string", "enum": ["merge", "squash"] },
-        "sha": { "type": "string", "description": "The head commit you reviewed." }
+        "method": { "type": "string", "enum": ["merge", "squash", "fast_forward"], "description": "Default: the repository's." },
+        "sha": { "type": "string", "description": "The head commit you reviewed." },
+        "message": { "type": "string", "description": "Commit message." }
       },
-      "required": ["owner", "name", "number", "method", "sha"]
+      "required": ["owner", "name", "number", "sha"]
     },
     {
       "name": "bitbucket_decline",

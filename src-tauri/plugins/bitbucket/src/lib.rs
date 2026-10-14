@@ -225,6 +225,7 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
         "markAllRead" => Box::pin(async move { reply(issues::mark_all_read(data_dir).await?) }),
         "mergePull" => answer(input, move |q| pulls::merge(data_dir, q)),
         "createPull" => answer(input, move |q| pulls::create(data_dir, q)),
+        "editPull" => answer(input, move |q| pulls::edit(data_dir, q)),
         "setPullState" => answer(input, move |q| pulls::set_state(data_dir, q)),
         "reviewPull" => answer(input, move |q| pulls::review(data_dir, q)),
 

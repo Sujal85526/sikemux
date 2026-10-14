@@ -227,9 +227,9 @@ fn every_plugin_keeps_its_tools_within_budget() {
             );
         }
         let bytes = Value::Array(served).to_string().len();
-        // Bitbucket's agents can also write: comment, review, merge, and run pipelines.
+        // Bitbucket's agents can also write: comment, review, edit, merge, and run pipelines.
         let budget = if path.parent().is_some_and(|dir| dir.ends_with("bitbucket")) {
-            9800
+            10200
         } else {
             5600
         };
