@@ -747,24 +747,23 @@ export function useXterm(opts: {
         };
     }, [shouldMount, hostRef, ptyController]);
 
+    // A screen sliding in keeps its size, so its terminal measures itself once the slide lands rather than in the middle of it.
     useEffect(() => {
         if (!visible) return;
         if (termRef.current) {
             scheduleOutputRef.current();
-            window.requestAnimationFrame(resizeRef.current);
-        } else if (shouldMount) {
-            bootRef.current();
+            return whenStageStill(() => resizeRef.current());
         }
+        if (shouldMount) bootRef.current();
     }, [visible, shouldMount]);
 
     useEffect(() => {
         if (!active) return;
         if (termRef.current) {
-            window.requestAnimationFrame(resizeRef.current);
             termRef.current.focus();
-        } else if (shouldMount) {
-            bootRef.current();
+            return whenStageStill(() => resizeRef.current());
         }
+        if (shouldMount) bootRef.current();
     }, [active, shouldMount]);
 
     return controllerRef.current!;
