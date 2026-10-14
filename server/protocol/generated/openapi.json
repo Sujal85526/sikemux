@@ -1108,10 +1108,11 @@
         "type": "object",
         "properties": {
           "macos": { "$ref": "#/components/schemas/ChannelVersions" },
+          "linux": { "$ref": "#/components/schemas/ChannelVersions" },
           "ios": { "$ref": "#/components/schemas/ChannelVersions" },
           "android": { "$ref": "#/components/schemas/ChannelVersions" }
         },
-        "required": ["macos", "ios", "android"],
+        "required": ["macos", "linux", "ios", "android"],
         "additionalProperties": false
       },
       "Network": {
@@ -1129,7 +1130,10 @@
         "required": ["relays", "minimumVersions"],
         "additionalProperties": false
       },
-      "Platform": { "type": "string", "enum": ["macos", "ios", "android"] },
+      "Platform": {
+        "type": "string",
+        "enum": ["macos", "linux", "ios", "android"]
+      },
       "PushApp": {
         "description": "Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them.",
         "type": "string",

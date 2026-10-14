@@ -629,10 +629,11 @@ export const schema = {
       type: "object",
       properties: {
         macos: { $ref: "#/$defs/ChannelVersions" },
+        linux: { $ref: "#/$defs/ChannelVersions" },
         ios: { $ref: "#/$defs/ChannelVersions" },
         android: { $ref: "#/$defs/ChannelVersions" },
       },
-      required: ["macos", "ios", "android"],
+      required: ["macos", "linux", "ios", "android"],
       additionalProperties: false,
     },
     Network: {
@@ -652,7 +653,7 @@ export const schema = {
       required: ["relays", "minimumVersions"],
       additionalProperties: false,
     },
-    Platform: { type: "string", enum: ["macos", "ios", "android"] },
+    Platform: { type: "string", enum: ["macos", "linux", "ios", "android"] },
     PushApp: {
       description:
         "Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them.",

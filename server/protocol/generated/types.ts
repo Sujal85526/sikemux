@@ -348,6 +348,7 @@ export type LiveServerMessage =
 /** The oldest version of each app the server works with, by platform. Dev builds are never too old. */
 export interface MinimumVersions {
   macos: ChannelVersions;
+  linux: ChannelVersions;
   ios: ChannelVersions;
   android: ChannelVersions;
 }
@@ -359,8 +360,13 @@ export interface Network {
   minimumVersions: MinimumVersions;
 }
 
-export type Platform = "macos" | "ios" | "android";
-export const platformValues: readonly Platform[] = ["macos", "ios", "android"];
+export type Platform = "macos" | "linux" | "ios" | "android";
+export const platformValues: readonly Platform[] = [
+  "macos",
+  "linux",
+  "ios",
+  "android",
+];
 
 /** Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them. */
 export type PushApp = "production" | "dev";

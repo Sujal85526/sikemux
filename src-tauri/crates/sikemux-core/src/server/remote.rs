@@ -18,8 +18,7 @@ use tokio::task::JoinHandle;
 use crate::accounts::live::{self, Link, Push, Want};
 use crate::accounts::network;
 use crate::accounts::protocol::{
-    AccountEvent, AccountEventType, JoinTicket, LiveApp, Network, Platform, PushResult, Relay,
-    RevokeReason,
+    AccountEvent, AccountEventType, JoinTicket, LiveApp, Network, PushResult, Relay, RevokeReason,
 };
 use crate::join::{self, Expected, Refusal, TrustedKeys, JOIN_ALPN};
 use crate::protocol::{
@@ -792,11 +791,13 @@ async fn apply_network(core: &Arc<Core>, fetched: Network) {
         let required = if inner.never_too_old {
             None
         } else {
-            network::too_old(version, &fetched.minimum_versions.macos).map(|minimum| {
-                UpdateRequired {
-                    current: version.clone(),
-                    minimum,
-                }
+            network::too_old(
+                version,
+                super::host::minimum_version(&fetched.minimum_versions),
+            )
+            .map(|minimum| UpdateRequired {
+                current: version.clone(),
+                minimum,
             })
         };
         let moved = match &relays {
@@ -1037,11 +1038,7 @@ pub(crate) fn ensure_live(core: &Arc<Core>) {
     }
     let (changed, watching) = watch::channel(());
     let app = LiveApp {
-        platform: if cfg!(target_os = "macos") {
-            Platform::Macos
-        } else {
-            Platform::Unknown
-        },
+        platform: super::host::PLATFORM,
         version: core.build.version.clone(),
     };
     let account = Arc::new(HostAccount(Arc::downgrade(core)));
@@ -1673,12 +1670,13 @@ mod tests {
         stop_live(&core);
     }
 
-    fn network_allowing(macos: &str) -> Network {
+    fn network_allowing(version: &str) -> Network {
         let any = serde_json::json!({ "nightly": "0.0.0", "stable": "0.0.0" });
         serde_json::from_value(serde_json::json!({
             "relays": [{ "url": "https://relay.example/", "region": "test", "quicPort": null }],
             "minimumVersions": {
-                "macos": { "nightly": macos, "stable": macos },
+                "macos": { "nightly": version, "stable": version },
+                "linux": { "nightly": version, "stable": version },
                 "ios": any,
                 "android": any,
             },

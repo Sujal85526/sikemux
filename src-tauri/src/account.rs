@@ -16,7 +16,7 @@ use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sikemux_core::accounts::protocol::{
-    ApiError, Challenge, Channel, Device, DeviceList, DeviceRegistration, DeviceRole, Platform,
+    ApiError, Challenge, Channel, Device, DeviceList, DeviceRegistration, DeviceRole,
 };
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{AccountLinkState, BuildChannel, DeviceInfo, RemoteStatus};
@@ -708,7 +708,7 @@ async fn register_host(core: &CoreClient, access_token: &str, user_id: &str) -> 
         key: signed.key,
         role: DeviceRole::Host,
         name: signed.name.chars().take(64).collect(),
-        platform: Platform::Macos,
+        platform: sikemux_core::server::HOST_PLATFORM,
         channel: Some(channel(signed.channel)),
         nonce: challenge.nonce,
         signature: signed.signature,
@@ -728,6 +728,7 @@ async fn register_host(core: &CoreClient, access_token: &str, user_id: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sikemux_core::accounts::protocol::Platform;
 
     #[test]
     fn a_saved_sign_in_reaches_the_keychain_as_token_like_text_and_comes_back() {
