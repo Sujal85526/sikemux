@@ -741,11 +741,11 @@ impl Core {
     }
 
     pub(crate) fn permit(&self, peer: &access::Peer, needs: access::Needs) -> CoreResult<()> {
-        let device_access = match peer {
+        let standing = match peer {
             access::Peer::Local | access::Peer::Share { .. } => None,
-            access::Peer::Device { id } => self.remote.access_of(id),
+            access::Peer::Device { id } => self.remote.standing_of(id),
         };
-        access::permit(peer, device_access, needs)
+        access::permit(peer, standing, needs)
     }
 
     pub(crate) fn schedule_task_output_notice(self: &Arc<Self>, id: SessionId, delay: Duration) {

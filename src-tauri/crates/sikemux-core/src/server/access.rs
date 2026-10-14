@@ -1,6 +1,8 @@
 //! Who is on the other end of a connection, and what each request needs from
 //! them. The app on this host may do anything. A paired device does what it
 //! is approved for at the moment it asks, and never touches the core itself.
+//! One with full control that joined through this host's own account may also
+//! answer for its owner: let devices in and change or remove them.
 
 use crate::protocol::{DeviceAccess, Request};
 
@@ -24,13 +26,24 @@ pub(crate) enum Peer {
 pub(crate) enum Needs {
     Watch,
     Full,
+    Owner,
     Local,
+}
+
+/// What a paired device may do now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Standing {
+    pub access: DeviceAccess,
+    /// It joined through the account this host is signed in to.
+    pub owners: bool,
 }
 
 pub(crate) const LOCAL_ONLY: &str = "only Sikemux on this host can do that";
 pub(crate) const WATCH_ONLY: &str =
     "this device can watch and answer permission requests, not drive sessions";
 pub(crate) const UNPAIRED: &str = "this device is no longer paired with this host";
+pub(crate) const OWNER_ONLY: &str =
+    "only a device on this host's account with full control can do that";
 
 pub(crate) fn needs(request: &Request) -> Needs {
     match request {
@@ -117,16 +130,19 @@ impl Peer {
     }
 }
 
-/// `access` is what the device may do now: `None` once it is unpaired.
-pub(crate) fn permit(peer: &Peer, access: Option<DeviceAccess>, needs: Needs) -> CoreResult<()> {
+/// `standing` is what the device may do now: `None` once it is unpaired.
+pub(crate) fn permit(peer: &Peer, standing: Option<Standing>, needs: Needs) -> CoreResult<()> {
     if peer.is_local() {
         return Ok(());
     }
-    match (access, needs) {
-        (None, _) => Err(CoreError::from(UNPAIRED)),
-        (Some(_), Needs::Local) => Err(CoreError::from(LOCAL_ONLY)),
-        (Some(DeviceAccess::Watch), Needs::Full) => Err(CoreError::from(WATCH_ONLY)),
-        (Some(_), _) => Ok(()),
+    let Some(Standing { access, owners }) = standing else {
+        return Err(CoreError::from(UNPAIRED));
+    };
+    match needs {
+        Needs::Local => Err(CoreError::from(LOCAL_ONLY)),
+        Needs::Owner if !owners || access != DeviceAccess::Full => Err(CoreError::from(OWNER_ONLY)),
+        Needs::Full if access == DeviceAccess::Watch => Err(CoreError::from(WATCH_ONLY)),
+        _ => Ok(()),
     }
 }
 
@@ -141,8 +157,15 @@ mod tests {
         Peer::Device { id: "phone".into() }
     }
 
-    fn refusal(access: Option<DeviceAccess>, request: &Request) -> String {
-        permit(&device(), access, needs(request))
+    fn standing(access: DeviceAccess) -> Option<Standing> {
+        Some(Standing {
+            access,
+            owners: false,
+        })
+    }
+
+    fn refusal(standing: Option<Standing>, request: &Request) -> String {
+        permit(&device(), standing, needs(request))
             .unwrap_err()
             .to_string()
     }
@@ -189,7 +212,7 @@ mod tests {
             },
             Request::PublishRecent { chats: Vec::new() },
         ] {
-            assert_eq!(refusal(Some(DeviceAccess::Full), &request), LOCAL_ONLY);
+            assert_eq!(refusal(standing(DeviceAccess::Full), &request), LOCAL_ONLY);
         }
     }
 
@@ -200,7 +223,7 @@ mod tests {
             request_id: "r".into(),
             option_id: None,
         };
-        let watch = Some(DeviceAccess::Watch);
+        let watch = standing(DeviceAccess::Watch);
         assert!(permit(&device(), watch, needs(&permission)).is_ok());
         assert!(permit(&device(), watch, needs(&Request::Attach { id: SESSION })).is_ok());
         for request in [
@@ -232,7 +255,7 @@ mod tests {
 
     #[test]
     fn a_device_with_full_control_drives_sessions() {
-        let full = Some(DeviceAccess::Full);
+        let full = standing(DeviceAccess::Full);
         assert!(permit(&device(), full, needs(&Request::Kill { id: SESSION })).is_ok());
     }
 

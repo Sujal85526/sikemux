@@ -15,7 +15,7 @@ use super::connection::{blocking, ClientConn};
 use super::edits::{Edit, Filter};
 use super::names::{project_of, AgentName};
 use super::workspace::{self, AgentRun};
-use super::{board, inbox, plugins, questions, share, Core, CoreError, CoreResult};
+use super::{board, inbox, plugins, questions, remote, share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
@@ -23,6 +23,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         | "digest" => Needs::Watch,
         "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
         | "boardRetry" => Needs::Full,
+        "pairing" | "answerPairing" | "changeDevice" => Needs::Owner,
         _ => Needs::Local,
     }
 }
@@ -55,6 +56,9 @@ pub(crate) async fn call(
             answer(share::stop(&core, &params.id)?)
         }
         "shares" => answer(share::list(&core)),
+        "pairing" => answer(remote::pairing(&core)),
+        "answerPairing" => answer(remote::answer_pairing(&core, parse(params)?)?),
+        "changeDevice" => answer(remote::change_device(&core, parse(params)?)?),
         "questions" => answer(questions::views(&core)),
         "answerQuestion" => answer(questions::answer(&core, parse(params)?).await?),
         "boards" => answer(board::boards(&core)),

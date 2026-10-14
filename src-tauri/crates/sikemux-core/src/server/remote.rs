@@ -29,7 +29,7 @@ use crate::protocol::{
 use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
 
-use super::access::Peer;
+use super::access::{Peer, Standing};
 use super::connection::{blocking, serve_client};
 use super::{Core, CoreError, CoreResult, ServerConfig};
 
@@ -74,6 +74,10 @@ struct Stored {
     /// The chats this host shares, so they carry on when the core restarts.
     #[serde(default)]
     shares: Vec<StoredShare>,
+    /// The account each device joined through, by device id. A device on
+    /// the account this host is signed in to may answer for its owner.
+    #[serde(default)]
+    joined_through: BTreeMap<String, String>,
 }
 
 /// A chat this host shares, and the key its link holds.
@@ -118,6 +122,14 @@ struct Removal {
 }
 
 impl Stored {
+    /// Drops a device and everything kept for it, answering with the device.
+    fn forget(&mut self, id: &str) -> Option<DeviceInfo> {
+        self.notifications.remove(id);
+        self.joined_through.remove(id);
+        let index = self.devices.iter().position(|device| device.id == id)?;
+        Some(self.devices.remove(index))
+    }
+
     fn want(&self) -> Want {
         if self.owner.is_some() {
             Want::Stay
@@ -141,6 +153,7 @@ struct Running {
 
 struct Pending {
     device: PendingDevice,
+    account: String,
     answer: oneshot::Sender<Option<DeviceAccess>>,
 }
 
@@ -220,17 +233,18 @@ impl Remote {
 
     /// What a paired device may do now, or `None` once it is unpaired or remote
     /// access is off.
-    pub(crate) fn access_of(&self, id: &str) -> Option<DeviceAccess> {
+    pub(crate) fn standing_of(&self, id: &str) -> Option<Standing> {
         let inner = self.lock();
         if !inner.stored.enabled {
             return None;
         }
-        inner
-            .stored
-            .devices
-            .iter()
-            .find(|device| device.id == id)
-            .map(|device| device.access)
+        let stored = &inner.stored;
+        let device = stored.devices.iter().find(|device| device.id == id)?;
+        Some(Standing {
+            access: device.access,
+            owners: stored.owner.is_some()
+                && stored.joined_through.get(id) == stored.owner.as_ref(),
+        })
     }
 
     pub(crate) fn status(&self) -> RemoteStatus {
@@ -464,9 +478,18 @@ impl Remote {
             .map(|secret| secret.public().to_string())
     }
 
-    pub(super) fn ask(&self, device: PendingDevice) -> oneshot::Receiver<Option<DeviceAccess>> {
+    /// Waits for someone to answer `device`, which came with a ticket from `account`.
+    pub(super) fn ask(
+        &self,
+        device: PendingDevice,
+        account: String,
+    ) -> oneshot::Receiver<Option<DeviceAccess>> {
         let (answer, answered) = oneshot::channel();
-        self.lock().pending.push(Pending { device, answer });
+        self.lock().pending.push(Pending {
+            device,
+            account,
+            answer,
+        });
         answered
     }
 
@@ -484,14 +507,15 @@ impl Remote {
         };
         if let Some(access) = access {
             let device = &pending.device;
-            if let Err(error) = self.add_device(DeviceInfo {
+            let added = DeviceInfo {
                 id: device.device_id.clone(),
                 name: device.name.clone(),
                 platform: device.platform.clone(),
                 access,
                 paired_at: unix_ms(),
                 last_seen: None,
-            }) {
+            };
+            if let Err(error) = self.add_device(added, Some(pending.account.clone())) {
                 let _ = pending.answer.send(None);
                 return Err(error);
             }
@@ -518,14 +542,18 @@ impl Remote {
                     .position(|pending| pending.device.device_id == device.id);
                 index.map(|index| inner.pending.remove(index))
             };
-            self.add_device(DeviceInfo {
-                id: device.id,
-                name: device.name,
-                platform: device.platform,
-                access: device.access,
-                paired_at: unix_ms(),
-                last_seen: None,
-            })?;
+            let owner = self.lock().stored.owner.clone();
+            self.add_device(
+                DeviceInfo {
+                    id: device.id,
+                    name: device.name,
+                    platform: device.platform,
+                    access: device.access,
+                    paired_at: unix_ms(),
+                    last_seen: None,
+                },
+                owner,
+            )?;
             if let Some(waiting) = waiting {
                 let _ = waiting.answer.send(Some(device.access));
             }
@@ -595,10 +623,12 @@ impl Remote {
             .retain(|pending| pending.device.id != id);
     }
 
-    fn add_device(&self, device: DeviceInfo) -> CoreResult<()> {
+    fn add_device(&self, device: DeviceInfo, account: Option<String>) -> CoreResult<()> {
         self.change(|stored| {
-            stored.devices.retain(|known| known.id != device.id);
-            stored.notifications.remove(&device.id);
+            stored.forget(&device.id);
+            if let Some(account) = account {
+                stored.joined_through.insert(device.id.clone(), account);
+            }
             stored.devices.push(device);
             Ok(())
         })
@@ -1178,10 +1208,9 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
     let forgotten = core.remote.change(|stored| {
         let mut forgotten = Vec::new();
         for (key, reason, at) in &revoked {
-            if let Some(index) = stored.devices.iter().position(|device| &device.id == key) {
-                forgotten.push((stored.devices.remove(index), *reason));
+            if let Some(device) = stored.forget(key) {
+                forgotten.push((device, *reason));
             }
-            stored.notifications.remove(key);
             let latest = stored.revoked.entry(key.clone()).or_default();
             *latest = (*latest).max(*at);
         }
@@ -1254,12 +1283,56 @@ fn let_go(core: &Core, reason: Option<RevokeReason>) {
 
 pub(crate) fn revoke(core: &Core, id: &str) -> CoreResult<RemoteStatus> {
     core.remote.change(|stored| {
-        stored.devices.retain(|device| device.id != id);
-        stored.notifications.remove(id);
+        stored.forget(id);
         Ok(())
     })?;
     core.close_device_clients(Some(id));
     Ok(announce(core))
+}
+
+/// Who waits to join this host and who is paired, for the owner's devices.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Pairing {
+    pending: Vec<PendingDevice>,
+    devices: Vec<DeviceInfo>,
+}
+
+pub(crate) fn pairing(core: &Core) -> Pairing {
+    let status = core.remote.status();
+    Pairing {
+        pending: status.pending,
+        devices: status.devices,
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PairingAnswer {
+    id: String,
+    allow: bool,
+    access: DeviceAccess,
+}
+
+pub(crate) fn answer_pairing(core: &Core, answer: PairingAnswer) -> CoreResult<Pairing> {
+    core.remote
+        .answer(&answer.id, answer.allow.then_some(answer.access))?;
+    announce(core);
+    Ok(pairing(core))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DeviceChange {
+    id: String,
+    /// None unpairs the device.
+    access: Option<DeviceAccess>,
+}
+
+pub(crate) fn change_device(core: &Core, change: DeviceChange) -> CoreResult<Pairing> {
+    match change.access {
+        Some(access) => set_access(core, &change.id, access)?,
+        None => revoke(core, &change.id)?,
+    };
+    Ok(pairing(core))
 }
 
 /// Tells the app what changed, and answers with the same status.
@@ -1290,7 +1363,7 @@ async fn serve_device(core: Arc<Core>, incoming: Incoming) {
         return;
     }
     let id = connection.remote_id().to_string();
-    if core.remote.access_of(&id).is_none() {
+    if core.remote.standing_of(&id).is_none() {
         connection.close(
             crate::remote::NOT_PAIRED.into(),
             b"this device is not paired with this core",
@@ -1342,6 +1415,7 @@ mod tests {
             notifications: BTreeMap::new(),
             revoked: BTreeMap::new(),
             shares: Vec::new(),
+            joined_through: BTreeMap::new(),
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),
@@ -1437,14 +1511,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (kept, gone) = (phone("Kept"), phone("Gone"));
         let core = signed_in(dir.path(), &[&kept, &gone]);
-        let _waiting = core.remote.ask(PendingDevice {
-            id: "request-1".into(),
-            device_id: gone.id.clone(),
-            name: "Gone".into(),
-            platform: "ios".into(),
-            from_account: true,
-            expires_at: unix_ms() + 120_000,
-        });
+        let _waiting = core.remote.ask(
+            PendingDevice {
+                id: "request-1".into(),
+                device_id: gone.id.clone(),
+                name: "Gone".into(),
+                platform: "ios".into(),
+                from_account: true,
+                expires_at: unix_ms() + 120_000,
+            },
+            "user_2abc".into(),
+        );
         let events = [
             event(4, "device.revoked", Some(&gone.id), "client", "removed"),
             event(5, "device.added", Some("someone"), "client", "removed"),

@@ -94,6 +94,15 @@ not become a remote shell on someone's Mac. This decision keeps that rule.
   unregistered host has no live connection to be told on, and it asks only while someone is
   signing it in. The user code is eight of twenty consonants, good for ten minutes, and
   lookups are limited per account, so guessing one is out of reach.
+- 2026-10-14: A host without a window still asks before letting each device in, but someone
+  other than the person at the host may answer: a device already paired with full control that
+  joined through the host's own account. The host remembers which account each device's
+  ticket named and checks it against its owner on every request, so a stolen account or a
+  compromised server still cannot let a device in, and a host signed in to another account
+  stops taking answers from the old one's phones. Such a device reaches the pairing requests
+  and the paired devices through the core's `pairing`, `answerPairing` and `changeDevice`
+  calls. The first device on a host with no window is answered in its terminal by
+  `sikemux core sign-in` or `sikemux core pair`.
 
 ## Alternatives considered
 
