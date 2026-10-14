@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use git2::{BranchType, Repository, Status, StatusOptions};
 use serde::Serialize;
 
-use super::{git_walk_permit, open_repo, run_blocking};
+use super::{flight_key, git_walk_permit, open_repo, run_blocking, shared, Flights};
 
 #[derive(Serialize, Clone)]
 pub struct GitFile {
@@ -419,15 +419,24 @@ pub async fn git_status(repo: String) -> Result<GitStatus, String> {
             return Ok(hit);
         }
     }
-    let _permit = git_walk_permit().await?;
-    run_blocking(move || -> Result<GitStatus, String> {
-        let r = open_repo(&repo)?;
-        match watched {
-            Some((key, generation)) => watched_status(&r, &key, generation),
-            None => read_status(&r),
-        }
+    let flight = flight_key(&repo, watched.as_ref());
+    shared(status_flights(), flight, async move {
+        let _permit = git_walk_permit().await?;
+        run_blocking(move || -> Result<GitStatus, String> {
+            let r = open_repo(&repo)?;
+            match watched {
+                Some((key, generation)) => watched_status(&r, &key, generation),
+                None => read_status(&r),
+            }
+        })
+        .await
     })
     .await
+}
+
+fn status_flights() -> &'static Flights<GitStatus> {
+    static F: OnceLock<Flights<GitStatus>> = OnceLock::new();
+    F.get_or_init(Default::default)
 }
 
 #[cfg(test)]

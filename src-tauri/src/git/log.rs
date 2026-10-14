@@ -6,7 +6,7 @@ use super::status::{
     cached_status, cached_walk, moves_only_itself, read_status, store_walk, stored_walk,
     watched_generation, watched_status, GitStatus, WalkCache,
 };
-use super::{git_walk_permit, open_repo, run_blocking};
+use super::{flight_key, git_walk_permit, open_repo, run_blocking, shared, Flights};
 
 #[derive(Serialize, Clone)]
 pub struct GitCommit {
@@ -279,6 +279,11 @@ fn history_cache() -> &'static WalkCache<History> {
     C.get_or_init(Default::default)
 }
 
+fn overview_flights() -> &'static Flights<GitOverview> {
+    static F: std::sync::OnceLock<Flights<GitOverview>> = std::sync::OnceLock::new();
+    F.get_or_init(Default::default)
+}
+
 /// The watched repo `key`'s history at `generation`, read again only when
 /// something other than its working tree moved since the last read.
 fn watched_history(repo: &Repository, key: &str, generation: u64) -> Result<History, String> {
@@ -305,16 +310,20 @@ pub async fn git_overview(repo: String) -> Result<GitOverview, String> {
             return Ok(history.with_status(status));
         }
     }
-    let _permit = git_walk_permit().await?;
-    run_blocking(move || -> Result<GitOverview, String> {
-        let r = open_repo(&repo)?;
-        match watched {
-            Some((key, generation)) => {
-                let status = watched_status(&r, &key, generation)?;
-                Ok(watched_history(&r, &key, generation)?.with_status(status))
+    let flight = flight_key(&repo, watched.as_ref());
+    shared(overview_flights(), flight, async move {
+        let _permit = git_walk_permit().await?;
+        run_blocking(move || -> Result<GitOverview, String> {
+            let r = open_repo(&repo)?;
+            match watched {
+                Some((key, generation)) => {
+                    let status = watched_status(&r, &key, generation)?;
+                    Ok(watched_history(&r, &key, generation)?.with_status(status))
+                }
+                None => Ok(History::read(&r)?.with_status(read_status(&r)?)),
             }
-            None => Ok(History::read(&r)?.with_status(read_status(&r)?)),
-        }
+        })
+        .await
     })
     .await
 }
