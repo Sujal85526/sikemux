@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::time::Duration;
 
+use crate::server::{edits, Core};
+
 const QUICK: Duration = Duration::from_secs(60);
 /// Pushing and fetching wait on the network, and a commit on its hooks.
 const SLOW: Duration = Duration::from_secs(5 * 60);
@@ -210,14 +212,21 @@ pub(super) fn add_worktree(project: &Path, slug: &str) -> Result<Tree, String> {
     })
 }
 
-/// Commits whatever is left uncommitted in the worktree. False when there
-/// was nothing to commit.
-pub(super) fn commit_all(tree: &Path, message: &str) -> Result<bool, String> {
+/// Commits whatever is left uncommitted in the worktree, naming the agents
+/// that wrote it, else `agent`. False when there was nothing to commit.
+pub(super) fn commit_all(
+    core: &Core,
+    tree: &Path,
+    message: &str,
+    agent: &str,
+) -> Result<bool, String> {
     if git(tree, &["status", "--porcelain"])?.is_empty() {
         return Ok(false);
     }
     git(tree, &["add", "--all"])?;
-    git_in(tree, &["commit", "--quiet", "-m", message], SLOW)?;
+    let trailers = edits::commit_trailers(core, tree, Some(agent));
+    let message = crate::trailers::append(message, &trailers);
+    git_in(tree, &["commit", "--quiet", "-m", &message], SLOW)?;
     Ok(true)
 }
 

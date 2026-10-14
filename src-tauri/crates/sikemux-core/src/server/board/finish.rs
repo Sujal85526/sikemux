@@ -349,8 +349,9 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
     let start = step.run.start_sha.clone();
     let (ahead, origin) = {
         let (tree, repo) = (tree.clone(), repo.clone());
+        let (core, agent) = (core.clone(), step.agent().to_owned());
         blocking(move || {
-            git::commit_all(&tree, &message)?;
+            git::commit_all(&core, &tree, &message, &agent)?;
             let ahead = git::ahead(&tree, &start)?;
             Ok((ahead, git::origin(&repo)))
         })
