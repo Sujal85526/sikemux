@@ -130,7 +130,15 @@ export function ChatTranscript({
                         );
                     })}
                 </FoldMemoryContext>
-                {activity && <ChatActivity key={state.running ? "turn" : "connect"} label={activity} agentType={agentType} />}
+                {activity &&
+                    (state.running ? (
+                        <ChatActivity label={activity} agentType={agentType} />
+                    ) : (
+                        <div className="chat-activity" role="status">
+                            <span className="chat-activity-loader" aria-hidden="true" />
+                            <span className="chat-activity-label">{activity}</span>
+                        </div>
+                    ))}
                 {plan !== null && (
                     <details className="chat-plan">
                         <summary>Plan</summary>
