@@ -21,9 +21,8 @@ import {
     closeAgentDesk,
     closeDocument,
     dirtyPathsForWindow,
-    guardCloseAgents,
     guardDiscardDirty,
-    guardLeadWorkers,
+    guardCloseLeads,
     makeWindow,
     pruneWindowViews,
     withActiveSession,
@@ -187,7 +186,7 @@ export function closeWindowsById(ids: readonly string[], askToStop = true): void
                     );
             },
         );
-    if (askToStop) guardCloseAgents(agentIds, title, () => guardLeadWorkers(agentIds, close));
+    if (askToStop) guardCloseLeads(agentIds, title, close);
     else close();
 }
 

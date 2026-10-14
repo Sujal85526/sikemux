@@ -224,25 +224,34 @@ function workersOf(agentIds: readonly string[]): string[] {
     return workers;
 }
 
-/** Closing an agent that started others asks whether they stop with it or keep running on their own. */
-export function guardLeadWorkers(agentIds: readonly string[], proceed: (stop: readonly string[]) => void): void {
+function listed(names: readonly string[]): string {
+    const shown = names.slice(0, 3);
+    if (names.length > 3) shown.push(`${names.length - 3} more`);
+    return shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0];
+}
+
+/**
+ * Closing agents' tabs stops them. When they started others, one question asks whether those stop too or keep
+ * running on their own; otherwise it asks only when one of them is busy.
+ */
+export function guardCloseLeads(agentIds: readonly string[], title: string, proceed: (stop: readonly string[]) => void): void {
     const workers = workersOf(agentIds);
     if (workers.length === 0) {
-        proceed([]);
+        guardCloseAgents(agentIds, title, () => proceed([]));
         return;
     }
-    const agents = getState().agents;
+    const { agents, agentActivity } = getState();
     const label = (id: string) => agents[id]?.name ?? agents[id]?.title ?? "agent";
     const leads = agentIds.filter((id) => workers.some((worker) => agents[worker]?.lead === id)).map(label);
-    const shown = workers.slice(0, 3).map(label);
-    if (workers.length > 3) shown.push(`${workers.length - 3} more`);
-    const listed = shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0];
-    const whose = leads.length === 1 ? `${leads[0]}'s agents` : "their agents";
+    const busy = agentIds.filter((id) => isAgentBusy(agentActivity[id])).map(label);
+    const one = workers.length === 1;
+    const working =
+        busy.length > 0 ? `${listed(busy)} ${busy.length === 1 ? "is" : "are"} working and ${busy.length === 1 ? "stops" : "stop"} with it. ` : "";
     void choiceDialog({
-        title: `Stop ${whose} too?`,
-        body: `${listed} ${workers.length === 1 ? "was" : "were"} started by ${leads.join(" and ")}. Stop ${workers.length === 1 ? "it" : "them"}, or keep ${workers.length === 1 ? "it" : "them"} running on ${workers.length === 1 ? "its" : "their"} own.`,
-        otherLabel: workers.length === 1 ? "Keep it" : "Keep them",
-        confirmLabel: workers.length === 1 ? "Stop it" : "Stop them",
+        title: `Stop ${leads.length === 1 ? `${leads[0]}'s agents` : "their agents"} too?`,
+        body: `${working}${listed(workers.map(label))} ${one ? "was" : "were"} started by ${leads.join(" and ")}. Stop ${one ? "it" : "them"}, or keep ${one ? "it" : "them"} running on ${one ? "its" : "their"} own.`,
+        otherLabel: one ? "Keep it" : "Keep them",
+        confirmLabel: one ? "Stop it" : "Stop them",
         destructive: true,
     }).then((choice) => {
         if (choice) proceed(choice === "confirm" ? workers : []);
