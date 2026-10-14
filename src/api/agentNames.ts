@@ -20,7 +20,7 @@ export interface NameRequest {
     readonly agentId: string;
     readonly cwd: string;
     readonly provider: string;
-    /** The provider session it runs, so one opened again from the recent list gets its old name back. */
+    /** The provider session it runs. */
     readonly resumeId?: string;
 }
 
@@ -29,8 +29,8 @@ export const agentNamesApi = {
     name: (request: NameRequest) => invoke<AgentName>("agent_name_call", { method: "nameAgent", params: request }),
     rename: (agentId: string, name: string) => invoke<AgentName>("agent_name_call", { method: "renameAgent", params: { agentId, name } }),
     /**
-     * Every agent the app holds, sleeping ones included, so the core keeps their names theirs, and how each runs, so an
-     * agent a terminal agent starts runs on its account and in its mode.
+     * Every agent the app holds, sleeping ones included, so the core keeps their names theirs and frees the names of the
+     * rest, and how each runs, so an agent a terminal agent starts runs on its account and in its mode.
      */
     inApp: (agentIds: readonly string[], runs: Readonly<Record<string, AgentRun>>) =>
         invoke<null>("agent_name_call", { method: "agentsInApp", params: { agentIds, runs } }),

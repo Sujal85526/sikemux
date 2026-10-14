@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ComposerPickers } from "./ComposerPickers";
 import type { SessionConfig } from "./sessionConfig";
 import { basename, dirname, joinPath } from "../lib/paths";
+import { formatAge } from "../lib/format";
 import { animate } from "../lib/motion";
 import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
 import { registerPathDrop } from "../state/dropRegistry";
@@ -34,7 +35,7 @@ import type { TrackedItem, TrackedKind } from "../codehost/tracked";
 import type { TrackedMatches } from "./TrackedSource";
 import { ContextMark } from "./ContextChip";
 import { contextChip } from "./promptContext";
-import { matchMates, mentionContext, useMates, type Mate } from "./agentMentions";
+import { EARLIER_URI, matchMates, mentionContext, useEarlierChats, useMates, wakeEarlier, type EarlierChat, type Mate } from "./agentMentions";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
 
 /** Draws the box's text with the words still being spoken dimmed at the caret, where they will be typed. */
@@ -88,6 +89,8 @@ interface MenuRow {
     key: string;
     content: ReactNode;
     choose: () => void;
+    /** The heading it and the rows after it sit under, below the menu's own. */
+    group?: string;
 }
 
 interface ComposerMenuModel {
@@ -108,16 +111,18 @@ function ComposerMenu({ menu, selected }: { menu: ComposerMenuModel; selected: n
             </div>
             {menu.rows.length === 0 && menu.empty && <div className="chat-slash-empty">{menu.empty}</div>}
             {menu.rows.map((row, index) => (
-                <button
-                    key={row.key}
-                    type="button"
-                    role="option"
-                    aria-selected={index === selected}
-                    className={index === selected ? "selected" : ""}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={row.choose}>
-                    {row.content}
-                </button>
+                <Fragment key={row.key}>
+                    {row.group && row.group !== menu.rows[index - 1]?.group && <div className="chat-slash-group">{row.group}</div>}
+                    <button
+                        type="button"
+                        role="option"
+                        aria-selected={index === selected}
+                        className={index === selected ? "selected" : ""}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={row.choose}>
+                        {row.content}
+                    </button>
+                </Fragment>
             ))}
         </div>
     );
@@ -125,13 +130,19 @@ function ComposerMenu({ menu, selected }: { menu: ComposerMenuModel; selected: n
 
 const MAX_ENTRIES = 8;
 
-/** An item to hand over with the message. One picked with `#` is read in full only when the message is sent. */
+/**
+ * An item to hand over with the message. One picked with `#` is read in full only when the message is sent, and an
+ * earlier chat picked with `@` is opened again only then.
+ */
 interface ComposerContext {
     uri: string;
     title: string;
     text: string | null;
     tracked: { repo: RepoRef; kind: TrackedKind; number: number } | null;
+    earlier?: EarlierChat;
 }
+
+const earlierUri = ({ chat }: EarlierChat) => `${EARLIER_URI}${chat.agent}/${chat.id}`;
 
 function mergeContext(current: ComposerContext[], incoming: readonly ComposerContext[]): ComposerContext[] {
     return [...current, ...incoming.filter((item) => !current.some((other) => other.uri === item.uri))];
@@ -139,6 +150,7 @@ function mergeContext(current: ComposerContext[], incoming: readonly ComposerCon
 
 function readContext(item: ComposerContext): Promise<PromptContext> {
     if (item.text !== null) return Promise.resolve({ uri: item.uri, title: item.title, text: item.text });
+    if (item.earlier) return wakeEarlier(item.earlier);
     if (!item.tracked) return Promise.reject(new Error(`${item.title} has nothing to send`));
     const { repo, kind, number } = item.tracked;
     return Promise.all([import("../codehost/tracked"), import("../codehost/api")]).then(([{ loadTrackedContext }, { failureMessage }]) =>
@@ -152,6 +164,20 @@ const TrackedSource = lazy(() => import("./TrackedSource"));
 const WorktreeToggle = lazy(() => import("./ChatWorktree").then(({ WorktreeToggle }) => ({ default: WorktreeToggle })));
 
 function ComposerContextChip({ item, onRemove }: { item: ComposerContext; onRemove: () => void }) {
+    if (item.earlier) {
+        const { agent, title } = item.earlier.chat;
+        return (
+            <span className="chat-context-chip" title="Sending this opens the chat again under a new name and tells the agent who it is">
+                <span className="chat-context-mark">
+                    <AgentIcon type={agent} size={14} className={`agent-glyph ${agent}`} />
+                </span>
+                <span>{title}</span>
+                <button type="button" aria-label={`Remove ${title}`} onClick={onRemove}>
+                    <IconClose size={11} />
+                </button>
+            </span>
+        );
+    }
     const chip = contextChip(item);
     const name = chip.number ? `#${chip.number}` : chip.title;
     return (
@@ -387,6 +413,8 @@ export function ChatComposer({
         () => (token?.trigger === "@" ? matchMates(mates, token.needle, MAX_ENTRIES) : []),
         [mates, token?.trigger, token?.needle],
     );
+    const earlierChats = useEarlierChats(agent.id, token?.trigger === "@" ? token.needle : null);
+    const earlierMatches = earlierChats.filter((earlier) => !contexts.some((item) => item.uri === earlierUri(earlier)));
 
     const [trackedList, setTrackedList] = useState<TrackedMatches>({ state: "loading" });
     const trackedMatches = token?.trigger === "#" && trackedList.state === "ready" ? trackedList.matches : [];
@@ -404,6 +432,14 @@ export function ChatComposer({
         const written = `@${mate.name} `;
         setDraft(`${draft.slice(0, token.start)}${written}${draft.slice(caret).replace(/^ /, "")}`);
         placeCaret(token.start + written.length);
+    };
+
+    const selectEarlier = (earlier: EarlierChat) => {
+        takeToken();
+        setContexts((current) =>
+            mergeContext(current, [{ uri: earlierUri(earlier), title: earlier.chat.title, text: null, tracked: null, earlier }]),
+        );
+        onError(null);
     };
 
     const selectEntry = (entry: ProjectEntry) => {
@@ -445,11 +481,11 @@ export function ChatComposer({
                       ),
                   })),
               }
-            : token?.trigger === "@" && (cwd || mateMatches.length > 0)
+            : token?.trigger === "@" && (cwd || mateMatches.length > 0 || earlierMatches.length > 0)
               ? {
-                    label: mateMatches.length > 0 ? "Agents and project files" : "Project files",
-                    heading: mateMatches.length > 0 ? "Agents, files and folders" : "Files and folders",
-                    aside: mateMatches.length > 0 ? "mention · attach" : "attach",
+                    label: mateMatches.length + earlierMatches.length > 0 ? "Agents and project files" : "Project files",
+                    heading: mateMatches.length + earlierMatches.length > 0 ? "Agents, files and folders" : "Files and folders",
+                    aside: mateMatches.length + earlierMatches.length > 0 ? "mention · attach" : "attach",
                     variant: "entries",
                     empty: files.data === undefined ? "Reading the project…" : "Nothing in the project matches",
                     rows: [
@@ -471,8 +507,25 @@ export function ChatComposer({
                                 </>
                             ),
                         })),
+                        ...earlierMatches.map((earlier) => ({
+                            key: earlierUri(earlier),
+                            group: "Earlier chats",
+                            choose: () => selectEarlier(earlier),
+                            content: (
+                                <>
+                                    <span className="chat-menu-mark">
+                                        <span className={`agent-glyph ${earlier.chat.agent}`}>
+                                            <AgentIcon type={earlier.chat.agent} size={13} />
+                                        </span>
+                                    </span>
+                                    <span className="chat-menu-earlier">{earlier.chat.title}</span>
+                                    <em>{formatAge(earlier.chat.mtime * 1000)}</em>
+                                </>
+                            ),
+                        })),
                         ...(cwd ? entryMatches : []).map((entry) => ({
                             key: entry.path,
+                            group: earlierMatches.length > 0 ? "Files and folders" : undefined,
                             choose: () => selectEntry(entry),
                             content: (
                                 <>

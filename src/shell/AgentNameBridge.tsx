@@ -34,9 +34,9 @@ function heldAgents(agents: StoreState["agents"]): { agentIds: string[]; runs: R
 }
 
 /**
- * Tells the core every agent the app holds, then asks for each one's name. The core names an agent as it starts; this
- * also names the ones restored from before, and tells the core which provider session each runs so a chat opened again
- * gets its old name back.
+ * Tells the core every agent the app holds, so a closed one's name is free again, then asks for each one's name. The
+ * core names an agent as it starts; this also names the ones restored from before and those opened again from Recent,
+ * which get a new name, and tells the core which provider session each runs.
  */
 export function AgentNameBridge() {
     const agents = useStore((s) => s.agents);

@@ -128,6 +128,8 @@ export interface AddAgentOptions {
     /** Pin launches to the project that opened the picker. */
     sessionId?: string;
     detectedExecutablePath?: string;
+    /** Opens it in a tab behind the one in front. */
+    background?: boolean;
 }
 
 export function addAgent(type: AgentType, resumeId?: string, title?: string, options: AddAgentOptions = {}): boolean {
@@ -144,13 +146,15 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
                   .find((a) => a && a.type === type && a.resumeId === resumeId)
             : undefined;
         const sess = d.sessions[session.id];
-        d.zoomedPaneId = null;
-        // A successful launch closes the picker and activates the new PTY.
-        d.agentPaletteOpen = false;
+        attached = true;
+        if (!options.background) {
+            d.zoomedPaneId = null;
+            // A successful launch closes the picker and activates the new PTY.
+            d.agentPaletteOpen = false;
+        }
         if (existing) {
             const winId = agentWindowId(d, existing.id);
-            if (winId) sess.activeWindowId = winId;
-            attached = true;
+            if (winId && !options.background) sess.activeWindowId = winId;
             return;
         }
         const permissionMode = normalizePermissionMode(type, options.permissionMode ?? d.defaultAgentPermissionMode);
@@ -188,8 +192,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         const win = agentWindow(agent, cwd);
         d.windows[win.id] = win;
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), win.id];
-        sess.activeWindowId = win.id;
-        attached = true;
+        if (!options.background) sess.activeWindowId = win.id;
     });
     return attached;
 }
