@@ -461,6 +461,7 @@ pub(crate) enum Ending {
 
 /// Sends a worker's lead how the worker's turn ended.
 pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: Ending) {
+    super::board::auto_turn_ended(core, agent_id, &ending);
     let ignored = super::board::offer_turn_ignored(core, agent_id);
     let Some(lead) = core.names.reports_to(agent_id) else {
         return;

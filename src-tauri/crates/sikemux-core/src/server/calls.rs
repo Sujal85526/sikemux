@@ -19,7 +19,8 @@ use super::{board, questions, share, Core, CoreError, CoreResult};
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
         "chatFile" | "questions" | "boards" | "board" => Needs::Watch,
-        "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" => Needs::Full,
+        "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
+        | "boardRetry" => Needs::Full,
         _ => Needs::Local,
     }
 }
@@ -57,6 +58,8 @@ pub(crate) async fn call(
         "boardAdd" => answer(board::person_add(&core, params).await?),
         "boardUpdate" => answer(board::person_update(&core, params).await?),
         "boardRemove" => answer(board::person_remove(&core, params).await?),
+        "boardSettings" => answer(board::person_settings(&core, params).await?),
+        "boardRetry" => answer(board::person_retry(&core, params).await?),
         _ => Err(format!("this host does not know {method}").into()),
     }
 }

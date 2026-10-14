@@ -183,6 +183,15 @@ impl Questions {
             .any(|question| question.agent_id == agent_id && question.blocked)
     }
 
+    /// Whether the agent has a question or an assumption the person has not
+    /// answered.
+    pub(crate) fn has_open(&self, agent_id: &str) -> bool {
+        self.lock()
+            .open
+            .iter()
+            .any(|question| question.agent_id == agent_id)
+    }
+
     /// The boards changed, which may change the ticket a question names.
     pub(crate) fn boards_changed(&self) {
         let mut state = self.lock();

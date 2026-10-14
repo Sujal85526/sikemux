@@ -650,6 +650,41 @@ pub(crate) async fn from_board(
     deliver(core, &target, letter).await
 }
 
+const AUTO_NOTE: &str = "Sent by Sikemux's Auto, which runs this project's board for the person, not by the person or another agent.";
+
+fn auto_letter(text: String) -> Letter {
+    Letter {
+        from_id: "auto".to_owned(),
+        from_name: "Auto".to_owned(),
+        cli: "sikemux".to_owned(),
+        text,
+        at: unix_ms(),
+        note: Some(AUTO_NOTE.to_owned()),
+        answers: None,
+    }
+}
+
+/// The task Auto gives an agent it started, as that agent reads it.
+pub(crate) fn auto_task(text: String) -> String {
+    wrapped(&auto_letter(text))
+}
+
+/// Auto tells an agent of its own what its card needs next.
+pub(crate) async fn from_auto(core: &Arc<Core>, to: String, text: String) -> Result<Value, String> {
+    let target = {
+        let core = core.clone();
+        blocking(move || {
+            listed(&core)
+                .into_iter()
+                .find(|agent| agent.agent_id == to && agent.reach != Reach::Stopped)
+                .ok_or_else(|| "that agent is not running".into())
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
+    deliver(core, &target, auto_letter(text)).await
+}
+
 /// Drops the messages holding `mark` that still wait for the agent.
 pub(crate) fn withdraw(core: &Core, agent_id: &str, mark: &str) {
     let mut state = core.harness.mailbox.lock();

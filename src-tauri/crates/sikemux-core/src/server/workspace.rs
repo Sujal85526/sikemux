@@ -553,6 +553,66 @@ impl Workspaces {
     }
 }
 
+impl Workspaces {
+    pub(crate) fn has_launchers(&self) -> bool {
+        !self.lock().launchers.is_empty()
+    }
+
+    /// How Auto starts an agent of its own in `cwd`: with the launcher the
+    /// project names, else the first the app offers that works, in that
+    /// launcher's own permission mode.
+    pub(crate) fn auto_launch(
+        &self,
+        launcher: Option<&str>,
+        cwd: &Path,
+        model: Option<String>,
+    ) -> Result<(ChatLaunch, String), String> {
+        let published = self.lock();
+        let usable = |launcher: &&ChatLauncher| {
+            !matches!(
+                launcher.status.as_deref(),
+                Some("missing" | "signedOut" | "broken")
+            )
+        };
+        let chosen = match launcher {
+            Some(id) => published
+                .launchers
+                .iter()
+                .find(|launcher| launcher.id == id)
+                .ok_or_else(|| {
+                    format!("Sikemux can no longer start {id}; pick another agent in the board's Auto settings")
+                })?,
+            None => published.launchers.iter().find(usable).ok_or(
+                "Sikemux has not said which agents it can start; open Sikemux once so it can",
+            )?,
+        };
+        match chosen.status.as_deref() {
+            Some("missing") => return Err(format!("{} is not installed", chosen.label)),
+            Some("signedOut") => return Err(format!("{} is signed out", chosen.label)),
+            Some("broken") => return Err(format!("{} does not start", chosen.label)),
+            _ => {}
+        }
+        Ok((
+            ChatLaunch {
+                agent_id: String::new(),
+                provider: chosen.provider.clone(),
+                cwd: cwd.to_path_buf(),
+                program: chosen.program.clone(),
+                args: chosen.args.clone(),
+                env: chosen.env.clone(),
+                mcp_servers: Vec::new(),
+                resume_id: None,
+                permission_mode: chosen.permission_mode.clone(),
+                model,
+                effort: None,
+                account: chosen.account.clone(),
+                fallbacks: chosen.fallbacks.clone(),
+            },
+            chosen.id.clone(),
+        ))
+    }
+}
+
 /// Gives `launch` to `agent_id`, with the secret and tools that are its own.
 pub(crate) fn own_launch(core: &Core, launch: &mut ChatLaunch, agent_id: &str) {
     let secret = core.agent_key.secret(agent_id);

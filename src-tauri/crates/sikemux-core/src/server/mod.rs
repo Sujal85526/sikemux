@@ -550,6 +550,7 @@ impl Core {
             && self.clients.lock().is_ok_and(|clients| clients.is_empty())
             && self.running_sessions() == 0
             && self.chats.count() == 0
+            && !board::auto_has_work(self)
     }
 
     fn register_client(&self, client: Arc<ClientConn>) {

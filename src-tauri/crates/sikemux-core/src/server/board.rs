@@ -22,6 +22,14 @@ use super::names::project_of;
 use super::remote::unix_ms;
 use super::Core;
 
+mod auto;
+mod codehost;
+mod finish;
+mod git;
+
+pub(crate) use auto::Settings;
+use auto::{Run, Stage};
+
 const FOLDER: &str = "boards";
 const MAX_CARDS: usize = 1000;
 const MAX_TITLE_CHARS: usize = 200;
@@ -107,6 +115,9 @@ struct Card {
     result: Option<String>,
     #[serde(default)]
     ticket: Option<Ticket>,
+    /// The run Auto gave the card, in a worktree of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auto: Option<Run>,
     at: u64,
     updated_at: u64,
 }
@@ -117,9 +128,22 @@ struct Board {
     project: String,
     next: u64,
     cards: Vec<Card>,
+    #[serde(default)]
+    settings: Settings,
+    /// Why Auto cannot start anything here now.
+    #[serde(skip)]
+    auto_note: Option<String>,
 }
 
 impl Board {
+    fn empty(project: &str) -> Self {
+        Self {
+            project: project.to_owned(),
+            next: 1,
+            ..Self::default()
+        }
+    }
+
     fn card(&self, id: u64) -> Result<&Card, String> {
         self.cards
             .iter()
@@ -230,6 +254,14 @@ struct State {
     /// Agents whose turn the board started to offer them cards, and that have
     /// done nothing on the board since.
     woken: HashSet<String>,
+    /// Cards Auto is busy with, by project and card.
+    jobs: HashSet<(String, u64)>,
+    /// Cards whose work is to ship again once the step under way ends.
+    reship: HashSet<(String, u64)>,
+    /// When each card's pull request or ticket was last asked about.
+    polled: BTreeMap<(String, u64, &'static str), u64>,
+    /// When Auto last looked for cards to start.
+    auto_looked: u64,
 }
 
 pub(crate) struct Boards {
@@ -242,6 +274,8 @@ pub(crate) struct Boards {
 pub(crate) enum By {
     Person,
     Agent(String),
+    /// Auto, or the ticket sync, acting for the person.
+    Auto(&'static str),
 }
 
 /// What an agent is told because of a change someone else made.
@@ -600,6 +634,7 @@ fn app_view(core: &Core, board: &Board, card: &Card) -> Value {
         "createdByName": card.creator_name(core),
         "result": card.result,
         "ticket": card.ticket,
+        "auto": card.auto.as_ref().map(Run::view),
         "at": card.at,
         "updatedAt": card.updated_at,
     })
@@ -609,6 +644,9 @@ fn board_view(core: &Core, board: &Board) -> Value {
     json!({
         "project": board.project,
         "cards": board.cards.iter().map(|card| app_view(core, board, card)).collect::<Vec<_>>(),
+        "settings": board.settings,
+        "running": auto::running(core, board),
+        "autoNote": board.auto_note,
     })
 }
 
@@ -691,11 +729,7 @@ fn add_card(
     let board = state
         .boards
         .entry(project.to_owned())
-        .or_insert_with(|| Board {
-            project: project.to_owned(),
-            next: 1,
-            cards: Vec::new(),
-        });
+        .or_insert_with(|| Board::empty(project));
     if board.cards.len() >= MAX_CARDS {
         return Err(format!(
             "This project's board already holds {MAX_CARDS} cards, the most it may; ask the person to clear the done ones"
@@ -720,7 +754,7 @@ fn add_card(
     let id = board.next.max(1);
     board.next = id + 1;
     let maker = match by {
-        By::Person => None,
+        By::Person | By::Auto(_) => None,
         By::Agent(agent) => Some(agent.clone()),
     };
     let mut card = Card {
@@ -737,6 +771,7 @@ fn add_card(
         created_by: maker,
         result: None,
         ticket: adding.ticket,
+        auto: None,
         at: now,
         updated_at: now,
     };
@@ -866,9 +901,13 @@ fn change_card(
             card.owner = None;
             card.owner_name = None;
             card.owner_cli = None;
+            card.auto = None;
         }
         Some(Status::Done) => {
             card.status = Status::Done;
+            if let Some(run) = card.auto.as_mut().filter(|run| !run.stage.is_over()) {
+                run.stage = Stage::Closed;
+            }
             if let (None, By::Agent(agent)) = (&card.owner, by) {
                 card.owner = Some(agent.clone());
                 card.owner_name = Some(name_of(core, agent));
@@ -883,6 +922,7 @@ fn change_card(
     let mut notices = Vec::new();
     let changer = match by {
         By::Person => Some("The person".to_owned()),
+        By::Auto(who) => Some((*who).to_owned()),
         By::Agent(agent) if before.owner.as_deref() != Some(agent.as_str()) => {
             Some(name_of(core, agent))
         }
@@ -1051,17 +1091,44 @@ pub(crate) async fn claim(core: &Arc<Core>, request: &HarnessRequest) -> Result<
 pub(crate) async fn update(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
     let agent = caller(request, "board_update")?;
     let id = card_id(request.params.get("card").unwrap_or(&Value::Null), "card")?;
-    let changes = Changes::from_params(&request.params)?;
-    let (view, notices) = {
+    let mut changes = Changes::from_params(&request.params)?;
+    let (mut view, notices, shipping) = {
         let (core, request) = (core.clone(), request.clone());
         blocking(move || {
             let project = caller_project(&core, &request);
-            change_card(&core, &project, &By::Agent(agent), id, changes).map_err(Into::into)
+            let shipping = changes.status == Some(Status::Done) && {
+                let state = core.boards.lock();
+                state
+                    .boards
+                    .get(&project)
+                    .and_then(|board| board.card(id).ok())
+                    .is_some_and(|card| auto::own_run(card, &agent))
+            };
+            if shipping {
+                changes.status = None;
+                if changes.is_empty() {
+                    let state = core.boards.lock();
+                    let board = state.boards.get(&project).ok_or("the board is gone")?;
+                    return Ok((
+                        agent_view(&core, board, board.card(id)?, true),
+                        Vec::new(),
+                        true,
+                    ));
+                }
+            }
+            let (view, notices) = change_card(&core, &project, &By::Agent(agent), id, changes)?;
+            Ok((view, notices, shipping))
         })
         .await
         .map_err(|error| error.to_string())?
     };
     send_notices(core, notices);
+    if let (true, Some(fields)) = (shipping, view.as_object_mut()) {
+        fields.insert(
+            "note".into(),
+            "Auto ships this card's work when your turn ends and marks it done once it lands, so it stays in progress until then.".into(),
+        );
+    }
     Ok(view)
 }
 
@@ -1116,6 +1183,14 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     })
     .await
     .map_err(|error| error.to_string())
+}
+
+pub(crate) fn auto_turn_ended(core: &Arc<Core>, agent_id: &str, ending: &super::spawn::Ending) {
+    auto::turn_ended(core, agent_id, ending);
+}
+
+pub(crate) fn auto_has_work(core: &Core) -> bool {
+    auto::has_work(core)
 }
 
 /// A line naming the agent's card, for the report its lead gets when its
@@ -1174,7 +1249,7 @@ fn project_view(core: &Core, project: &str) -> Value {
     let state = core.boards.lock();
     match state.boards.get(project) {
         Some(board) => board_view(core, board),
-        None => json!({ "project": project, "cards": [] }),
+        None => board_view(core, &Board::empty(project)),
     }
 }
 
@@ -1228,6 +1303,44 @@ pub(crate) async fn person_update(core: &Arc<Core>, params: Value) -> Result<Val
     };
     send_notices(core, notices);
     Ok(view)
+}
+
+/// The person changes how the project's board runs on its own. Answers
+/// with the board.
+pub(crate) async fn person_settings(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+    let core = core.clone();
+    blocking(move || {
+        let project = project_param(&core, &params)?;
+        {
+            let mut state = core.boards.lock();
+            let board = state
+                .boards
+                .entry(project.clone())
+                .or_insert_with(|| Board::empty(&project));
+            board.settings = board.settings.changed(&params)?;
+            core.boards.save(&mut state, &project);
+        }
+        Ok(project_view(&core, &project))
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+/// The person has Auto try a card it gave back to them again. Answers with
+/// the board.
+pub(crate) async fn person_retry(core: &Arc<Core>, params: Value) -> Result<Value, String> {
+    let (project, id) = {
+        let core = core.clone();
+        blocking(move || {
+            let project = project_param(&core, &params)?;
+            let id = card_id(params.get("id").unwrap_or(&Value::Null), "id")?;
+            Ok((project, id))
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
+    finish::retry(core, &project, id)?;
+    Ok(project_view(core, &project))
 }
 
 /// The person takes a card off the board. Answers with the board.
@@ -1368,6 +1481,8 @@ pub(crate) fn reached_by_more_than_offer(core: &Core, agent_id: &str) {
 /// boards that changed.
 pub(crate) fn tick(core: &Arc<Core>) {
     offer(core);
+    auto::tick(core);
+    finish::tick(core);
     if !core.boards.lock().dirty.is_empty() {
         core.harness.questions.boards_changed();
     }
@@ -1396,7 +1511,7 @@ fn tell_window(core: &Arc<Core>) {
             .iter()
             .map(|project| match state.boards.get(project) {
                 Some(board) => board_view(core, board),
-                None => json!({ "project": project, "cards": [] }),
+                None => board_view(core, &Board::empty(project)),
             })
             .collect::<Vec<_>>()
     };
