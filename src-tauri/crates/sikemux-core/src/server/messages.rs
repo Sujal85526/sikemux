@@ -41,6 +41,12 @@ const WAKE_RETRY_MS: u64 = 60_000;
 /// A terminal agent takes the Enter that sends a pasted message only once it
 /// has taken in the paste.
 const ENTER_AFTER_PASTE: Duration = Duration::from_millis(150);
+/// A terminal agent that keeps printing this long after the Enter that sends
+/// a paste has started a turn on it.
+const TURN_OUTPUT_MS: u64 = 1000;
+/// Pastes a terminal agent may leave untaken in a row before Sikemux stops
+/// typing into it until it starts a turn of its own.
+const MAX_MISSED_PASTES: u8 = 3;
 
 /// What a message between agents is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -88,12 +94,37 @@ struct Sent {
     at: u64,
 }
 
+/// Messages typed into a terminal agent's prompt that it has not yet been
+/// seen to take.
+struct Pasted {
+    texts: Vec<String>,
+    /// When Enter was sent, once it was.
+    entered_at: Option<u64>,
+}
+
 #[derive(Default)]
 struct State {
     waiting: HashMap<String, Vec<String>>,
     sent: VecDeque<Sent>,
     delivering: HashSet<String>,
     wake_failed: HashMap<String, u64>,
+    pasted: HashMap<String, Pasted>,
+    /// How many pastes in a row each terminal agent did not take.
+    missed_pastes: HashMap<String, u8>,
+}
+
+impl State {
+    /// What is kept: a paste not yet taken waits ahead of the rest.
+    fn record(&self) -> MailboxRecord {
+        let mut waiting = self.waiting.clone();
+        for (agent_id, pasted) in &self.pasted {
+            let queued = waiting.entry(agent_id.clone()).or_default();
+            let mut texts = pasted.texts.clone();
+            texts.append(queued);
+            *queued = texts;
+        }
+        MailboxRecord { waiting }
+    }
 }
 
 pub(crate) struct Mailbox {
@@ -129,13 +160,11 @@ impl Mailbox {
     }
 
     /// Changes the messages waiting, and keeps what they are now.
-    fn change<R>(&self, change: impl FnOnce(&mut HashMap<String, Vec<String>>) -> R) -> R {
+    fn change<R>(&self, change: impl FnOnce(&mut State) -> R) -> R {
         let mut state = self.lock();
-        let changed = change(&mut state.waiting);
+        let changed = change(&mut state);
         state.waiting.retain(|_, waiting| !waiting.is_empty());
-        self.kept.save(&MailboxRecord {
-            waiting: state.waiting.clone(),
-        });
+        self.kept.save(&state.record());
         changed
     }
 
@@ -191,10 +220,18 @@ impl Mailbox {
         self.lock().waiting.contains_key(agent_id)
     }
 
+    fn missed_pastes(&self, agent_id: &str) -> u8 {
+        self.lock()
+            .missed_pastes
+            .get(agent_id)
+            .copied()
+            .unwrap_or_default()
+    }
+
     /// Answers how many wait now.
     fn wait(&self, agent_id: &str, text: String) -> usize {
-        self.change(|waiting| {
-            let waiting = waiting.entry(agent_id.to_owned()).or_default();
+        self.change(|state| {
+            let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
             waiting.push(text);
             waiting.len()
         })
@@ -204,16 +241,12 @@ impl Mailbox {
         if !self.has_waiting(agent_id) {
             return Vec::new();
         }
-        self.change(|waiting| waiting.remove(agent_id).unwrap_or_default())
+        self.change(|state| state.waiting.remove(agent_id).unwrap_or_default())
     }
 
     /// Keeps `texts` waiting ahead of any that arrived meanwhile.
-    fn put_back(&self, agent_id: &str, mut texts: Vec<String>) {
-        self.change(|waiting| {
-            let waiting = waiting.entry(agent_id.to_owned()).or_default();
-            texts.append(waiting);
-            *waiting = texts;
-        });
+    fn put_back(&self, agent_id: &str, texts: Vec<String>) {
+        self.change(|state| put_back(state, agent_id, texts));
     }
 
     /// A message the agent was handed but dropped unread waits for its next
@@ -221,6 +254,12 @@ impl Mailbox {
     pub(crate) fn returned(&self, agent_id: &str, text: String) {
         self.put_back(agent_id, vec![text]);
     }
+}
+
+fn put_back(state: &mut State, agent_id: &str, mut texts: Vec<String>) {
+    let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
+    texts.append(waiting);
+    *waiting = texts;
 }
 
 fn digest(text: &str) -> u64 {
@@ -756,8 +795,8 @@ pub(crate) fn withdraw(core: &Core, agent_id: &str, mark: &str) {
     if !is_waiting(core, agent_id, mark) {
         return;
     }
-    core.harness.mailbox.change(|waiting| {
-        if let Some(waiting) = waiting.get_mut(agent_id) {
+    core.harness.mailbox.change(|state| {
+        if let Some(waiting) = state.waiting.get_mut(agent_id) {
             waiting.retain(|text| !text.contains(mark));
         }
     });
@@ -878,9 +917,10 @@ async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Va
     }
     if held.is_none() {
         let delivered = match target.reach {
-            Reach::Terminal => {
-                ready_terminal(core, &target.agent_id).map(|terminal| paste(core, terminal, &text))
-            }
+            Reach::Terminal => ready_terminal(core, &target.agent_id).map(|terminal| {
+                paste(core, &target.agent_id, terminal, vec![text.clone()]);
+                Delivery::NewTurn
+            }),
             _ => hand(core, &target.agent_id, &text).await,
         };
         match delivered {
@@ -953,9 +993,13 @@ fn ready_terminal(core: &Core, agent_id: &str) -> Result<Arc<Session>, &'static 
     Ok(terminal)
 }
 
-/// Types `text` into the agent's terminal as one pasted prompt.
-fn paste(core: &Arc<Core>, terminal: Arc<Session>, text: &str) -> Delivery {
-    let plain: String = text
+/// Types `texts` into the agent's terminal as one pasted prompt. They count
+/// as delivered only once the agent is seen to take them, and wait again if
+/// it does not; Enter is held back from a permission prompt that came up
+/// meanwhile.
+fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<String>) {
+    let plain: String = texts
+        .join("\n\n")
         .chars()
         .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
         .collect();
@@ -968,13 +1012,80 @@ fn paste(core: &Arc<Core>, terminal: Arc<Session>, text: &str) -> Delivery {
     } else {
         plain.replace('\n', " ")
     };
+    core.harness.mailbox.change(|state| {
+        state.delivering.insert(agent_id.to_owned());
+        state.pasted.insert(
+            agent_id.to_owned(),
+            Pasted {
+                texts,
+                entered_at: None,
+            },
+        );
+    });
     agent::note_input(core, &terminal, b"\r");
     session::queue_input(&terminal, typed.into_bytes(), Box::new(drop));
+    let (core, agent_id) = (core.clone(), agent_id.to_owned());
     tokio::spawn(async move {
         tokio::time::sleep(ENTER_AFTER_PASTE).await;
+        if agent::asks_now(&core, &terminal) {
+            unpasted(&core, &agent_id);
+            return;
+        }
         session::queue_input(&terminal, b"\r".to_vec(), Box::new(drop));
+        if let Some(pasted) = core.harness.mailbox.lock().pasted.get_mut(&agent_id) {
+            pasted.entered_at = Some(unix_ms());
+        }
     });
-    Delivery::NewTurn
+}
+
+/// The paste the agent did not take waits again, ahead of the rest.
+fn unpasted(core: &Core, agent_id: &str) {
+    core.harness.mailbox.change(|state| {
+        state.delivering.remove(agent_id);
+        if let Some(pasted) = state.pasted.remove(agent_id) {
+            put_back(state, agent_id, pasted.texts);
+            *state.missed_pastes.entry(agent_id.to_owned()).or_default() += 1;
+        }
+    });
+}
+
+/// The terminal agent was seen at work on a turn or asking the person
+/// during one, so it took what was pasted, if anything was.
+pub(crate) fn prompt_taken(core: &Core, agent_id: &str) {
+    let mailbox = &core.harness.mailbox;
+    let mut state = mailbox.lock();
+    state.missed_pastes.remove(agent_id);
+    let taken = state
+        .pasted
+        .get(agent_id)
+        .is_some_and(|pasted| pasted.entered_at.is_some());
+    if taken {
+        state.pasted.remove(agent_id);
+        state.delivering.remove(agent_id);
+        mailbox.kept.save(&state.record());
+    }
+}
+
+/// The terminal agent came to rest, or stopped, after a turn. When the turn
+/// followed a paste, it took the paste if it went on printing a while after
+/// Enter, as a turn does; a swallowed Enter only redraws the prompt box. A
+/// turn of its own makes it worth typing into again.
+pub(crate) fn prompt_settled(core: &Core, agent_id: &str, last_output_ms: u64) {
+    let entered_at = {
+        let mut state = core.harness.mailbox.lock();
+        match state.pasted.get(agent_id) {
+            Some(pasted) => pasted.entered_at,
+            None => {
+                state.missed_pastes.remove(agent_id);
+                return;
+            }
+        }
+    };
+    match entered_at {
+        Some(at) if last_output_ms >= at + TURN_OUTPUT_MS => prompt_taken(core, agent_id),
+        Some(_) => unpasted(core, agent_id),
+        None => {}
+    }
 }
 
 /// Gives each agent that has rested since its turn ended the messages
@@ -982,15 +1093,23 @@ fn paste(core: &Arc<Core>, terminal: Arc<Session>, text: &str) -> Delivery {
 /// agents that are gone.
 pub(crate) fn deliver_waiting(core: &Arc<Core>) {
     let mailbox = &core.harness.mailbox;
+    let pasted: Vec<String> = mailbox.lock().pasted.keys().cloned().collect();
+    for agent_id in pasted {
+        if core.agent_session(&agent_id).is_none() {
+            unpasted(core, &agent_id);
+        }
+    }
     let due: Vec<String> = {
         let mut state = mailbox.lock();
         let State {
             waiting,
             wake_failed,
+            missed_pastes,
             delivering,
             ..
         } = &mut *state;
         wake_failed.retain(|agent_id, _| waiting.contains_key(agent_id));
+        missed_pastes.retain(|agent_id, _| waiting.contains_key(agent_id));
         waiting
             .keys()
             .filter(|agent_id| !delivering.contains(*agent_id))
@@ -1003,10 +1122,13 @@ pub(crate) fn deliver_waiting(core: &Arc<Core>) {
                 deliver_later(core, agent_id, Pending::Chat);
             }
         } else if core.agent_session(&agent_id).is_some() {
+            if mailbox.missed_pastes(&agent_id) >= MAX_MISSED_PASTES {
+                continue;
+            }
             if let Ok(terminal) = ready_terminal(core, &agent_id) {
                 let texts = mailbox.take(&agent_id);
                 if !texts.is_empty() {
-                    paste(core, terminal, &texts.join("\n\n"));
+                    paste(core, &agent_id, terminal, texts);
                 }
             }
         } else if core.workspaces.published(&agent_id) == Some(true) {

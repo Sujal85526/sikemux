@@ -837,7 +837,8 @@ happened:
 - `steered`: the agent was working and reads it at its next step, without
   stopping.
 - `newTurn`: the agent was idle and started a turn to read it. An agent in a
-  terminal gets it typed in as its next prompt.
+  terminal gets it typed in as its next prompt; if it does not take it, it
+  gets it again once it can.
 - `waiting`: the agent cannot take it now, such as an agent in a terminal
   that is working, so it gets the message when its turn ends, together with
   the others waiting. At most ten wait for one agent.

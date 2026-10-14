@@ -13,6 +13,7 @@ use sikemux_pty::agent_detection::{
 use crate::protocol::{AgentStateEvent, Event};
 
 use super::activity::Activity;
+use super::messages;
 use super::session::Session;
 use super::spawn::{self, Ending};
 use super::{now_ms, Core, CoreResult};
@@ -222,6 +223,16 @@ impl AgentActivity {
         if let Some(activity) = activity {
             core.note_activity(&self.agent_id, activity);
         }
+        match next {
+            WORKING if source != "activity" => messages::prompt_taken(core, &self.agent_id),
+            BLOCKED => messages::prompt_taken(core, &self.agent_id),
+            IDLE | STOPPED if busy => messages::prompt_settled(
+                core,
+                &self.agent_id,
+                self.last_output_ms.load(Ordering::Acquire),
+            ),
+            _ => {}
+        }
         if next == IDLE && busy {
             spawn::terminal_turn_ended(core, &self.agent_id, Ending::Finished);
         }
@@ -338,27 +349,42 @@ fn detection_input<'a>(recent: &'a str, title: &'a str) -> DetectionInput<'a> {
 }
 
 /// Whether the agent in `session` takes a prompt typed in now: its screen
-/// shows it waiting for one. One that has had no prompt yet must also have
-/// gone quiet with its prompt box in sight, as it may still be starting or
-/// asking the person something first.
+/// shows it waiting for one, read afresh, as what was last published may be
+/// a moment behind a permission prompt. One that has had no prompt yet must
+/// also have gone quiet with its prompt box in sight, as it may still be
+/// starting or asking the person something first.
 pub(crate) fn takes_prompt(core: &Core, session: &Session) -> bool {
     let Some(agent) = session.agent.as_ref().filter(|agent| agent.idle()) else {
         return false;
     };
+    let Some(detection) = screen_now(core, session) else {
+        return false;
+    };
     if agent.armed.load(Ordering::Acquire) {
-        return true;
+        return !matches!(
+            detection.state,
+            AgentDetectionState::Working | AgentDetectionState::Blocked
+        );
     }
     let quiet = now_ms().saturating_sub(session.last_activity_ms.load(Ordering::Relaxed))
         >= ACTIVITY_SETTLE.as_millis() as u64;
-    let (Some(kind), Some((recent, title))) = (agent.kind, screen_text(session)) else {
-        return false;
-    };
     quiet
-        && core.detection.read().is_ok_and(|registry| {
-            let detection = registry.detect(kind, detection_input(&recent, &title));
-            matches!(detection.state, AgentDetectionState::Idle)
-                && detection.fallback_reason.is_none()
-        })
+        && matches!(detection.state, AgentDetectionState::Idle)
+        && detection.fallback_reason.is_none()
+}
+
+/// Whether the agent's screen shows it asking the person something now, such
+/// as for a permission.
+pub(crate) fn asks_now(core: &Core, session: &Session) -> bool {
+    screen_now(core, session)
+        .is_some_and(|detection| matches!(detection.state, AgentDetectionState::Blocked))
+}
+
+fn screen_now(core: &Core, session: &Session) -> Option<AgentDetection> {
+    let kind = session.agent.as_ref()?.kind?;
+    let (recent, title) = screen_text(session)?;
+    let registry = core.detection.read().ok()?;
+    Some(registry.detect(kind, detection_input(&recent, &title)))
 }
 
 pub(crate) fn screen_text(session: &Session) -> Option<(String, String)> {
