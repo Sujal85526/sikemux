@@ -20,7 +20,7 @@ import { notify, reportError } from "../state/toast";
 import { copyText } from "../lib/clipboard";
 import { fsapi } from "../api/fs";
 import { deskTabMenu } from "./deskTabMenu";
-import { AgentIcon, IconChevron, IconCommand, IconEditor, IconGlobe, IconPhone, IconPlus, IconRefresh, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconEditor, IconGlobe, IconPhone, IconPlus, IconRefresh, IconTerminal, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { IS_MACOS } from "../lib/platform";
 import { FileIcon } from "../ui/FileIcon";
@@ -587,7 +587,7 @@ const isTabItem = (item: DeskItem): item is Exclude<DeskItem, { kind: "simulator
 const KINDS: { kind: DeskKind; label: string; icon: ReactNode }[] = [
     { kind: "browser", label: "Browser", icon: <IconGlobe size={14} /> },
     { kind: "file", label: "Files", icon: <IconEditor size={14} /> },
-    { kind: "terminal", label: "Terminals", icon: <IconCommand size={14} /> },
+    { kind: "terminal", label: "Terminals", icon: <IconTerminal size={14} /> },
     ...(IS_MACOS ? [{ kind: "simulator" as const, label: "iOS Simulator", icon: <IconPhone size={14} /> }] : []),
 ];
 

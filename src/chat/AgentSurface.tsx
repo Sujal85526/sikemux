@@ -8,7 +8,7 @@ import { acpApi } from "../api/acp";
 import { agentSupportsChat } from "../agents/agentLaunch";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { isResumableSession } from "../terminal/sessionResume";
-import { AgentIcon, IconAgent, IconCommand, IconMoreVertical, IconPanelRight, IconPlug } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconMoreVertical, IconPanelRight, IconPlug, IconTerminal } from "../ui/Icons";
 import { useStore } from "../state/store";
 import { shownDeskPaneId } from "../state/selectors";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
@@ -179,7 +179,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             disabled={switching || (view === "gui" && chatBusy)}
                             title={chatBusy ? "Stop the current turn before opening TUI" : "Open native agent TUI"}
                             onClick={() => void switchView("tui")}>
-                            <IconCommand size={13} />
+                            <IconTerminal size={13} />
                             <span>TUI</span>
                         </button>
                     </div>

@@ -19,7 +19,7 @@ import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
 import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentIcon, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconClose, IconFolder, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
@@ -42,9 +42,10 @@ import type { ProjectSpace } from "../state/types";
 
 function kindIcon(kind: SessionKind): ReactNode {
     if (kind === "project") return <IconFolder size={13} />;
+    if (kind === "ssh") return <IconServer size={13} />;
     const surface = pluginSurface(kind);
     if (surface) return surface.icon(15);
-    return <IconCommand size={13} />;
+    return <IconTerminal size={13} />;
 }
 
 const MAX_BADGE_ICONS = 5;

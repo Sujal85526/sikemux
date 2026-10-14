@@ -18,7 +18,7 @@ import { useMouseActive } from "../hooks/useMouseActive";
 import { isPluginKind } from "../plugins/kinds";
 import { enabledFrontendPlugins } from "../plugins/enabled";
 import { pluginSurface } from "../plugins/registry";
-import { IconClose, IconCommand, IconFolder, IconSearch } from "../ui/Icons";
+import { IconClose, IconFolder, IconSearch, IconServer, IconTerminal } from "../ui/Icons";
 import { leavingOverlay } from "../lib/motion";
 
 type Item =
@@ -266,6 +266,7 @@ export function SeshPicker() {
                                     : `h-${it.alias}`;
                         const pluginIcon = it.kind === "plugin" ? it.icon : it.kind === "session" ? pluginSurface(it.sk)?.icon(14) : undefined;
                         const isFolder = it.kind === "dir" || (it.kind === "session" && it.sk === "project");
+                        const isHost = it.kind === "ssh" || (it.kind === "session" && it.sk === "ssh");
                         const iconClass = pluginIcon ? "plugin" : it.kind === "dir" ? "project" : it.kind === "session" ? it.sk : "command";
                         return (
                             <div key={key}>
@@ -280,7 +281,7 @@ export function SeshPicker() {
                                     }}>
                                     <button className={`picker-item${i === sel ? " sel" : ""}`} onClick={() => activate(it)}>
                                         <span className={`picker-icon ${iconClass}`}>
-                                            {pluginIcon ?? (isFolder ? <IconFolder size={14} /> : <IconCommand size={14} />)}
+                                            {pluginIcon ?? (isFolder ? <IconFolder size={14} /> : isHost ? <IconServer size={14} /> : <IconTerminal size={14} />)}
                                         </span>
                                         <span className="picker-name">{it.name}</span>
                                         <span className="picker-sub">{it.sub}</span>

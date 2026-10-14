@@ -9,7 +9,7 @@ import * as cmd from "../state/commands";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { actionForEvent, keybindingLabelForAction, type CoreKeybindingActionId } from "../commands/keybindings";
-import { AgentIcon, IconAgent, IconCommand, IconFolder, IconSearch, Logo } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconFolder, IconSearch, IconServer, Logo } from "../ui/Icons";
 import { agentStatusLabel } from "../agents/agentStatus";
 import { Kbd } from "../ui/Kbd";
 import { ShaderField } from "../ui/ShaderField";
@@ -38,7 +38,7 @@ const WELCOME_MOVES = [
         run: () => void cmd.startAgent(),
     },
     { id: "palette.commands", label: "Browse commands", detail: "Every action and its shortcut", Icon: IconSearch, run: cmd.openCommandPalette },
-    { id: "ssh.open", label: "Connect to a host", detail: "Hosts from your SSH config", Icon: IconCommand, run: () => cmd.openPicker("ssh") },
+    { id: "ssh.open", label: "Connect to a host", detail: "Hosts from your SSH config", Icon: IconServer, run: () => cmd.openPicker("ssh") },
 ] as const satisfies readonly {
     id: CoreKeybindingActionId;
     label: string;

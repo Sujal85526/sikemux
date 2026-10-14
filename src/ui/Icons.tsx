@@ -487,6 +487,13 @@ export const IconCube = makeSvgIcon(
         <path d="M2.8 5.2 8 8l5.2-2.8M8 8v5.6" />
     </>,
 );
+export const IconServer = makeSvgIcon(
+    <>
+        <rect x="2.4" y="2.6" width="11.2" height="4.6" rx="1.2" />
+        <rect x="2.4" y="8.8" width="11.2" height="4.6" rx="1.2" />
+        <path d="M4.9 4.9h.6M4.9 11.1h.6" />
+    </>,
+);
 export const IconTerminal = makeSvgIcon(
     <>
         <rect x="2.2" y="3" width="11.6" height="10" rx="1.4" />
@@ -592,7 +599,7 @@ import type { WindowRole } from "../state/types";
 import { pluginSurface } from "../plugins/registry";
 export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) {
     if (role === "files") return <IconEditor size={size} />;
-    if (role === "term") return <IconCommand size={size} />;
+    if (role === "term") return <IconTerminal size={size} />;
     if (role === "git") return <IconGit size={size} />;
     if (role === "diff") return <IconCommit size={size} />;
     if (role === "search") return <IconSearch size={size} />;
