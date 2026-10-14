@@ -283,6 +283,28 @@ export class ChatSession {
     return true;
   };
 
+  /**
+   * Answers a question with `text` and the files picked for it, named in the answer once they are all on the
+   * host. The files stay in the composer when the answer did not go out.
+   */
+  answerWith = async (text: string, answer: (text: string) => Promise<boolean>): Promise<boolean> => {
+    this.notice = null;
+    let attachments: Attachment[] = [];
+    if (this.attachments.length) {
+      if (this.uploading()) return false;
+      attachments = await this.upload();
+      if (!attachments.length) return false;
+    }
+    const paths = attachments.flatMap((attachment) => (attachment.path ? [attachment.path] : []));
+    const full = [text, ...(paths.length ? [`Attached:\n${paths.map((path) => `- ${path}`).join('\n')}`] : [])]
+      .filter(Boolean)
+      .join('\n\n');
+    if (await answer(full)) return true;
+    this.attachments = [...attachments, ...this.attachments];
+    this.emit();
+    return false;
+  };
+
   retrySend = (messageId: string) => {
     const entry = this.outbox.find((outgoing) => outgoing.messageId === messageId);
     if (!entry || entry.state !== 'failed') return;

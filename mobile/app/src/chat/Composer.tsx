@@ -539,7 +539,7 @@ export const Composer = memo(function Composer({
       return;
     }
     haptics.tap();
-    const sending = question && text ? question.onAnswer(text) : session.send(text);
+    const sending = question ? session.answerWith(text, question.onAnswer) : session.send(text);
     void sending.then((sent) => {
       if (!sent) return;
       // Clearing the state alone leaves text the keyboard is still composing.

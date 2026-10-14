@@ -45,13 +45,14 @@ export function useQuestions(
         const list = JSON.parse(text) as AgentQuestion[];
         if (current) setAll(list.filter((question) => question.agentId === agentId && asksPerson(question) && question.blocked));
       },
-      // A host from before questions has no such call.
-      () => undefined,
+      (error: unknown) => {
+        if (current) onError(`could not read this agent's questions: ${error instanceof Error ? error.message : String(error)}`);
+      },
     );
     return () => {
       current = false;
     };
-  }, [connection, agentId, seen, reads]);
+  }, [connection, agentId, seen, reads, onError]);
 
   const open = useMemo(() => all.filter((question) => !sent.some((answered) => answered.question.id === question.id)), [all, sent]);
   const answered = useMemo(() => sent.filter(({ question }) => !arrived.has(question.asked)), [sent, arrived]);
