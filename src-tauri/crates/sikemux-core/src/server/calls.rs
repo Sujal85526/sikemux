@@ -43,6 +43,9 @@ pub(crate) async fn call(
         "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
         "agentNames" => answer(agent_names(&core).await?),
         "setWorkspace" => answer(workspace::set_workspace(&core, parse(params)?).await?),
+        method if crate::agent_accounts::METHODS.contains(&method) => {
+            super::agent_accounts::call(&core, method, params).await
+        }
         "shareChat" => {
             let params: ShareChatParams = parse(params)?;
             answer(share::share_chat(

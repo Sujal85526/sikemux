@@ -1,7 +1,7 @@
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
-import type { AgentEffort, AgentType } from "../state/types";
+import type { AgentEffort, AgentType, ProviderProfile, ProviderProfileSelection } from "../state/types";
 
 /** Whether an agent can be used right now; `unknown` when its CLI has no way to say if it is signed in. */
 export type AgentStatus =
@@ -76,7 +76,18 @@ export interface AgentUsage {
     unavailableReason?: string | null;
 }
 
+/** The person's agent accounts, as the core keeps them. */
+export interface AgentAccountBook {
+    profiles: ProviderProfile[];
+    selected: ProviderProfileSelection;
+}
+
 const inflight = new Map<string, Promise<AgentSession[]>>();
+
+/** One of the core's calls about the person's agent accounts. */
+function accountCall<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    return invoke<T>("agent_accounts_call", { method, params });
+}
 
 function key(agent: string, cwd: string, configPath?: string) {
     return `${agent}\0${cwd}\0${configPath ?? ""}`;
@@ -133,14 +144,18 @@ export interface SavedSessionContext {
 
 export const agentApi = {
     available: fetchAvailable,
+    /** The accounts the core keeps; `null` until the app first gives it some. */
+    accounts: (): Promise<AgentAccountBook | null> => accountCall("agentAccounts"),
+    setAccounts: (book: AgentAccountBook): Promise<void> => accountCall("setAgentAccounts", { ...book }),
     /** Forgets every agent's status, so the next look asks each one again. */
-    refreshStatuses: (): Promise<void> => invoke<void>("refresh_agent_statuses"),
-    markSignedOut: (agent: AgentType, configPath?: string): Promise<void> => invoke<void>("mark_agent_signed_out", { agent, configPath }),
-    usage: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> =>
-        invoke<AgentUsage>("agent_usage", { agent, executablePath, configPath }),
-    account: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentAccountStatus> =>
-        invoke<AgentAccountStatus>("agent_account_status", { agent, executablePath, configPath }),
-    addAccount: (agent: AgentType, name: string): Promise<string> => invoke<string>("agent_account_add", { agent, name }),
+    refreshStatuses: (): Promise<void> => accountCall("forgetAgentStatus"),
+    /** Forgets one account's sign-in and usage, after they changed. */
+    forgetAccount: (agent: AgentType, configPath?: string): Promise<void> => accountCall("forgetAgentStatus", { provider: agent, configPath }),
+    markSignedOut: (agent: AgentType, configPath?: string): Promise<void> => accountCall("markAgentSignedOut", { provider: agent, configPath }),
+    usage: (agent: AgentType, configPath?: string): Promise<AgentUsage> => accountCall("agentUsage", { provider: agent, configPath }),
+    account: (agent: AgentType, configPath?: string): Promise<AgentAccountStatus> =>
+        accountCall("agentAccountStatus", { provider: agent, configPath }),
+    addAccount: (agent: AgentType, name: string): Promise<string> => accountCall("addAgentAccount", { provider: agent, name }),
     signIn: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
         invoke<void>("agent_account_sign_in", { agent, executablePath, configPath }),
     signInCode: (agent: AgentType, configPath: string | undefined, code: string): Promise<void> =>

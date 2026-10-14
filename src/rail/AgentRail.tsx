@@ -113,8 +113,8 @@ export function AgentRailBody() {
     const codexDetected = availableTypes.has("codex");
     const claudeProvider = availableAgents.find((agent) => agent.type === "claude");
     const codexProvider = availableAgents.find((agent) => agent.type === "codex");
-    const claudeUsage = useResourceEnabled(claudeDetected, agentUsageR, "claude", claudeProvider?.command, claudeProvider?.configPath ?? undefined);
-    const codexUsage = useResourceEnabled(codexDetected, agentUsageR, "codex", codexProvider?.command, codexProvider?.configPath ?? undefined);
+    const claudeUsage = useResourceEnabled(claudeDetected, agentUsageR, "claude", claudeProvider?.configPath ?? undefined);
+    const codexUsage = useResourceEnabled(codexDetected, agentUsageR, "codex", codexProvider?.configPath ?? undefined);
     const usageRefreshRef = useRef({ claude: claudeUsage.refresh, codex: codexUsage.refresh });
     usageRefreshRef.current = { claude: claudeUsage.refresh, codex: codexUsage.refresh };
 
@@ -316,9 +316,7 @@ export function AgentRailBody() {
                     allAgents={allAgents}
                 />
                 <div className="agent-empty">agents are project-scoped</div>
-                {!allAgents && hasUsage(selectedType) && selectedUsage && (
-                    <AgentAccountsPanel provider={selectedType} usage={selectedUsage} command={selectedProvider?.command} />
-                )}
+                {!allAgents && hasUsage(selectedType) && selectedUsage && <AgentAccountsPanel provider={selectedType} usage={selectedUsage} />}
             </>
         );
     }
@@ -484,9 +482,7 @@ export function AgentRailBody() {
             </div>
             {/* The rail's footer: plan limits sit under the agents they apply
                 to, out of the way of the list you came here to use. */}
-            {!allAgents && hasUsage(selectedType) && selectedUsage && (
-                <AgentAccountsPanel provider={selectedType} usage={selectedUsage} command={selectedProvider?.command} />
-            )}
+            {!allAgents && hasUsage(selectedType) && selectedUsage && <AgentAccountsPanel provider={selectedType} usage={selectedUsage} />}
         </>
     );
 }

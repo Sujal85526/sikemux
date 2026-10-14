@@ -31,7 +31,7 @@ export function ChatFailureActions({ agent, profile, failure }: { agent: Agent; 
 function ContinueElsewhere({ agent, profile }: { agent: Agent; profile: ProviderProfile }) {
     const profiles = useStore((s) => s.providerProfiles);
     const provider = isAccountProvider(profile.provider) ? profile.provider : "claude";
-    const own = useResource(agentAccountR, provider, profile.executablePath, profile.configPath);
+    const own = useResource(agentAccountR, provider, profile.configPath);
     const others = accountsOf(provider, profiles).filter((other) => other.id !== profile.id);
     if (others.length === 0 || !own.data?.sessions) return null;
     return (
@@ -47,7 +47,7 @@ function ContinueElsewhere({ agent, profile }: { agent: Agent; profile: Provider
    take the chat over. */
 function ContinueOn({ agent, account, sessions }: { agent: Agent; account: ProviderProfile; sessions: string }) {
     const provider = isAccountProvider(account.provider) ? account.provider : "claude";
-    const status = useResource(agentAccountR, provider, account.executablePath, account.configPath);
+    const status = useResource(agentAccountR, provider, account.configPath);
     if (!status.data?.signedIn || status.data.sessions !== sessions) return null;
     return (
         <button type="button" onClick={() => moveTo(agent, account)}>

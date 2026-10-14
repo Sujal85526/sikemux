@@ -1,7 +1,8 @@
 //! The projects the app has open and the agents it can start, kept by the
 //! core across restarts so a paired device can start or wake a chat with no
-//! app running. Launchers name an agent, never its environment: a launch
-//! builds that afresh, keys and all.
+//! app running. The core offers each agent on each of the person's accounts
+//! and finds its program itself; a launch builds its environment afresh,
+//! keys and all.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -13,6 +14,9 @@ use agent_client_protocol::schema::v1::{EnvVariable, McpServer, McpServerStdio};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::agent_accounts::status::{self, AgentStatus};
+use crate::agent_accounts::Book;
+use crate::agent_catalog::AGENTS;
 use crate::launch::providers::Providers;
 use crate::launch::{skills, AgentSpec};
 use crate::protocol::{
@@ -37,21 +41,17 @@ const MAX_COLOURS: usize = 64;
 const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 const MAX_COLOUR_CHARS: usize = 64;
 
-/// One agent the app offers, on one of the person's accounts.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// One agent the core offers, on one of the person's accounts.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Launcher {
     pub id: String,
     pub label: String,
-    #[serde(flatten)]
     pub agent: AgentSpec,
     pub permission_mode: String,
-    /// Whether the agent is ready, signed out, missing or broken, as the app last saw it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Whether the agent is ready, signed out or cannot tell, as the core last checked.
     pub status: Option<String>,
-    /// The program the core found for the agent.
-    #[serde(default)]
-    pub program: PathBuf,
+    /// The program the core last found for the agent.
+    pub program: Option<PathBuf>,
 }
 
 /// How a chat the app stopped was running, so the core can wake it alone.
@@ -75,7 +75,10 @@ struct Asleep {
 #[serde(rename_all = "camelCase")]
 struct Saved {
     projects: Vec<ProjectInfo>,
-    launchers: Vec<Launcher>,
+    /// The person's agent accounts, absent until the app first says which they are.
+    accounts: Option<Book>,
+    /// The mode the person starts agents in, absent until the app first says.
+    permission_mode: Option<String>,
     /// The app's chats, absent until it has said which it holds.
     chats: Option<Vec<PublishedChat>>,
     recent: Vec<PublishedRecent>,
@@ -85,6 +88,7 @@ struct Saved {
 #[derive(Default)]
 struct Published {
     saved: Saved,
+    launchers: Vec<Launcher>,
     titles: BTreeMap<String, String>,
     /// Each provider's `configOptions` from its last session, by provider.
     config_options: BTreeMap<String, Value>,
@@ -111,7 +115,7 @@ pub(crate) struct Workspaces {
     providers: Option<Providers>,
     /// The data folder, which holds the skills library.
     data_dir: Option<PathBuf>,
-    /// Counts the app's workspaces, so one that took longer to look over never replaces a newer one.
+    /// Counts the looks over the agents, so one that took longer never replaces a newer one.
     asked: AtomicU64,
 }
 
@@ -182,23 +186,124 @@ impl Workspaces {
         }
     }
 
-    fn set(&self, projects: Vec<ProjectInfo>, launchers: Vec<Launcher>) -> CoreResult<()> {
-        if projects.len() > MAX_PROJECTS || launchers.len() > MAX_LAUNCHERS {
-            return Err("the app published more projects or launchers than the core keeps".into());
+    /// Keeps the app's projects and the mode it starts agents in, and says
+    /// whether that mode changed.
+    fn set(&self, projects: Vec<ProjectInfo>, permission_mode: String) -> CoreResult<bool> {
+        if projects.len() > MAX_PROJECTS || permission_mode.len() > 64 {
+            return Err("the app published more projects than the core keeps".into());
         }
         if let Some(project) = projects.iter().find(|project| !project.path.is_absolute()) {
             return Err(format!("project {} has no absolute path", project.name).into());
         }
         let mut published = self.lock();
+        let changed = published.saved.permission_mode.as_ref() != Some(&permission_mode);
         published.saved.projects = projects;
-        published.saved.launchers = launchers;
+        published.saved.permission_mode = Some(permission_mode);
+        self.save(&published.saved);
+        Ok(changed)
+    }
+
+    pub(crate) fn accounts(&self) -> Option<Book> {
+        self.lock().saved.accounts.clone()
+    }
+
+    pub(crate) fn set_accounts(&self, book: Book) -> CoreResult<()> {
+        book.check()?;
+        let mut published = self.lock();
+        published.saved.accounts = Some(book);
         self.save(&published.saved);
         Ok(())
     }
 
-    /// A chat of `launcher` in `cwd`, built afresh, for an agent not yet named.
-    /// Reads the providers' keys from the Keychain, so it blocks.
-    fn chat_launch(&self, launcher: &Launcher, cwd: &Path) -> ChatLaunch {
+    /// The agent `provider` on the person's account in `config_path`.
+    pub(crate) fn account_spec(&self, provider: &str, config_path: Option<&str>) -> AgentSpec {
+        let published = self.lock();
+        match &published.saved.accounts {
+            Some(book) => book.spec(provider, config_path),
+            None => Book::default().spec(provider, config_path),
+        }
+    }
+
+    /// The hosted model providers' keys `provider` reads. Reads the Keychain, so it blocks.
+    pub(crate) fn provider_keys(&self, provider: &str) -> BTreeMap<String, String> {
+        self.providers
+            .as_ref()
+            .map(|providers| providers.environment(provider))
+            .unwrap_or_default()
+    }
+
+    /// Each chat agent on each of the person's accounts, in the mode they
+    /// start agents in: one launcher per profile, or one for an agent with none.
+    fn offered(&self) -> Vec<Launcher> {
+        let published = self.lock();
+        let saved = &published.saved;
+        let profiles = saved
+            .accounts
+            .as_ref()
+            .map(|book| book.profiles.as_slice())
+            .unwrap_or_default();
+        let mut offered = Vec::new();
+        // Pi has no chat mode of its own.
+        for def in AGENTS.iter().filter(|def| def.kind != "pi") {
+            let permission_mode = match saved.permission_mode.as_deref() {
+                Some(mode) if def.bypass => mode.to_owned(),
+                None if def.bypass => "bypass".to_owned(),
+                _ => "workspace-write".to_owned(),
+            };
+            let launcher = |id: String, label: String, agent: AgentSpec| Launcher {
+                id,
+                label,
+                agent,
+                permission_mode: permission_mode.clone(),
+                status: None,
+                program: None,
+            };
+            let own: Vec<_> = profiles
+                .iter()
+                .filter(|profile| profile.provider == def.kind)
+                .collect();
+            if own.is_empty() {
+                let agent = AgentSpec::new(def.kind);
+                offered.push(launcher(def.kind.into(), def.label.into(), agent));
+            }
+            for profile in &own {
+                let label = match own.len() {
+                    1 => def.label.to_owned(),
+                    _ => format!("{} · {}", def.label, profile.name),
+                };
+                let id = format!("{}:{}", def.kind, profile.id);
+                offered.push(launcher(id, label, profile.spec()));
+            }
+        }
+        offered.truncate(MAX_LAUNCHERS);
+        offered
+    }
+
+    fn set_launchers(&self, launchers: Vec<Launcher>) {
+        self.lock().launchers = launchers;
+    }
+
+    /// Keeps what the core last heard of an account's sign-in on the
+    /// launchers that start on it.
+    pub(crate) fn note_status(
+        &self,
+        provider: &str,
+        config_path: Option<&str>,
+        status: &AgentStatus,
+    ) {
+        let mut published = self.lock();
+        let on_account = published.launchers.iter_mut().filter(|launcher| {
+            launcher.agent.provider == provider
+                && launcher.agent.config_path.as_deref() == config_path
+        });
+        for launcher in on_account {
+            launcher.status = Some(status.state().to_owned());
+        }
+    }
+
+    /// A chat of `launcher` running `program` in `cwd`, built afresh, for an
+    /// agent not yet named. Reads the providers' keys from the Keychain, so it blocks.
+    fn chat_launch(&self, launcher: &Launcher, program: PathBuf, cwd: &Path) -> ChatLaunch {
         let agent = &launcher.agent;
         let providers = self
             .providers
@@ -206,7 +311,7 @@ impl Workspaces {
             .and_then(|providers| providers.wiring(&agent.provider, None, None).ok())
             .unwrap_or_default();
         let skills = self.data_dir.as_deref().and_then(skills::ready);
-        let built = agent.chat(launcher.program.clone(), providers, skills);
+        let built = agent.chat(program, providers, skills);
         ChatLaunch {
             agent_id: String::new(),
             provider: agent.provider.clone(),
@@ -236,7 +341,6 @@ impl Workspaces {
 
     fn launcher(&self, id: &str) -> CoreResult<Launcher> {
         self.lock()
-            .saved
             .launchers
             .iter()
             .find(|launcher| launcher.id == id)
@@ -392,7 +496,7 @@ impl Workspaces {
             .ok_or_else(|| {
                 CoreError::from("that chat's project is not open in Sikemux on this host")
             })?;
-        let launcher = saved
+        let launcher = published
             .launchers
             .iter()
             .find(|launcher| {
@@ -509,7 +613,6 @@ impl Workspaces {
         Workspace {
             projects: published.saved.projects.clone(),
             launchers: published
-                .saved
                 .launchers
                 .iter()
                 .map(|launcher| {
@@ -593,7 +696,7 @@ impl Workspaces {
         }
         let launcher = {
             let published = self.lock();
-            let launchers = &published.saved.launchers;
+            let launchers = &published.launchers;
             let offered: Vec<&Launcher> = launchers
                 .iter()
                 .filter(|launcher| launcher.agent.provider == provider)
@@ -635,7 +738,7 @@ impl Workspaces {
             }
             _ => {}
         }
-        let mut launch = self.chat_launch(&launcher, cwd);
+        let mut launch = self.chat_launch(&launcher, still_there(&launcher)?, cwd);
         launch.permission_mode = mode(&launcher.permission_mode);
         match lead.launch.as_ref().filter(|_| same) {
             Some(own) => {
@@ -651,7 +754,7 @@ impl Workspaces {
 
 impl Workspaces {
     pub(crate) fn has_launchers(&self) -> bool {
-        !self.lock().saved.launchers.is_empty()
+        !self.lock().launchers.is_empty()
     }
 
     /// How Auto starts an agent of its own in `cwd`: with the launcher the
@@ -665,7 +768,7 @@ impl Workspaces {
     ) -> Result<(ChatLaunch, String), String> {
         let chosen = {
             let published = self.lock();
-            let launchers = &published.saved.launchers;
+            let launchers = &published.launchers;
             let usable = |launcher: &&Launcher| {
                 !matches!(
                     launcher.status.as_deref(),
@@ -691,7 +794,7 @@ impl Workspaces {
             Some("broken") => return Err(format!("{} does not start", chosen.label)),
             _ => {}
         }
-        let mut launch = self.chat_launch(&chosen, cwd);
+        let mut launch = self.chat_launch(&chosen, still_there(&chosen)?, cwd);
         launch.model = model;
         Ok((launch, chosen.id))
     }
@@ -780,48 +883,77 @@ fn running(core: &Core, agent_id: &str) -> bool {
         .any(|chat| chat.agent_id == agent_id)
 }
 
-#[derive(Deserialize)]
-pub(crate) struct WorkspaceParams {
-    projects: Vec<ProjectInfo>,
-    launchers: Vec<Launcher>,
+/// The program the core last found for `launcher`, while it is still there.
+fn still_there(launcher: &Launcher) -> Result<PathBuf, String> {
+    launcher
+        .program
+        .clone()
+        .filter(|program| program.is_file())
+        .ok_or_else(|| format!("{} is no longer installed on this host", launcher.label))
 }
 
-/// Keeps the projects the app has open and the agents it offers, each with
-/// the program the core finds for it. An agent with none is left out.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceParams {
+    projects: Vec<ProjectInfo>,
+    permission_mode: String,
+}
+
+/// Keeps the projects the app has open and the mode it starts agents in.
 pub(crate) async fn set_workspace(core: &Arc<Core>, params: WorkspaceParams) -> CoreResult<()> {
-    if params.launchers.len() > MAX_LAUNCHERS {
-        return Err("the app published more projects or launchers than the core keeps".into());
+    if core
+        .workspaces
+        .set(params.projects, params.permission_mode)?
+    {
+        refresh_launchers(core.clone()).await;
     }
+    Ok(())
+}
+
+/// Finds each offered agent's program and offers those found, with what
+/// the core last heard of their sign-in. Runs as the core starts and when the
+/// person's accounts or their mode change, or they may have installed an agent.
+pub(crate) fn refresh_launchers(core: Arc<Core>) -> impl std::future::Future<Output = ()> {
     let asked = core.workspaces.asked.fetch_add(1, Ordering::SeqCst) + 1;
-    let finding: Vec<_> = params
-        .launchers
+    async move { refresh(core, asked).await }
+}
+
+async fn refresh(core: Arc<Core>, asked: u64) {
+    let looking: Vec<_> = core
+        .workspaces
+        .offered()
         .into_iter()
         .map(|launcher| {
             tokio::spawn(async move {
-                let program = launcher.agent.program().await.ok()?;
+                let program = status::find(&launcher.agent).await.ok()?;
+                let agent = &launcher.agent;
+                let status = status::cached(&agent.provider, agent.config_path.as_deref());
                 Some(Launcher {
-                    program,
+                    status: status.map(|status| status.state().to_owned()),
+                    program: Some(program),
                     ..launcher
                 })
             })
         })
         .collect();
-    let mut launchers = Vec::with_capacity(finding.len());
-    for found in finding {
-        launchers.extend(found.await.ok().flatten());
+    let mut found = Vec::with_capacity(looking.len());
+    for looked in looking {
+        found.extend(looked.await.ok().flatten());
     }
-    if core.workspaces.asked.load(Ordering::SeqCst) != asked {
-        return Ok(());
+    if core.workspaces.asked.load(Ordering::SeqCst) == asked {
+        core.workspaces.set_launchers(found);
+        core.publish_device_view();
     }
-    core.workspaces.set(params.projects, launchers)
 }
 
-/// A chat of the app's `launcher` in `cwd`, built afresh off the async threads.
+/// A chat of the app's `launcher` in `cwd`, on its program found afresh,
+/// built off the async threads.
 async fn built(core: &Arc<Core>, launcher: &str, cwd: PathBuf) -> CoreResult<(ChatLaunch, String)> {
     let launcher = core.workspaces.launcher(launcher)?;
+    let program = launcher.agent.program().await?;
     let core = core.clone();
     blocking(move || {
-        let launch = core.workspaces.chat_launch(&launcher, &cwd);
+        let launch = core.workspaces.chat_launch(&launcher, program, &cwd);
         Ok((launch, launcher.id))
     })
     .await
@@ -966,14 +1098,20 @@ mod tests {
             },
             permission_mode: "bypass".into(),
             status: None,
-            program: "/usr/local/bin/claude".into(),
+            program: Some("/usr/local/bin/claude".into()),
         }
+    }
+
+    fn offer(workspaces: &Workspaces, launchers: Vec<Launcher>) {
+        workspaces.set(vec![project()], "bypass".into()).unwrap();
+        workspaces.set_launchers(launchers);
     }
 
     fn launch(workspaces: &Workspaces, choice: ChatChoice) -> CoreResult<ChatLaunch> {
         let launcher = workspaces.launcher(&choice.launcher)?;
         let cwd = workspaces.project_path(&choice.project)?;
-        let mut launch = workspaces.chat_launch(&launcher, &cwd);
+        let program = launcher.program.clone().unwrap_or_default();
+        let mut launch = workspaces.chat_launch(&launcher, program, &cwd);
         launch.resume_id = choice.resume_id;
         launch.model = choice.model;
         Ok(launch)
@@ -1021,7 +1159,7 @@ mod tests {
     #[test]
     fn a_device_sees_launchers_without_their_program_or_environment() {
         let workspaces = Workspaces::new(None);
-        workspaces.set(vec![project()], vec![launcher()]).unwrap();
+        offer(&workspaces, vec![launcher()]);
         let shown = serde_json::to_string(&workspaces.view()).unwrap();
         assert!(shown.contains("Claude Code (work)"));
         assert!(!shown.contains("/usr/local/bin/claude"));
@@ -1035,10 +1173,10 @@ mod tests {
             status: Some("signedOut".into()),
             ..launcher()
         };
-        workspaces.set(vec![project()], vec![signed_out]).unwrap();
+        offer(&workspaces, vec![signed_out]);
         let view = workspaces.view();
         assert_eq!(view.launchers[0].status.as_deref(), Some("signedOut"));
-        workspaces.set(vec![project()], vec![launcher()]).unwrap();
+        offer(&workspaces, vec![launcher()]);
         let shown = serde_json::to_value(workspaces.view()).unwrap();
         assert!(shown["launchers"][0].get("status").is_none());
     }
@@ -1046,7 +1184,7 @@ mod tests {
     #[test]
     fn a_chat_starts_in_the_project_with_the_launcher_and_its_account() {
         let workspaces = Workspaces::new(None);
-        workspaces.set(vec![project()], vec![launcher()]).unwrap();
+        offer(&workspaces, vec![launcher()]);
         let launch = launch(&workspaces, choice()).unwrap();
         assert_eq!(launch.cwd, PathBuf::from("/Users/me/sikemux"));
         assert_eq!(launch.program, PathBuf::from("/usr/local/bin/claude"));
@@ -1061,7 +1199,7 @@ mod tests {
     #[test]
     fn an_unknown_launcher_or_project_is_refused() {
         let workspaces = Workspaces::new(None);
-        workspaces.set(vec![project()], vec![launcher()]).unwrap();
+        offer(&workspaces, vec![launcher()]);
         let mut wrong = choice();
         wrong.project = "elsewhere".into();
         assert!(launch(&workspaces, wrong).is_err());
@@ -1073,7 +1211,7 @@ mod tests {
     #[test]
     fn a_device_sees_recent_chats_in_open_projects_but_not_running_ones() {
         let workspaces = Workspaces::new(None);
-        workspaces.set(vec![project()], vec![launcher()]).unwrap();
+        offer(&workspaces, vec![launcher()]);
         workspaces
             .publish_recent(vec![
                 recent("s1", "/Users/me/sikemux"),
@@ -1127,7 +1265,7 @@ mod tests {
     #[test]
     fn a_recent_chat_resumes_with_its_launcher_in_its_project() {
         let workspaces = Workspaces::new(None);
-        workspaces.set(vec![project()], vec![launcher()]).unwrap();
+        offer(&workspaces, vec![launcher()]);
         workspaces
             .publish_recent(vec![recent("s1", "/Users/me/sikemux")])
             .unwrap();
@@ -1144,7 +1282,7 @@ mod tests {
     #[test]
     fn only_a_published_recent_chat_resumes() {
         let workspaces = Workspaces::new(None);
-        workspaces.set(vec![project()], vec![launcher()]).unwrap();
+        offer(&workspaces, vec![launcher()]);
         workspaces
             .publish_recent(vec![recent("s1", "/Users/me/sikemux")])
             .unwrap();
@@ -1169,6 +1307,59 @@ mod tests {
         let workspaces = Workspaces::new(None);
         let mut relative = project();
         relative.path = "sikemux".into();
-        assert!(workspaces.set(vec![relative], Vec::new()).is_err());
+        assert!(workspaces.set(vec![relative], "bypass".into()).is_err());
+    }
+
+    #[test]
+    fn each_chat_agent_is_offered_once_or_once_per_profile_in_a_mode_it_supports() {
+        let profile = |id: &str, name: &str, provider: &str| crate::agent_accounts::Profile {
+            id: id.into(),
+            name: name.into(),
+            provider: provider.into(),
+            accent: "#fff".into(),
+            executable_path: None,
+            config_path: Some(format!("~/.{id}")),
+            environment_keys: Vec::new(),
+        };
+        let workspaces = Workspaces::new(None);
+        let profiles = vec![
+            profile("work", "Work", "claude"),
+            profile("home", "Home", "claude"),
+            profile("cx", "Default", "codex"),
+        ];
+        workspaces
+            .set_accounts(Book {
+                profiles,
+                selected: BTreeMap::new(),
+            })
+            .unwrap();
+        workspaces.set(vec![project()], "bypass".into()).unwrap();
+        let offered = workspaces.offered();
+        let ids: Vec<&str> = offered
+            .iter()
+            .map(|launcher| launcher.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                "claude:work",
+                "claude:home",
+                "codex:cx",
+                "hermes",
+                "opencode",
+                "omp",
+                "grok",
+                "muse"
+            ]
+        );
+        let by_id = |id: &str| offered.iter().find(|launcher| launcher.id == id).unwrap();
+        assert_eq!(by_id("claude:work").label, "Claude · Work");
+        assert_eq!(
+            by_id("claude:work").agent.config_path.as_deref(),
+            Some("~/.work")
+        );
+        assert_eq!(by_id("codex:cx").label, "Codex");
+        assert_eq!(by_id("opencode").permission_mode, "workspace-write");
+        assert_eq!(by_id("grok").permission_mode, "bypass");
     }
 }

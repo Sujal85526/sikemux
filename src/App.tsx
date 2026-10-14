@@ -14,6 +14,8 @@ import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
 import { AgentSessionSync } from "./agents/AgentSessionSync";
 import { watchTerminalAgentExits } from "./agents/tuiResume";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
+import { syncAgentAccounts } from "./agents/accountBook";
+import { agentApi, type AgentAccountBook } from "./api/agents";
 import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
 import { FilePalette } from "./palettes/FilePalette";
@@ -755,6 +757,7 @@ export default function App() {
         let disposed = false;
         let unsub = () => {};
         let stopSpareShells = () => {};
+        let stopAccountSync = () => {};
         let bootFinished = false;
         let hydrationResult: HydrationResult | null = null;
         const bootSpan = performanceTelemetry.startTrace("startup.boot");
@@ -765,13 +768,15 @@ export default function App() {
             if (recorded) performanceTelemetry.recordLatency("startup.boot", recorded.durationMs);
         };
         void pluginsApi.manifests().then(cmd.setPluginManifests, swallow("plugin manifests"));
-        invoke<BootInfo>("boot_init")
-            .then((boot) => {
+        let accounts: AgentAccountBook | null | undefined;
+        Promise.all([invoke<BootInfo>("boot_init"), agentApi.accounts().catch(() => undefined)])
+            .then(([boot, book]) => {
                 if (disposed) return;
+                accounts = book;
                 const hydrateSpan = performanceTelemetry.startSpan(bootSpan, "startup.hydrate");
                 try {
                     cmd.setHome(boot.home);
-                    hydrationResult = applyHydrate(boot.state);
+                    hydrationResult = applyHydrate(boot.state, accounts);
                     const st = getState();
                     registerCustomThemes(st.customThemes);
                     applyTheme(st.themeId);
@@ -816,6 +821,7 @@ export default function App() {
                         return;
                     }
                     unsub = subscribePersist();
+                    stopAccountSync = syncAgentAccounts(accounts);
                     setBootReady(true);
                     introduceNotifications();
                     void restoreCoreSessions();
@@ -827,6 +833,7 @@ export default function App() {
             disposed = true;
             finishBoot("cancelled");
             unsub();
+            stopAccountSync();
             stopSpareShells();
             workbenchRuntime.stop();
         };

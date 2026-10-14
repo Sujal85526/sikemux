@@ -45,12 +45,10 @@ function accountName(account: ProviderProfile, status: AgentAccountStatus | unde
 export function AgentAccountsPanel({
     provider,
     usage,
-    command,
 }: {
     provider: AccountProvider;
     /** The limits of the account new chats start on, which the rail already reads. */
     usage: ResourceHandle<AgentUsage>;
-    command?: string;
 }) {
     const profiles = useStore((s) => s.providerProfiles);
     const selections = useStore((s) => s.selectedProviderProfileIds);
@@ -59,7 +57,7 @@ export function AgentAccountsPanel({
     const [menu, setMenu] = useState<{ x: number; y: number; width: number } | null>(null);
     const head = useRef<HTMLDivElement>(null);
     const providerLabel = agentLabel(provider);
-    const status = useResource(agentAccountR, provider, current?.executablePath, current?.configPath);
+    const status = useResource(agentAccountR, provider, current?.configPath);
     const signedOut = status.data?.signedIn === false;
 
     /* The menu names each other account by who it is signed in as and how
@@ -67,8 +65,8 @@ export function AgentAccountsPanel({
     const readOthers = () => {
         for (const account of accounts) {
             if (account.id === current?.id) continue;
-            void fetchResource(agentAccountR, provider, account.executablePath, account.configPath)
-                .then((other) => (other.signedIn ? fetchResource(agentUsageR, provider, command, account.configPath) : undefined))
+            void fetchResource(agentAccountR, provider, account.configPath)
+                .then((other) => (other.signedIn ? fetchResource(agentUsageR, provider, account.configPath) : undefined))
                 .catch(() => {});
         }
     };
@@ -79,7 +77,7 @@ export function AgentAccountsPanel({
     if (!current) return null;
     const name = accountName(current, status.data);
     const plan = usage.data?.plan ?? status.data?.plan;
-    const items = accountMenu(provider, accounts, current, usage.data, command);
+    const items = accountMenu(provider, accounts, current, usage.data);
 
     return (
         <section className={`agent-usage agent-accounts ${provider}`} aria-label={`${providerLabel} plan limits`}>
@@ -153,12 +151,11 @@ function accountMenu(
     accounts: ProviderProfile[],
     current: ProviderProfile,
     currentUsage: AgentUsage | undefined,
-    command?: string,
 ): CtxItem[] {
     const items: CtxItem[] = accounts.map((account) => {
         const selected = account.id === current.id;
-        const status = peekResource(agentAccountR, provider, account.executablePath, account.configPath);
-        const peak = usagePeak(selected ? currentUsage : peekResource(agentUsageR, provider, command, account.configPath));
+        const status = peekResource(agentAccountR, provider, account.configPath);
+        const peak = usagePeak(selected ? currentUsage : peekResource(agentUsageR, provider, account.configPath));
         const signedOut = status?.signedIn === false;
         const name = accountName(account, status);
         return {

@@ -619,30 +619,37 @@ describe("frontend persistence", () => {
         expect(getState().agents[agents.grok.id]).toMatchObject({ type: "grok", effort: "minimal", launchState: "dormant" });
     });
 
-    it("persists non-secret provider profiles and defensively hydrates selections", async () => {
+    it("leaves provider profiles to the core and defensively hydrates the ones it keeps", async () => {
         setState({
-            providerProfiles: [
-                {
-                    id: "codex-work",
-                    name: "Codex Work",
-                    provider: "codex",
-                    accent: "#ABCDEF",
-                    executablePath: "/opt/bin/codex",
-                    configPath: "/safe/config.toml",
-                    environmentKeys: ["OPENAI_API_KEY", "OPENAI_API_KEY", "bad-key"],
-                    apiKey: "must-not-persist",
-                } as never,
-            ],
-            selectedProviderProfileIds: { codex: "codex-work", claude: "missing" },
+            providerProfiles: [{ id: "codex-work", name: "Codex Work", provider: "codex", accent: "#abcdef" }],
+            selectedProviderProfileIds: { codex: "codex-work" },
             defaultAgentPermissionMode: "full-access",
         });
         invoke.mockResolvedValue(undefined);
 
         expect(await flushPersist()).toBe(true);
-        const raw = invoke.mock.calls[0][1].data as string;
-        expect(raw).not.toContain("must-not-persist");
-        const saved = JSON.parse(raw);
-        expect(saved.prefs.providerProfiles).toEqual([
+        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
+        expect(saved.prefs.providerProfiles).toBeUndefined();
+        expect(saved.prefs.selectedProviderProfileIds).toBeUndefined();
+        expect(saved.prefs.defaultAgentPermissionMode).toBe("workspace-write");
+
+        const kept = {
+            id: "codex-work",
+            name: "Codex Work",
+            provider: "codex",
+            accent: "#ABCDEF",
+            executablePath: "/opt/bin/codex",
+            configPath: "/safe/config.toml",
+            environmentKeys: ["OPENAI_API_KEY", "OPENAI_API_KEY", "bad-key"],
+            apiKey: "must-not-hydrate",
+        };
+        const bad = { id: "bad", name: "Bad", provider: "unknown", accent: "red", token: "do-not-hydrate" };
+        saved.prefs.defaultAgentPermissionMode = "unbounded";
+        applyHydrate(JSON.stringify(saved), {
+            profiles: [kept, bad] as never,
+            selected: { codex: "codex-work", claude: "bad", unknown: "codex-work" } as never,
+        });
+        expect(getState().providerProfiles).toEqual([
             {
                 id: "codex-work",
                 name: "Codex Work",
@@ -653,17 +660,9 @@ describe("frontend persistence", () => {
                 environmentKeys: ["OPENAI_API_KEY"],
             },
         ]);
-        expect(saved.prefs.selectedProviderProfileIds).toEqual({ codex: "codex-work" });
-        expect(saved.prefs.defaultAgentPermissionMode).toBe("workspace-write");
-
-        saved.prefs.providerProfiles.push({ id: "bad", name: "Bad", provider: "unknown", accent: "red", token: "do-not-hydrate" });
-        saved.prefs.selectedProviderProfileIds = { codex: "codex-work", claude: "bad", unknown: "codex-work" };
-        saved.prefs.defaultAgentPermissionMode = "unbounded";
-        applyHydrate(JSON.stringify(saved));
-        expect(getState().providerProfiles).toEqual(saved.prefs.providerProfiles.slice(0, 1));
         expect(getState().selectedProviderProfileIds).toEqual({ codex: "codex-work" });
         expect(getState().defaultAgentPermissionMode).toBe("workspace-write");
-        expect(JSON.stringify(getState().providerProfiles)).not.toContain("do-not-hydrate");
+        expect(JSON.stringify(getState().providerProfiles)).not.toContain("hydrate");
     });
 
     it("adopts the current default safety boundary for snapshots saved before the migration", async () => {

@@ -7,6 +7,7 @@ import { clampChatTextScale } from "../chat/textScale";
 import { clampEditorTextScale } from "../editor/textScale";
 import { isTheme } from "../themes";
 import { parseReleaseCredits } from "../api/releases";
+import type { AgentAccountBook } from "../api/agents";
 import { normaliseKeybindingOverrides } from "../commands/keybindings";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
 import { registerCustomThemes } from "../themes/bus";
@@ -134,8 +135,6 @@ const PERSISTED_KEYS = [
     "shareUsageData",
     "lastReleaseNotes",
     "recentCommandKeys",
-    "providerProfiles",
-    "selectedProviderProfileIds",
     "defaultAgentPermissionMode",
     "lastAgentType",
     "languageServerTrust",
@@ -157,7 +156,6 @@ function slicesEqual(a: SliceShot, b: SliceShot): boolean {
 }
 
 function packPrefs(s: StoreState): PersistedPrefs {
-    const providerProfiles = normaliseProviderProfiles(s.providerProfiles, []);
     return {
         projectRoots: s.projectRoots,
         themeId: s.themeId,
@@ -201,8 +199,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         shareUsageData: s.shareUsageData,
         lastReleaseNotes: s.lastReleaseNotes,
         recentCommandKeys: s.recentCommandKeys,
-        providerProfiles,
-        selectedProviderProfileIds: normaliseProviderProfileSelection(s.selectedProviderProfileIds, providerProfiles, {}),
         defaultAgentPermissionMode: s.defaultAgentPermissionMode === "bypass" ? "bypass" : "workspace-write",
         lastAgentType: s.lastAgentType,
         languageServerTrust: s.languageServerTrust,
@@ -913,7 +909,15 @@ export function hydrationAllowsPersistence(result: HydrationResult): boolean {
     return result === "empty" || result === "applied";
 }
 
-export function applyHydrate(raw: string): HydrationResult {
+/**
+ * Applies the saved workspace, with the agent accounts the core keeps. Accounts saved here before the core kept them
+ * are taken up when the core has none (`null`) or could not be asked (`undefined`).
+ */
+export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): HydrationResult {
+    if (accounts) {
+        const providerProfiles = normaliseProviderProfiles(accounts.profiles, []);
+        setState({ providerProfiles, selectedProviderProfileIds: normaliseProviderProfileSelection(accounts.selected, providerProfiles, {}) });
+    }
     if (!raw) return "empty";
     let decoded: unknown;
     try {
@@ -970,7 +974,7 @@ export function applyHydrate(raw: string): HydrationResult {
     }
     const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
     const cur = getState();
-    const providerProfiles = normaliseProviderProfiles(prefs.providerProfiles, cur.providerProfiles);
+    const providerProfiles = accounts ? cur.providerProfiles : normaliseProviderProfiles(prefs.providerProfiles, cur.providerProfiles);
     const restoreAgentTabs = typeof prefs.restoreAgentTabs === "boolean" ? prefs.restoreAgentTabs : true;
     const spaces = normaliseSpaces(prefs.spaces);
     // Before v8 an agent sat beside its session rather than in a window, and
@@ -1182,11 +1186,9 @@ export function applyHydrate(raw: string): HydrationResult {
             ? prefs.recentCommandKeys.filter((value): value is string => typeof value === "string").slice(0, 20)
             : [],
         providerProfiles,
-        selectedProviderProfileIds: normaliseProviderProfileSelection(
-            prefs.selectedProviderProfileIds,
-            providerProfiles,
-            cur.selectedProviderProfileIds,
-        ),
+        selectedProviderProfileIds: accounts
+            ? cur.selectedProviderProfileIds
+            : normaliseProviderProfileSelection(prefs.selectedProviderProfileIds, providerProfiles, cur.selectedProviderProfileIds),
         // Every save wrote this boundary out, so an older snapshot cannot say
         // whether it was chosen or just inherited. Adopt today's default once.
         defaultAgentPermissionMode:

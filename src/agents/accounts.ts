@@ -36,12 +36,13 @@ export function fallbackAccounts(
 const sameDirectory = (a: string | null | undefined, b: string | null | undefined) => (a || null) === (b || null);
 
 /** Reads an account's sign-in and limits again, after they changed. */
-export function refreshAccount(provider: AccountProvider, configPath: string | undefined): void {
+async function refreshAccount(provider: AccountProvider, configPath: string | undefined): Promise<void> {
+    await agentApi.forgetAccount(provider, configPath).catch(() => {});
     invalidate(
         (kind, args) =>
             (kind === "agents.account" || kind === "agents.usage") &&
             args[0] === provider &&
-            sameDirectory(args[2] as string | undefined, configPath),
+            sameDirectory(args[1] as string | undefined, configPath),
     );
 }
 
@@ -90,7 +91,7 @@ export async function signIn(profile: ProviderProfile, executablePath?: string):
         return false;
     } finally {
         listening.abort();
-        refreshAccount(provider, profile.configPath);
+        void refreshAccount(provider, profile.configPath);
     }
 }
 
@@ -111,6 +112,6 @@ export async function signOut(profile: ProviderProfile, executablePath?: string)
     try {
         await agentApi.signOut(profile.provider, executablePath, profile.configPath);
     } finally {
-        refreshAccount(profile.provider, profile.configPath);
+        void refreshAccount(profile.provider, profile.configPath);
     }
 }

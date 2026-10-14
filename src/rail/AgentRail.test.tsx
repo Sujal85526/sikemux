@@ -114,7 +114,7 @@ beforeEach(() => {
             { label: "7d", usedPercent: 12, resetsAt: Math.floor(Date.now() / 1000) + 4 * 86_400, windowMinutes: 10_080 },
         ],
     });
-    mocks.account.mockImplementation(async (_agent: string, _executable?: string, configPath?: string) => ({
+    mocks.account.mockImplementation(async (_agent: string, configPath?: string) => ({
         signedIn: true,
         name: null,
         email: configPath ? "work@example.com" : "me@example.com",
@@ -193,8 +193,8 @@ describe("agent rail", () => {
         await user.click(screen.getByRole("tab", { name: "Claude" }));
         expect(await screen.findByRole("region", { name: "Claude plan limits" })).toBeInTheDocument();
         expect(await screen.findByRole("meter", { name: "7d usage" })).toHaveAttribute("aria-valuenow", "82");
-        expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", undefined);
-        expect(mocks.usage).toHaveBeenCalledWith("claude", "claude", undefined);
+        expect(mocks.usage).toHaveBeenCalledWith("codex", undefined);
+        expect(mocks.usage).toHaveBeenCalledWith("claude", undefined);
     });
 
     it("explains unavailable subscription limits without rendering a zero meter", async () => {
@@ -424,7 +424,7 @@ describe("agent rail", () => {
     });
 
     it("goes by the name on the account until the person names it", async () => {
-        mocks.account.mockImplementation(async (_agent: string, _executable?: string, configPath?: string) => ({
+        mocks.account.mockImplementation(async (_agent: string, configPath?: string) => ({
             signedIn: true,
             name: configPath ? "Someone" : "Kishore",
             email: configPath ? "work@example.com" : "me@example.com",
@@ -467,12 +467,12 @@ describe("agent rail", () => {
         const user = userEvent.setup();
         render(<AgentRailBody />);
 
-        await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", undefined));
+        await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", undefined));
         await user.click(await screen.findByRole("button", { name: "Codex account: Codex" }));
         await user.click(screen.getByRole("menuitem", { name: /Work/ }));
 
         expect(getState().selectedProviderProfileIds.codex).toBe("codex-work");
-        await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "codex", "~/.codex-work"));
+        await waitFor(() => expect(mocks.usage).toHaveBeenCalledWith("codex", "~/.codex-work"));
         await waitFor(() =>
             expect(mocks.recent).toHaveBeenCalledWith(expect.objectContaining({ providers: [{ agent: "codex", configPath: "~/.codex-work" }] })),
         );

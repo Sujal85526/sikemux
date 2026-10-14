@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { BoardAuto, SettingsChanges } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
-import { remoteWorkspace } from "../remote/workspace";
+import { chatLaunchers } from "../remote/workspace";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
@@ -64,7 +64,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
     const settings = auto?.settings;
     const launchers: DropdownOption[] = [
         { value: FIRST_THAT_WORKS, label: "The first that works" },
-        ...remoteWorkspace({}, [], profiles, "bypass").launchers.map((launcher) => ({ value: launcher.id, label: launcher.label })),
+        ...chatLaunchers(profiles).map((launcher) => ({ value: launcher.id, label: launcher.label })),
     ];
 
     const save = async (changes: SettingsChanges) => {

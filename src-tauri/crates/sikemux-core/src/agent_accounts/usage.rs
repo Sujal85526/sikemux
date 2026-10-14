@@ -1,86 +1,89 @@
-use std::collections::HashMap;
+//! How much of each account's plan is used, for providers that report
+//! rolling windows. Each lookup goes through the agent's own CLI, so Sikemux
+//! sees the same account and the same limits the agent does.
+
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use serde::Serialize;
 use serde_json::Value;
 use sikemux_pty::user_shell::login_shell_environment;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
-use tokio::process::Command;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-use super::config::clean_model;
-use super::executable::{apply_login_environment, apply_process_config};
-use super::models::{run_model_catalog_executable_without_env, CLAUDE_MODEL_CATALOG_ARGS};
-use super::{AgentKind, AgentUsage, AgentUsageResetAt, AgentUsageWindow};
-use sikemux_process::paths::expand_home;
+use super::{cli, key};
+use crate::launch::discovery::error_detail;
 
-/// Account-level plan usage for providers that expose structured rolling
-/// windows. This intentionally goes through each installed CLI so Sikemux uses
-/// the same account, credential store, and provider semantics as the agent.
-#[tauri::command]
-pub async fn agent_usage(
-    agent: AgentKind,
-    executable_path: Option<String>,
-    config_path: Option<String>,
-) -> Result<AgentUsage, String> {
-    let key = format!(
-        "{}\0{}\0{}",
-        agent.as_str(),
-        executable_path.as_deref().unwrap_or(""),
-        config_path.as_deref().unwrap_or("")
-    );
-    if let Some(usage) = cached_agent_usage(&key) {
-        return Ok(usage);
-    }
-    let executable = executable_path
-        .as_deref()
-        .map(expand_home)
-        .or_else(|| sikemux_process::user_environment::find_executable(agent.as_str()))
-        .ok_or_else(|| format!("{} is not available", agent.as_str()))?;
-    let usage = match agent {
-        AgentKind::Claude => claude_usage(&executable, config_path.as_deref()).await,
-        AgentKind::Codex => codex_usage(&executable, config_path.as_deref()).await,
-        _ => Err(format!(
-            "{} does not expose structured plan usage",
-            agent.as_str()
-        )),
-    }?;
-    remember_agent_usage(key, usage.clone());
-    Ok(usage)
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum UsageResetAt {
+    Unix(u64),
+    Iso(String),
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWindow {
+    label: String,
+    used_percent: f64,
+    resets_at: Option<UsageResetAt>,
+    window_minutes: Option<u64>,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Usage {
+    provider: &'static str,
+    plan: Option<String>,
+    windows: Vec<UsageWindow>,
+    unavailable_reason: Option<String>,
 }
 
 /// Every lookup boots the provider's CLI, so a rail that polls gets the answer
 /// the last boot gave until it is old enough to be worth another.
-const AGENT_USAGE_TTL: Duration = Duration::from_secs(120);
+const USAGE_TTL: Duration = Duration::from_secs(120);
 
-fn agent_usage_cache() -> &'static Mutex<HashMap<String, (Instant, AgentUsage)>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, AgentUsage)>>> = OnceLock::new();
+fn usage_cache() -> &'static Mutex<HashMap<String, (Instant, Usage)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Usage)>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn cached_agent_usage(key: &str) -> Option<AgentUsage> {
-    let mut cache = agent_usage_cache().lock().ok()?;
-    let (stored, usage) = cache.get(key)?;
-    if stored.elapsed() < AGENT_USAGE_TTL {
-        return Some(usage.clone());
+/// The plan usage of one account, as its CLI last reported it.
+pub async fn usage(
+    provider: &str,
+    program: &Path,
+    config_path: Option<&str>,
+) -> Result<Usage, String> {
+    let key = key(provider, config_path);
+    let cached = usage_cache().lock().ok().and_then(|mut cache| {
+        cache.retain(|_, (stored, _)| stored.elapsed() < USAGE_TTL);
+        cache.get(&key).map(|(_, usage)| usage.clone())
+    });
+    if let Some(usage) = cached {
+        return Ok(usage);
     }
-    cache.remove(key);
-    None
+    let usage = match provider {
+        "claude" => claude_usage(program, config_path).await,
+        "codex" => codex_usage(program, config_path).await,
+        _ => Err(format!("{provider} does not expose structured plan usage")),
+    }?;
+    if let Ok(mut cache) = usage_cache().lock() {
+        cache.insert(key, (Instant::now(), usage.clone()));
+    }
+    Ok(usage)
 }
 
 /// Drops the usage remembered for one account, whose sign-in just changed.
-pub(super) fn forget_agent_usage(agent: AgentKind, config_path: Option<&str>) {
-    let prefix = format!("{}\0", agent.as_str());
-    let suffix = format!("\0{}", config_path.unwrap_or(""));
-    if let Ok(mut cache) = agent_usage_cache().lock() {
-        cache.retain(|key, _| !(key.starts_with(&prefix) && key.ends_with(&suffix)));
+pub(crate) fn forget(provider: &str, config_path: Option<&str>) {
+    if let Ok(mut cache) = usage_cache().lock() {
+        cache.remove(&key(provider, config_path));
     }
 }
 
-fn remember_agent_usage(key: String, usage: AgentUsage) {
-    if let Ok(mut cache) = agent_usage_cache().lock() {
-        cache.insert(key, (Instant::now(), usage));
-    }
+fn clean(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty() && value.chars().count() <= 256).then(|| value.to_string())
 }
 
 const CLAUDE_USAGE_REQUEST_ID: &str = "sikemux-usage";
@@ -108,30 +111,92 @@ fn claude_subscription_override_present() -> bool {
     })
 }
 
+const CLAUDE_STREAM_ARGS: &[&str] = &[
+    "--print",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--system-prompt",
+    "",
+    "--tools",
+    "",
+    "--input-format",
+    "stream-json",
+];
+
 async fn read_claude_usage(
     executable: &Path,
     config_path: Option<&str>,
     removed_env: &[&str],
-) -> Result<AgentUsage, String> {
+) -> Result<Usage, String> {
     let request = format!(
         "{{\"type\":\"control_request\",\"request_id\":\"{CLAUDE_USAGE_REQUEST_ID}\",\"request\":{{\"subtype\":\"get_usage\"}}}}\n"
     );
-    run_model_catalog_executable_without_env(
+    let text = run(
         "claude",
         executable,
-        CLAUDE_MODEL_CATALOG_ARGS,
-        Some(&request),
+        CLAUDE_STREAM_ARGS,
+        &request,
         config_path,
         removed_env,
     )
-    .await
-    .and_then(|text| {
-        parse_claude_usage(&text, CLAUDE_USAGE_REQUEST_ID)
-            .ok_or_else(|| "Claude returned an unreadable usage snapshot".to_string())
-    })
+    .await?;
+    parse_claude_usage(&text, CLAUDE_USAGE_REQUEST_ID)
+        .ok_or_else(|| "Claude returned an unreadable usage snapshot".to_string())
 }
 
-async fn claude_usage(executable: &Path, config_path: Option<&str>) -> Result<AgentUsage, String> {
+/// Runs `executable` once with `input`, clearing `removed_env` after the
+/// login shell's variables, so one the profile set is dropped too.
+async fn run(
+    provider: &str,
+    executable: &Path,
+    args: &[&str],
+    input: &str,
+    config_path: Option<&str>,
+    removed_env: &[&str],
+) -> Result<String, String> {
+    let mut command = cli(provider, executable, config_path, BTreeMap::new());
+    for key in removed_env {
+        command.env_remove(key);
+    }
+    command
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|_| format!("Could not start the {provider} usage lookup"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| format!("Could not open the {provider} usage lookup input"))?;
+    stdin
+        .write_all(input.as_bytes())
+        .await
+        .map_err(|_| format!("Could not write the {provider} usage lookup input"))?;
+    stdin
+        .shutdown()
+        .await
+        .map_err(|_| format!("Could not finish the {provider} usage lookup input"))?;
+    let output = tokio::time::timeout(USAGE_LOOKUP_TIMEOUT, child.wait_with_output())
+        .await
+        .map_err(|_| format!("The {provider} usage lookup timed out"))?
+        .map_err(|_| format!("Could not read the {provider} usage lookup output"))?;
+    if !output.status.success() {
+        return Err(match error_detail(&output.stderr) {
+            Some(detail) => format!("{provider} usage lookup exited unsuccessfully: {detail}"),
+            None => format!("{provider} usage lookup exited unsuccessfully"),
+        });
+    }
+    if output.stdout.len() > USAGE_LOOKUP_OUTPUT_LIMIT {
+        return Err(format!("The {provider} usage lookup said too much"));
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|_| format!("The {provider} usage lookup was not valid UTF-8"))
+}
+
+async fn claude_usage(executable: &Path, config_path: Option<&str>) -> Result<Usage, String> {
     let usage = read_claude_usage(executable, config_path, &[]).await?;
     // An API key inherited from whichever shell launched Sikemux outranks the
     // claude.ai login, so a subscriber sees no limits purely because of how the
@@ -148,7 +213,7 @@ async fn claude_usage(executable: &Path, config_path: Option<&str>) -> Result<Ag
     )
 }
 
-async fn codex_usage(executable: &Path, config_path: Option<&str>) -> Result<AgentUsage, String> {
+async fn codex_usage(executable: &Path, config_path: Option<&str>) -> Result<Usage, String> {
     codex_app_server(executable, config_path, "account/rateLimits/read", "usage")
         .await
         .map(|result| parse_codex_usage_result(&result))
@@ -161,15 +226,12 @@ pub(super) async fn codex_app_server(
     method: &str,
     topic: &str,
 ) -> Result<Value, String> {
-    let mut command = Command::from(sikemux_process::user_environment::command(executable));
-    apply_login_environment(&mut command);
+    let mut command = cli("codex", executable, config_path, BTreeMap::new());
     command
         .args(["app-server", "--stdio"])
-        .kill_on_drop(true)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
-    apply_process_config(&mut command, "codex", config_path);
     let mut child = command
         .spawn()
         .map_err(|_| format!("Could not start Codex {topic} lookup").to_string())?;
@@ -181,7 +243,7 @@ pub(super) async fn codex_app_server(
         .stdout
         .take()
         .ok_or_else(|| format!("Could not read Codex {topic} lookup output"))?;
-    let mut lines = AsyncBufReader::new(stdout).lines();
+    let mut lines = BufReader::new(stdout).lines();
 
     let lookup = tokio::time::timeout(USAGE_LOOKUP_TIMEOUT, async {
         let initialize = serde_json::json!({
@@ -260,16 +322,16 @@ pub(super) async fn codex_app_server(
     lookup.map_err(|_| format!("Codex {topic} lookup timed out"))?
 }
 
-fn usage_reset_at(value: &Value) -> Option<AgentUsageResetAt> {
-    value.as_u64().map(AgentUsageResetAt::Unix).or_else(|| {
+fn usage_reset_at(value: &Value) -> Option<UsageResetAt> {
+    value.as_u64().map(UsageResetAt::Unix).or_else(|| {
         value
             .as_str()
-            .map(|value| AgentUsageResetAt::Iso(value.to_string()))
+            .map(|value| UsageResetAt::Iso(value.to_string()))
     })
 }
 
 fn push_claude_usage_window(
-    windows: &mut Vec<AgentUsageWindow>,
+    windows: &mut Vec<UsageWindow>,
     limits: &Value,
     key: &str,
     label: &str,
@@ -281,7 +343,7 @@ fn push_claude_usage_window(
     let Some(used_percent) = window.get("utilization").and_then(Value::as_f64) else {
         return;
     };
-    windows.push(AgentUsageWindow {
+    windows.push(UsageWindow {
         label: label.to_string(),
         used_percent: used_percent.clamp(0.0, 100.0),
         resets_at: window.get("resets_at").and_then(usage_reset_at),
@@ -289,7 +351,7 @@ fn push_claude_usage_window(
     });
 }
 
-fn parse_claude_usage(text: &str, request_id: &str) -> Option<AgentUsage> {
+fn parse_claude_usage(text: &str, request_id: &str) -> Option<Usage> {
     let payload = text.lines().find_map(|line| {
         let value: Value = serde_json::from_str(line).ok()?;
         let response = value.get("response")?;
@@ -317,7 +379,7 @@ fn parse_claude_usage(text: &str, request_id: &str) -> Option<AgentUsage> {
     let plan = payload
         .get("subscription_type")
         .and_then(Value::as_str)
-        .and_then(clean_model);
+        .and_then(clean);
     let mut windows = Vec::new();
     if let Some(limits) = payload.get("rate_limits").filter(|value| value.is_object()) {
         push_claude_usage_window(&mut windows, limits, "five_hour", "5h", 300);
@@ -342,14 +404,14 @@ fn parse_claude_usage(text: &str, request_id: &str) -> Option<AgentUsage> {
                 let Some(display_name) = window
                     .get("display_name")
                     .and_then(Value::as_str)
-                    .and_then(clean_model)
+                    .and_then(clean)
                 else {
                     continue;
                 };
                 let Some(used_percent) = window.get("utilization").and_then(Value::as_f64) else {
                     continue;
                 };
-                windows.push(AgentUsageWindow {
+                windows.push(UsageWindow {
                     label: format!("{display_name} · 7d"),
                     used_percent: used_percent.clamp(0.0, 100.0),
                     resets_at: window.get("resets_at").and_then(usage_reset_at),
@@ -359,7 +421,7 @@ fn parse_claude_usage(text: &str, request_id: &str) -> Option<AgentUsage> {
         }
     }
 
-    Some(AgentUsage {
+    Some(Usage {
         provider: "claude",
         plan,
         windows,
@@ -383,7 +445,7 @@ fn usage_duration_label(minutes: Option<u64>, fallback: &str) -> String {
 }
 
 fn push_codex_usage_window(
-    windows: &mut Vec<AgentUsageWindow>,
+    windows: &mut Vec<UsageWindow>,
     snapshot: &Value,
     key: &str,
     fallback: &str,
@@ -397,7 +459,7 @@ fn push_codex_usage_window(
     };
     let window_minutes = window.get("windowDurationMins").and_then(Value::as_u64);
     let duration = usage_duration_label(window_minutes, fallback);
-    windows.push(AgentUsageWindow {
+    windows.push(UsageWindow {
         label: scope
             .map(|scope| format!("{scope} · {duration}"))
             .unwrap_or(duration),
@@ -407,7 +469,7 @@ fn push_codex_usage_window(
     });
 }
 
-fn parse_codex_usage_result(result: &Value) -> AgentUsage {
+fn parse_codex_usage_result(result: &Value) -> Usage {
     let mut snapshots: Vec<(&str, &Value)> = result
         .get("rateLimitsByLimitId")
         .and_then(Value::as_object)
@@ -432,7 +494,7 @@ fn parse_codex_usage_result(result: &Value) -> AgentUsage {
         snapshot
             .get("planType")
             .and_then(Value::as_str)
-            .and_then(clean_model)
+            .and_then(clean)
     });
     let mut windows = Vec::new();
     for (key, snapshot) in snapshots {
@@ -443,7 +505,7 @@ fn parse_codex_usage_result(result: &Value) -> AgentUsage {
         let scope = (limit_id != "codex")
             .then(|| snapshot.get("limitName").and_then(Value::as_str))
             .flatten()
-            .and_then(clean_model);
+            .and_then(clean);
         push_codex_usage_window(
             &mut windows,
             snapshot,
@@ -460,7 +522,7 @@ fn parse_codex_usage_result(result: &Value) -> AgentUsage {
         );
     }
 
-    AgentUsage {
+    Usage {
         provider: "codex",
         plan,
         unavailable_reason: windows.is_empty().then(|| "This account did not report subscription limits. API-key accounts do not provide plan usage.".to_string()),
@@ -470,7 +532,43 @@ fn parse_codex_usage_result(result: &Value) -> AgentUsage {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_claude_usage, parse_codex_usage_result, AgentUsageResetAt};
+    use super::{parse_claude_usage, parse_codex_usage_result, run, UsageResetAt};
+    use std::path::Path;
+
+    const ERROR_DETAIL_LIMIT: usize = 240;
+
+    #[tokio::test]
+    async fn a_lookup_drops_the_removed_environment() {
+        const READ_HOME: &str = "printf '%s' \"${HOME-unset}\"";
+        let sh = Path::new("/bin/sh");
+        let kept = run("test-agent", sh, &["-c", READ_HOME], "", None, &[])
+            .await
+            .unwrap();
+        let dropped = run("test-agent", sh, &["-c", READ_HOME], "", None, &["HOME"])
+            .await
+            .unwrap();
+        assert_ne!(kept, "unset");
+        assert_eq!(dropped, "unset");
+    }
+
+    #[tokio::test]
+    async fn a_failed_lookup_says_why_in_bounded_words() {
+        let long_detail = "x".repeat(ERROR_DETAIL_LIMIT + 20);
+        let script = format!("printf 'first\\nsecond {long_detail}' >&2; exit 7");
+        let error = run(
+            "test-agent",
+            Path::new("/bin/sh"),
+            &["-c", &script],
+            "",
+            None,
+            &[],
+        )
+        .await
+        .unwrap_err();
+        assert!(error.starts_with("test-agent usage lookup exited unsuccessfully: first second "));
+        assert!(error.ends_with('…'));
+        assert!(error.chars().count() <= ERROR_DETAIL_LIMIT + 52);
+    }
 
     #[test]
     fn claude_usage_normalizes_plan_windows_and_model_scopes() {
@@ -494,7 +592,7 @@ mod tests {
         assert_eq!(usage.windows[0].window_minutes, Some(300));
         assert_eq!(
             usage.windows[0].resets_at,
-            Some(AgentUsageResetAt::Iso("2026-08-13T12:00:00Z".to_string()))
+            Some(UsageResetAt::Iso("2026-08-13T12:00:00Z".to_string()))
         );
     }
 
@@ -549,7 +647,7 @@ mod tests {
         assert_eq!(usage.windows[1].used_percent, 17.0);
         assert_eq!(
             usage.windows[1].resets_at,
-            Some(AgentUsageResetAt::Unix(1787157619))
+            Some(UsageResetAt::Unix(1787157619))
         );
     }
 }

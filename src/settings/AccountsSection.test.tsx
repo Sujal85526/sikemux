@@ -15,6 +15,7 @@ vi.mock("../api/agents", () => ({
         addAccount: mocks.addAccount,
         signIn: mocks.signIn,
         signOut: mocks.signOut,
+        forgetAccount: () => Promise.resolve(),
         onSignInPage: () => Promise.resolve(() => {}),
     },
 }));
@@ -39,7 +40,7 @@ function signedIn(configPath?: string) {
 
 beforeEach(() => {
     setState(initial, true);
-    mocks.account.mockImplementation(async (_agent: string, _executable?: string, configPath?: string) => signedIn(configPath));
+    mocks.account.mockImplementation(async (_agent: string, configPath?: string) => signedIn(configPath));
     mocks.signIn.mockResolvedValue(undefined);
     mocks.signOut.mockResolvedValue(undefined);
     invalidate((kind) => kind === "agents.account" || kind === "agents.usage");

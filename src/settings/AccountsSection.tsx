@@ -79,7 +79,7 @@ function ProviderAccounts({ provider, label, accent }: { provider: AccountProvid
 }
 
 function AccountRow({ provider, account, inUse }: { provider: AccountProvider; account: ProviderProfile; inUse: boolean }) {
-    const status = useResource(agentAccountR, provider, account.executablePath, account.configPath);
+    const status = useResource(agentAccountR, provider, account.configPath);
     const signing = useSignIn(account.id);
     const signedIn = status.data?.signedIn === true;
     const known = status.data !== undefined;

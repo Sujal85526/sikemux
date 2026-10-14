@@ -4,6 +4,8 @@
 
 pub mod accounts;
 pub mod acp;
+#[cfg(unix)]
+pub mod agent_accounts;
 pub mod agent_catalog;
 pub mod cli;
 #[cfg(unix)]

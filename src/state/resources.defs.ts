@@ -66,14 +66,13 @@ export const agentCatalogR = resource({
 
 export const agentUsageR = resource({
     kind: "agents.usage",
-    fetch: (type: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> => agentApi.usage(type, executablePath, configPath),
+    fetch: (type: AgentType, configPath?: string): Promise<AgentUsage> => agentApi.usage(type, configPath),
     staleAfterMs: 5 * 60_000,
 });
 
 export const agentAccountR = resource({
     kind: "agents.account",
-    fetch: (type: AgentType, executablePath?: string, configPath?: string): Promise<AgentAccountStatus> =>
-        agentApi.account(type, executablePath, configPath),
+    fetch: (type: AgentType, configPath?: string): Promise<AgentAccountStatus> => agentApi.account(type, configPath),
     staleAfterMs: 60_000,
 });
 

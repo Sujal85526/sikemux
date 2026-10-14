@@ -1,5 +1,5 @@
 //! Remote access and the phones allowed in, for the Devices settings page,
-//! and the projects and agents the app offers paired devices. The core keeps
+//! and the projects the app offers paired devices. The core keeps
 //! the state; these commands forward to it.
 
 use std::collections::BTreeMap;
@@ -40,20 +40,18 @@ pub struct PublishedRecentChats(Mutex<Option<Vec<PublishedRecent>>>);
 #[derive(Default)]
 pub struct PublishedOnScreen(Mutex<Vec<String>>);
 
-/// The projects the app has open and the agents it offers, which the core
-/// keeps and finds each agent's program for.
+/// The projects the app has open and the mode it starts agents in, which the
+/// core keeps and offers each agent in.
 #[tauri::command]
 pub async fn remote_publish_workspace(
     manager: State<'_, PtyManager>,
     projects: Value,
-    launchers: Value,
+    permission_mode: String,
 ) -> AppResult<()> {
     let client = manager.client().await?;
+    let workspace = json!({ "projects": projects, "permissionMode": permission_mode });
     client
-        .call(
-            "setWorkspace",
-            json!({ "projects": projects, "launchers": launchers }),
-        )
+        .call("setWorkspace", workspace)
         .await
         .map_err(core_error)?;
     Ok(())

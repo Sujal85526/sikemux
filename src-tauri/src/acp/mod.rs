@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_core::acp::bounded_text;
+use sikemux_core::agent_accounts::folders;
 use sikemux_core::client::{ClientError, CoreClient, Reply};
 use sikemux_core::launch::{self, AgentLaunch, AgentSpec};
 use sikemux_core::protocol::{
@@ -228,9 +229,7 @@ pub struct AccountRequest {
 }
 
 fn chat_account(provider: &str, account: &AccountRequest) -> ChatAccount {
-    if let Some(kind) = crate::agents::accounts::kind(provider) {
-        crate::agents::accounts::link_shared(kind, account.config_path.as_deref());
-    }
+    folders::link_shared(provider, account.config_path.as_deref());
     ChatAccount {
         id: account.id.clone(),
         label: account.label.clone(),
@@ -250,11 +249,7 @@ fn fallback_accounts(
     fallbacks
         .iter()
         .filter(|fallback| {
-            crate::agents::accounts::sessions_shared(
-                provider,
-                config_path,
-                fallback.config_path.as_deref(),
-            )
+            folders::sessions_shared(provider, config_path, fallback.config_path.as_deref())
         })
         .map(|fallback| chat_account(provider, fallback))
         .collect()

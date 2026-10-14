@@ -1,6 +1,7 @@
 mod access;
 mod activity;
 mod agent;
+mod agent_accounts;
 mod agent_key;
 mod attachments;
 mod board;
@@ -972,6 +973,9 @@ pub(crate) async fn run_core(
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
     remote::start(&core, &config).await;
+    if config.data_dir.is_some() {
+        tokio::spawn(workspace::refresh_launchers(core.clone()));
+    }
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let background = [

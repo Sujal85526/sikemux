@@ -1,11 +1,19 @@
+use std::future::Future;
+use std::sync::Arc;
+
+use serde_json::json;
+use sikemux_core::agent_accounts::status::AgentStatus;
 use sikemux_core::agent_catalog::AGENTS;
+use sikemux_core::client::CoreClient;
 use sikemux_core::launch::discovery;
 use sikemux_pty::user_shell::login_shell_environment;
+use tauri::State;
 use tokio::process::Command;
 
 use super::config::{agent_config_root, configured_default_effort, configured_default_model};
-use super::status::{signed_in_status, AgentStatus};
-use super::{AgentInfo, AgentKind, AgentProfileRequest};
+use super::{AgentInfo, AgentProfileRequest};
+use crate::error::AppResult;
+use crate::pty::PtyManager;
 
 pub(super) fn apply_process_config(command: &mut Command, agent: &str, config_path: Option<&str>) {
     let Some(root) = agent_config_root(agent, config_path) else {
@@ -33,8 +41,39 @@ pub(super) fn apply_login_environment(command: &mut Command) {
 
 /// Agent CLIs that are installed for the current user. The app's PATH is fixed
 /// from the login shell during boot, so this matches what spawned PTYs can run.
+/// Whether each is signed in comes from the core, which keeps the answers.
 #[tauri::command]
-pub async fn available_agents(profiles: Vec<AgentProfileRequest>) -> Vec<AgentInfo> {
+pub async fn available_agents(
+    manager: State<'_, PtyManager>,
+    profiles: Vec<AgentProfileRequest>,
+) -> AppResult<Vec<AgentInfo>> {
+    let client = manager.client().await.ok();
+    Ok(catalog(&profiles, |provider, config_path| {
+        signed_in(client.clone(), provider, config_path)
+    })
+    .await)
+}
+
+async fn signed_in(
+    client: Option<Arc<CoreClient>>,
+    provider: &'static str,
+    config_path: Option<String>,
+) -> AgentStatus {
+    let Some(client) = client else {
+        return AgentStatus::Unknown;
+    };
+    let params = json!({ "provider": provider, "configPath": config_path });
+    crate::agent_names::call(&client, "agentStatus".into(), params)
+        .await
+        .ok()
+        .and_then(|status| serde_json::from_value(status).ok())
+        .unwrap_or(AgentStatus::Unknown)
+}
+
+async fn catalog<F: Future<Output = AgentStatus>>(
+    profiles: &[AgentProfileRequest],
+    signed_in: impl Fn(&'static str, Option<String>) -> F,
+) -> Vec<AgentInfo> {
     let available = futures::future::join_all(AGENTS.iter().map(|def| async {
         let profile = profiles
             .iter()
@@ -58,11 +97,10 @@ pub async fn available_agents(profiles: Vec<AgentProfileRequest>) -> Vec<AgentIn
                 failures.join("; ")
             }
         });
-        let status = match (&resolved, AgentKind::from_name(def.kind)) {
-            (Some(path), Some(kind)) => signed_in_status(kind, path, config_path.as_deref()).await,
-            (Some(_), None) => AgentStatus::Unknown,
-            (None, _) if failures.is_empty() => AgentStatus::Missing,
-            (None, _) => AgentStatus::Broken {
+        let status = match &resolved {
+            Some(_) => signed_in(def.kind, config_path.clone()).await,
+            None if failures.is_empty() => AgentStatus::Missing,
+            None => AgentStatus::Broken {
                 reason: failures.join("; "),
             },
         };
@@ -121,14 +159,14 @@ mod tests {
         ]))
         .unwrap();
 
-        let agents = super::available_agents(profiles).await;
+        let agents = super::catalog(&profiles, |_, _| async { AgentStatus::Unknown }).await;
         let status_of = |kind: &str| {
             agents
                 .iter()
                 .find(|agent| agent.kind == kind)
                 .map(|agent| agent.status.clone())
         };
-        assert_eq!(status_of("pi"), Some(AgentStatus::SignedOut));
+        assert_eq!(status_of("pi"), Some(AgentStatus::Unknown));
         assert!(
             matches!(status_of("omp"), Some(AgentStatus::Broken { reason }) if reason.contains("launcher missing"))
         );

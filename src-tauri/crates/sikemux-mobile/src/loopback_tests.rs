@@ -188,13 +188,7 @@ fn a_phone_hears_the_mac_s_view_and_asks_it_typed_questions() {
 
         let workspace = serde_json::json!({
             "projects": [{ "id": "p", "name": "Project", "path": std::env::temp_dir() }],
-            "launchers": [{
-                "id": "opencode",
-                "provider": "opencode",
-                "label": "OpenCode",
-                "executablePath": "/bin/true",
-                "permissionMode": "default",
-            }],
+            "permissionMode": "bypass",
         });
         app.call("setWorkspace", workspace).await.expect("publish");
         let deadline = Instant::now() + WAIT;

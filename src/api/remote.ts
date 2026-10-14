@@ -108,19 +108,6 @@ export interface PublishedRecent {
     readonly activeAt: number;
 }
 
-/** One chat agent the app offers paired devices; the core finds its program and keeps it. */
-export interface LauncherRequest {
-    readonly id: string;
-    readonly provider: string;
-    readonly label: string;
-    readonly configPath?: string;
-    readonly executablePath?: string;
-    readonly environmentKeys: readonly string[];
-    readonly permissionMode: string;
-    /** Whether the agent is ready, signed out, missing or broken, for devices to show. */
-    readonly status?: string;
-}
-
 export const REMOTE_STATUS_EVENT = "remote_status_changed";
 
 export const remoteApi = {
@@ -130,8 +117,8 @@ export const remoteApi = {
     revokeDevice: (id: string) => invoke<RemoteStatus>("remote_revoke_device", { id }),
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => invoke<RemoteStatus>("remote_answer_pairing", { id, allow, access }),
     allowDevices: (devices: readonly AllowedDevice[]) => invoke<RemoteStatus>("remote_allow_devices", { devices }),
-    publishWorkspace: (projects: readonly PublishedProject[], launchers: readonly LauncherRequest[]) =>
-        invoke<void>("remote_publish_workspace", { projects, launchers }),
+    publishWorkspace: (projects: readonly PublishedProject[], permissionMode: string) =>
+        invoke<void>("remote_publish_workspace", { projects, permissionMode }),
     publishAgents: (chats: readonly PublishedChat[], titles: Readonly<Record<string, string>>) =>
         invoke<void>("remote_publish_agents", { chats, titles }),
     publishRecent: (chats: readonly PublishedRecent[]) => invoke<void>("remote_publish_recent", { chats }),
