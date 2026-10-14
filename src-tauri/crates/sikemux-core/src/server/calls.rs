@@ -298,12 +298,21 @@ struct CheckoutParams {
     /// Who to name when no agent wrote what is staged.
     #[serde(default)]
     agent_id: Option<String>,
+    /// The asker's name for the checkout's current state, when it watches it.
+    #[serde(default)]
+    generation: Option<String>,
 }
 
 /// Which agent wrote each uncommitted line of a checkout.
 async fn change_owners(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<Owners> {
     let core = core.clone();
-    blocking(move || Ok(edits::owners(&core, &params.dir, params.staged)?)).await
+    blocking(move || {
+        Ok(match &params.generation {
+            Some(generation) => edits::owners_at(&core, &params.dir, params.staged, generation),
+            None => edits::owners(&core, &params.dir, params.staged),
+        }?)
+    })
+    .await
 }
 
 /// The trailer lines naming the agents whose work a commit of what is staged holds.

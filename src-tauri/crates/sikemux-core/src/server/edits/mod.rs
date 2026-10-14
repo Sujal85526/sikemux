@@ -22,7 +22,7 @@ use super::names::project_of;
 use super::remote::unix_ms;
 use super::Core;
 pub(crate) use lines::{hunk, Lines};
-pub(crate) use owners::{commit_trailers, owners, Owners};
+pub(crate) use owners::{commit_trailers, owners, owners_at, Owners};
 
 const FOLDER: &str = "edits";
 const MAX_PER_PROJECT: usize = 5000;

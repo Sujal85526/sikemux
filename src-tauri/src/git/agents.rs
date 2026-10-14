@@ -15,11 +15,16 @@ pub async fn git_change_owners(
     repo: String,
     staged: bool,
 ) -> AppResult<Value> {
+    let generation = super::status::watched_generation(&repo).map(|(_, generation)| {
+        // Change numbers start again with the app, and the core outlives it.
+        static RUN: std::sync::OnceLock<uuid::Uuid> = std::sync::OnceLock::new();
+        format!("{}:{generation}", RUN.get_or_init(uuid::Uuid::new_v4))
+    });
     let client = manager.client().await?;
     call(
         &client,
         "changeOwners".to_owned(),
-        json!({ "dir": repo, "staged": staged }),
+        json!({ "dir": repo, "staged": staged, "generation": generation }),
     )
     .await
 }

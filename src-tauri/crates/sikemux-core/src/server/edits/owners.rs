@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -77,6 +78,41 @@ pub(crate) fn owners(core: &Core, dir: &Path, staged: bool) -> Result<Owners, St
     traced(core, dir, staged).map(|(owners, _)| owners)
 }
 
+/// `owners`, reusing what git said of the checkout when last asked at the same
+/// `generation`: a name the asker gives each state of the checkout it watches.
+pub(crate) fn owners_at(
+    core: &Core,
+    dir: &Path,
+    staged: bool,
+    generation: &str,
+) -> Result<Owners, String> {
+    type Read = HashMap<(PathBuf, bool), (String, Arc<Diff>)>;
+    static READ: Mutex<Option<Read>> = Mutex::new(None);
+    let lock = || READ.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let key = (dir.to_path_buf(), staged);
+    let kept = lock()
+        .get_or_insert_with(HashMap::new)
+        .get(&key)
+        .filter(|(at, _)| at == generation)
+        .map(|(_, diff)| diff.clone());
+    let diff = match kept {
+        Some(diff) => diff,
+        None => {
+            let diff = Arc::new(read_diff(dir, staged)?);
+            let mut read = lock();
+            let read = read.get_or_insert_with(HashMap::new);
+            if read.len() >= REMEMBERED_CHECKOUTS && !read.contains_key(&key) {
+                read.clear();
+            }
+            read.insert(key, (generation.to_owned(), diff.clone()));
+            diff
+        }
+    };
+    Ok(record_over(core, dir, staged, &diff))
+}
+
+const REMEMBERED_CHECKOUTS: usize = 32;
+
 /// The diff `traced` laid the record over.
 pub(super) struct Diff {
     pub top: PathBuf,
@@ -84,25 +120,93 @@ pub(super) struct Diff {
     pub base: Option<String>,
     pub changed: HashMap<String, Vec<Hunk>>,
     pub untracked: HashSet<String>,
+    /// What the working tree changed beyond the index, read only for staged.
+    unstaged: HashMap<String, Vec<Hunk>>,
 }
 
 pub(super) fn traced(core: &Core, dir: &Path, staged: bool) -> Result<(Owners, Diff), String> {
-    let top = PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"])?.trim());
-    let base = git(&top, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
-        .ok()
-        .map(|base| base.trim().to_owned());
+    let diff = read_diff(dir, staged)?;
+    Ok((record_over(core, dir, staged, &diff), diff))
+}
+
+fn read_diff(dir: &Path, staged: bool) -> Result<Diff, String> {
+    let (top, base) = top_and_base(dir)?;
     let against = base.as_deref().unwrap_or(EMPTY_TREE);
-    let changed = hunks(&git(&top, &diff_args(staged, Some(against)))?);
+    let (changed, others) = std::thread::scope(|scope| {
+        let others = scope.spawn(|| {
+            if staged {
+                git(&top, &diff_args(false, None))
+            } else {
+                git(&top, &["ls-files", "-z", "--others", "--exclude-standard"])
+            }
+        });
+        let changed = git(&top, &diff_args(staged, Some(against)));
+        let others = others
+            .join()
+            .unwrap_or_else(|_| Err("git did not run".to_owned()));
+        (changed, others)
+    });
+    let changed = hunks(&changed?);
+    let others = others?;
     let (unstaged, untracked) = if staged {
-        (hunks(&git(&top, &diff_args(false, None))?), HashSet::new())
+        (hunks(&others), HashSet::new())
     } else {
-        let others = git(&top, &["ls-files", "-z", "--others", "--exclude-standard"])?;
         let others = others.split('\0').filter(|path| !path.is_empty());
         (HashMap::new(), others.map(str::to_owned).collect())
     };
+    Ok(Diff {
+        top,
+        base,
+        changed,
+        untracked,
+        unstaged,
+    })
+}
+
+/// The checkout's top folder and its `HEAD` commit, none before the first,
+/// from one git run.
+fn top_and_base(dir: &Path) -> Result<(PathBuf, Option<String>), String> {
+    let mut command = sikemux_process::user_environment::command("git");
+    command
+        .args(["-c", "core.fsmonitor=false", "-c", "core.quotePath=false"])
+        .args([
+            "rev-parse",
+            "--show-toplevel",
+            "--verify",
+            "--quiet",
+            "HEAD^{commit}",
+        ])
+        .current_dir(dir)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    let output = sikemux_process::run(&mut command, None, TIMEOUT, OUTPUT_LIMIT, None)
+        .map_err(|error| format!("git did not run: {error}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let top = lines.next().filter(|top| !top.is_empty()).ok_or_else(|| {
+        format!(
+            "git rev-parse failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+    })?;
+    let base = lines
+        .next()
+        .filter(|_| output.status.success())
+        .map(str::to_owned);
+    Ok((PathBuf::from(top), base))
+}
+
+/// The record of agents' edits laid over what `diff` says changed.
+fn record_over(core: &Core, dir: &Path, staged: bool, diff: &Diff) -> Owners {
+    let Diff {
+        top,
+        changed,
+        untracked,
+        unstaged,
+        ..
+    } = diff;
     let paths: HashMap<String, String> = changed
         .keys()
-        .chain(&untracked)
+        .chain(untracked)
         .map(|path| (top.join(path).to_string_lossy().into_owned(), path.clone()))
         .collect();
     let mut owners = Owners::default();
@@ -149,13 +253,7 @@ pub(super) fn traced(core: &Core, dir: &Path, staged: bool) -> Result<(Owners, D
         }
         owners = agents.owners(core, files);
     }
-    let diff = Diff {
-        top,
-        base,
-        changed,
-        untracked,
-    };
-    Ok((owners, diff))
+    owners
 }
 
 /// One trailer line for each agent that wrote something staged in `dir`, or
