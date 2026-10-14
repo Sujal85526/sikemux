@@ -992,7 +992,9 @@ Cents
 ### When an agent you started asks you
 
 Its question arrives as a message from it, with its choices and whether it
-waits for you. Answer it with `agent_send` to that agent. When you do not know
+waits for you, and its note names the question's id. Answer it with
+`agent_send` to that agent, setting `answers` to that id; a message without
+`answers` leaves the question open. When you do not know
 the answer, pass it on with `ask`, setting `for` to the agent's name and
 `question` to what the person should be asked; that agent gets the person's
 answer and you get a copy, so carry on with your own work. The copy arrives

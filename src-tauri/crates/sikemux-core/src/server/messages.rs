@@ -554,8 +554,13 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         _ => return Err("to must be the agent's name or id".into()),
     };
     let text = message_text(&request.params)?;
+    let answers = match request.params.get("answers") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(id)) if !id.trim().is_empty() => Some(id.trim().to_owned()),
+        Some(_) => return Err("answers must be the id of the question this answers".into()),
+    };
     let (target, letter) = {
-        let (core, request) = (core.clone(), request.clone());
+        let (core, request, answers) = (core.clone(), request.clone(), answers.clone());
         blocking(move || {
             let project = caller_project(&core, &request);
             let agents = listed(&core);
@@ -563,7 +568,20 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             if target.agent_id == from {
                 return Err("That agent is you".into());
             }
-            let letter = letter_from(&agents, Kind::Message, from, text, None);
+            let mut letter = letter_from(&agents, Kind::Message, from, text, None);
+            if let Some(id) = &answers {
+                let name = target.name.as_deref().unwrap_or(&target.agent_id);
+                let asked = core
+                    .harness
+                    .questions
+                    .asked_of(&letter.from_id, &target.agent_id, id)
+                    .ok_or_else(|| format!("{name} has no open question {id} that it asked you; it was answered already, or leave out answers to send this as a plain message"))?;
+                letter.kind = Kind::Answer;
+                letter.note = Some(format!(
+                    "Sent by {}, your lead in Sikemux, not by the person, answering the question you asked: {asked}",
+                    letter.from_name
+                ));
+            }
             Ok((target, letter))
         })
         .await
@@ -571,7 +589,11 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     };
     let from = letter.from_id.clone();
     let sent = deliver(core, &target, letter).await?;
-    core.harness.questions.lead_replied(&from, &target.agent_id);
+    if let Some(id) = answers {
+        core.harness
+            .questions
+            .lead_answered(&from, &target.agent_id, &id);
+    }
     Ok(sent)
 }
 

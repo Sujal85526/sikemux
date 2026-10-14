@@ -116,6 +116,19 @@ impl Question {
             Stage::Person { .. } => None,
         }
     }
+
+    /// Whether `lead` was handed the question, before or after it went on
+    /// to the person.
+    fn went_to(&self, lead: &str) -> bool {
+        match &self.stage {
+            Stage::Lead { lead_id, .. } => lead_id == lead,
+            Stage::Person {
+                lead: Some((lead_id, _)),
+                ..
+            } => lead_id == lead,
+            Stage::Person { lead: None, .. } => false,
+        }
+    }
 }
 
 /// The questions still open, for a core that takes over.
@@ -230,12 +243,24 @@ impl Questions {
         }
     }
 
-    /// A lead's message to its agent answers what that agent asked it.
-    pub(crate) fn lead_replied(&self, lead: &str, agent_id: &str) {
+    /// The question `id` that `agent_id` asked and `lead` was handed, in the
+    /// asker's own words, while it is open.
+    pub(crate) fn asked_of(&self, lead: &str, agent_id: &str, id: &str) -> Option<String> {
+        self.lock()
+            .open
+            .iter()
+            .find(|question| {
+                question.id == id && question.agent_id == agent_id && question.went_to(lead)
+            })
+            .map(|question| question.asked.clone())
+    }
+
+    /// The lead answered the question `id` its agent asked it.
+    pub(crate) fn lead_answered(&self, lead: &str, agent_id: &str, id: &str) {
         let mut state = self.lock();
         let before = state.open.len();
         state.open.retain(|question| {
-            !(question.agent_id == agent_id && question.lead_id() == Some(lead))
+            !(question.id == id && question.agent_id == agent_id && question.went_to(lead))
         });
         if state.open.len() != before {
             state.dirty = true;
@@ -499,7 +524,7 @@ fn for_lead(question: &Question) -> (String, String) {
         )),
     }
     let note = format!(
-        "{name}, an agent you started, asks you this. Answer it with agent_send to {name}. If you do not know, pass it to the person with ask, setting for to {name}. If your turn ends with neither, Sikemux asks the person. ({})",
+        "{name}, an agent you started, asks you this. Answer it with agent_send to {name}, setting answers to {}. If you do not know, pass it to the person with ask, setting for to {name}. If your turn ends with neither, Sikemux asks the person.",
         question.id
     );
     (text, note)
