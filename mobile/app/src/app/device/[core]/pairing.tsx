@@ -140,7 +140,7 @@ export default function HostPairing() {
   const pending = pairing?.pending.filter((request) => request.expiresAt > now) ?? [];
   return (
     <Screen>
-      <Nav back={hostName} title="Paired devices" />
+      <Nav back="Back" title="Paired devices" />
       <ScrollView
         contentContainerStyle={[styles.body, { paddingBottom: bottom + 24 }]}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reread} />}>
