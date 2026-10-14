@@ -6,6 +6,11 @@ Sikemux itself, and a second round on T3 Code and herdr / Herdr UI, the open-mod
 cloud machines, and Amoeba. Many funding/ARR numbers come from trackers and secondary blogs; treat them
 as approximate.
 
+Updated 2026-10-15. Since this was written, the core started running a host on its own, the model
+layer's first four items, the ranked inbox, per-line agent attribution with `git_commit`, and Auto's PR
+review loop were built on `main`. None of it is in a release yet: v0.5.3-nightly.2 failed and its rerun
+was cancelled, so v0.5.3-nightly.1 is the latest desktop build. Section 13 audits agent-to-agent as built.
+
 ---
 
 ## 1. What the links are actually saying
@@ -64,9 +69,18 @@ not with Sikemux today (section 11).
 - **Ops context agents can use:** Jira, Slack, SigNoz, AWS, Rundeck, DB client, three code hosts; iOS
   Simulator tools; notch island; on-device dictation; encrypted shared chats.
 - **Many agents in one checkout**, on purpose (both rivals default to worktrees).
-- **Named agents, @mentions, agent-to-agent** shipped (ADR 0012): spawn/send/read/wait, questions that go
-  to the lead first, a board per project, workers listed under their lead on the rail and phone. herdr has
-  no parent/child tracking; T3 V2 has `delegate_task` and lineage, so this lead is narrow.
+- **Named agents, @mentions, agent-to-agent** built (ADR 0012): spawn/send/read/wait, questions that go
+  to the lead first, a board per project with Auto, workers listed under their lead on the rail, phone
+  and notch. Teams mix vendors and models, and terminal agents take part. herdr has no parent/child
+  tracking; T3 V2 has `delegate_task` and lineage across machines, so this lead holds on one host only.
+- **A core that runs without the app.** It keeps projects, launchers and agent accounts, finds agents
+  itself, and starts and wakes chats for a phone with no window open.
+- **Every line knows its agent.** The core records each chat agent's edits, the git panel shows who wrote
+  each block, and agents commit only their own lines with `git_commit`.
+- **One ranked inbox** on the rail, notch and phone, with a handoff note, the browser recordings an agent
+  made, and a "while you were away" digest.
+- **A model layer.** Claude Code and Codex chats run on a connected provider, coding plan or local runner.
+  Each model's tool calls are checked, and helpers run on a model of their own.
 
 **Sikemux is behind on**
 
@@ -76,16 +90,20 @@ not with Sikemux today (section 11).
   `delegate_task`. Sikemux's phone already keeps several hosts, but the Mac app talks only to its own
   core.
 - **PR loop.** T3: multi-host PR pages, guided reviews, agents woken on checks/reviews/conflicts. Herdr UI:
-  orchestrator tab that dispatches issues to agents, reviews and merges PRs. Sikemux's board Auto already
-  opens the PR, waits for CI, gets one fix from the agent and merges, but never feeds review comments back.
+  orchestrator tab that dispatches issues to agents, reviews and merges PRs. Sikemux's board Auto opens
+  the PR, waits for CI, gets one fix, hands review comments to the agent, replies in each thread and asks
+  for review again. Missing: PR pages across hosts, guided review, waking on merge conflicts.
 - **Automations:** T3 has scheduled and webhook tasks and auto-resume after a usage-limit reset. Sikemux
-  moves a chat to another signed-in account at a limit, but has no schedules, webhooks or resume at reset.
+  moves a chat to another signed-in account at a limit; resume at reset is in progress; no schedules or
+  webhooks.
 - **Outside agents driving it:** T3 exposes an MCP server with OAuth so ChatGPT or Claude can drive threads;
   herdr's whole CLI and socket API are scriptable, which is why it has ~1,700 community plugins.
 - **Distribution and openness:** herdr 43.8k stars (Apache-2.0, $6M seed from Bessemer/YC, one founder),
   T3 27.4k stars (MIT, ~3.5k stars/month), both releasing every few days. Sikemux is FSL and absent from
   every public comparison found.
-- **Reach:** herdr and T3 run on Linux and Windows; herdr lists 23+ agents.
+- **Reach:** Sikemux ships deb, rpm and AppImage but no Windows build; herdr and T3 run on both. herdr
+  lists 23+ agents.
+- **Shipping.** Everything above that is new since 2026-10-13 is on `main` but in no release.
 
 ---
 
@@ -108,16 +126,21 @@ provider key vault, iroh, the shared checkout, the phone and notch.
 
 ## 5. What to focus on, ranked
 
+### 0. Get the built work to users
+v0.5.3-nightly.2 failed, so the core-held workspace, inbox, attribution, model layer and agent-to-agent
+fixes are not out. Fix the Release run before anything else; nothing below counts until it ships.
+
 ### 1. Sikemux Host — the shed, without the setup
 Run the core headless on Linux or a spare Mac mini, install with one command, join it to the account with
 a join ticket. The Mac app and the phone become clients of **several hosts**, each shown as a card with
 CPU/memory and its agents. Agents keep working when the lid closes.
-- **First blocker: the core can't start a chat on its own.** Launch commands and projects arrive only from
-  the Mac app's `PublishWorkspace` and live in memory; agent accounts are managed by the app; host
-  sign-in, owner setup and pairing approval are local-only. Move launchers, projects and agent accounts
-  into the core, add a sign-in and pairing approval that work without a window, then the Linux bits
-  (systemd unit in place of the Aqua-only LaunchAgent, `Platform::Linux`, host info, tests on Linux; the
-  core already passes `cargo check` on Ubuntu).
+- **Done: the core runs a host on its own.** It keeps projects, launchers and agent accounts, and starts
+  and wakes chats without the app. A host with no browser signs in by code and approves it on
+  app.sikemux.com. `sikemux core pair` and the owner's phone let devices in. Linux has a systemd user
+  service, host info and CI tests.
+- **Left:** a package for the core alone with no WebKit, and a one-line installer. Agent sign-in on the
+  host, relayed to the Mac or phone (#75, #76). Surviving network drops (#106), which matters more once
+  the agents are remote.
 - **Phone first.** The phone already pairs with several hosts and shows a card per host, so Host can ship
   to phones before the Mac app becomes a multi-host client, which is the bigger job (one local socket
   today, and git, previews and files assume a local disk).
@@ -133,30 +156,22 @@ CPU/memory and its agents. Agents keep working when the lid closes.
 ### 2. Every harness, every model — own the model layer
 herdr and Orca run any CLI but know nothing about models. T3 brings your subscriptions but has no
 open-model or local story. JetBrains Air supports local models through a hand-edited JSON file. Nobody
-ties keys, coding plans and local models together and configures each harness for them. Sikemux already
-has half of it: `src-tauri/src/model_providers.rs` keeps keys for OpenRouter, Baseten, Together,
-Fireworks, Groq, Cerebras, DeepSeek, Moonshot, Mistral and Vercel in the Keychain and hands them to
-OpenCode, Pi and OMP as environment variables. The catalogue is a constant in code, nothing sets
-`ANTHROPIC_BASE_URL` or a Codex provider, and there are no coding plans or local runners yet.
+ties keys, coding plans and local models together and configures each harness for them. Sikemux has most
+of it now. The catalogue is data in the core, with coding plans (z.ai, MiniMax, Kimi Code, OpenCode Go,
+Synthetic, Ollama Cloud) and local runners (Ollama, LM Studio). Claude Code gets `ANTHROPIC_BASE_URL`,
+Codex a provider of its own, and the others env vars. The picker says who pays. A short probe marks each
+model "works with agents" (nobody else ships that check). Helpers, workers and Auto can name their own
+provider and model.
 
-Ranked:
-1. **Connections that know each plan, per agent.** Add the coding plans (z.ai GLM Coding Plan, OpenCode Go,
-   Synthetic, MiniMax, Kimi Code, Ollama Cloud) and local runners (Ollama, LM Studio), then write each
-   harness's own config: Claude Code via `ANTHROPIC_BASE_URL` to z.ai / MiniMax / Kimi / LM Studio, Codex
-   via its provider config or `--oss`, OpenCode/Pi/OMP via env. One model picker per agent.
-2. **One meter across plans, with fallback.** Every plan now uses the same 5-hour + weekly windows. Show
-   them all with pay-per-token spend, and offer "this plan is out, continue on X". Builds on the existing
-   limit rotation.
-3. **Cheap models for helpers, frontier for building.** Scouts, reviewers and spawned workers default to a
-   cheap open model; the main builder keeps the frontier one. Only a cross-harness app can do this.
-4. **A tool-call check per provider and model.** The same open weights behave differently per provider
-   (why OpenRouter built Exacto and Moonshot published a vendor verifier). A short probe before marking a
-   model "works with agents" answers the top open-model complaint, and nobody ships it.
-5. **One-click local.** Detect Ollama or LM Studio, suggest a model by RAM (Qwen3.6-27B for 48–64 GB,
-   Qwen3-Coder-Next or Qwen3.6-35B-A3B for 64 GB+), pull it, probe it, wire it in. Small audience, strong
-   for privacy and marketing.
-6. **A no-account first run** through OpenCode's free models or OpenCode Go. Use OpenCode; don't build a
+Left, ranked:
+1. **One meter across plans, with fallback.** Show every plan's 5-hour and weekly windows next to
+   pay-per-token spend, and offer "this plan is out, continue on X".
+2. **One-click local.** Detection is done. Left: suggest a model by RAM (Qwen3.6-27B for 48–64 GB,
+   Qwen3-Coder-Next or Qwen3.6-35B-A3B for 64 GB+), pull it, probe it, wire it in.
+3. **A no-account first run** through OpenCode's free models or OpenCode Go. Use OpenCode; don't build a
    harness.
+4. **A cheap default for helpers.** The setting exists; ship a sensible default so scouts and reviewers
+   run on a cheap open model and the builder keeps the frontier one.
 
 Why it is real: Chinese open models are about half of OpenRouter tokens; Hermes (1.99T tokens/day),
 Kilo, Cline, pi and omp all outrank Codex on OpenRouter; open models cost a quarter to a sixth of frontier
@@ -166,34 +181,38 @@ plans pause sign-ups when GPUs run out, don't publish benchmark claims without y
 US/EU-hosted copies of Chinese weights for companies.
 
 ### 3. Many agents, one checkout, every line knows who wrote it
-Nobody has this. Anthropic's article leaves it open. Sikemux has none of it yet: the chat drivers parse
-Edit/Write/apply_patch only to draw tool rows, and the file watcher knows nothing about agents.
+Nobody else has this, and Anthropic's article leaves it open. Sikemux has the first half. The core records
+every chat agent's edits by line, works out who owns each uncommitted line, and the git panel shows it.
+Agents commit only their own lines with `git_commit`, through a private index and a compare-and-swap on
+the branch. Claude chats are refused `add -A`, `commit -a`, `stash`, `reset --hard`, `checkout .` and
+`clean -f`.
 Anthropic (Scion), Cursor ("Git at any scale") and Perplexity (Projects, section 12) all landed on the
 same commit layer: one shared head, accept a commit only if it builds on that head, make the loser replay
 and resubmit, no pull requests, a log of who changed what. All three give each agent its own sandbox and
 share at commits. Sikemux shares the working tree itself, which is the part none of them solve.
-- **Hunk attribution, live:** the core already sees every Edit/Write/apply_patch; add the file watcher for
-  Bash edits (marked unattributed). The git panel shows a lane per agent.
-- **Safe commit tool:** commit only that agent's hunks through a private index, move `main` with a
-  compare-and-swap, retry on top if it moved. Then the harness can refuse `add -A`, `commit -a`, `stash`,
-  `reset --hard` from agents. AGENTS.md's rule becomes enforced, not prompted.
+- **Close the holes.** The git guard runs only when an agent asks permission, so Codex, Muse and ACP
+  agents in bypass mode (the default) and every terminal agent can still run the sweeping commands. Check
+  commands for every driver before they run. Terminal agents' edits and Bash edits are not recorded; a
+  file changed outside the record loses its owners instead of being marked unattributed.
 - **Collision warnings before commit:** two agents in one file/hunk → both told via agent_send; short
   leases on lockfiles, migrations, generated code. Block a stale full-file write that would erase
   another agent's edit (the failure every shared-checkout write-up names).
 - **Per-agent undo:** snapshot each agent's turns under a private ref so "undo everything Otter did since
   14:02" leaves the others alone. Covers what Claude's /rewind misses (bash, other CLIs).
-- **Provenance:** commit trailers (agent name, CLI, model, chat id, card) and a click from any commit or
-  blame line to the transcript turn. Emit Agent Trace records. (Agent identity only — no Claude co-author
-  lines.)
+- **Provenance:** trailers name the agent, CLI, model and chat. Left: the card, a click from a commit or a
+  changed block to the transcript turn, an outbox of accepted commits (section 12), and Agent Trace
+  records. (Agent identity only — no Claude co-author lines.)
 
 ### 4. The decision inbox (one surface for rail, notch and phone)
 Replace notification streams with a ranked queue: blocked/asking agents first, changes to review next,
 finished work, then progress. Batch on your schedule; show a work-in-progress count; write a handoff note
 when an agent stops. A "while you were away" digest on open.
-- Most inputs exist: unread and last-active (`seen.rs`), questions with assumptions, pending push items
-  with away detection, board cards with owners, and rail, notch and phone reading the same core state.
-  The queue is one more core view over them. `browser_record` saves to `~/Movies/Sikemux` and isn't
-  attached to any turn or card yet.
+- Done: the core ranks one inbox (asking, then review, then finished, then working) for the rail, notch
+  and phone. Each item has a handoff note and the browser recordings from that turn and card. A "while
+  you were away" digest opens on the phone and the rail. Permissions, questions and assumptions are
+  answered in place.
+- Left: a risk class per change, rules that escalate the risky ones, batching on your schedule, and
+  revert from the phone.
 - Review by **intent + evidence**, not lines: what was asked, what the agent says it did, risk class
   (comment/test-only vs logic vs migration/protocol/server), checks that ran, and the browser recording or
   before/after screenshot it took (browser_record already exists). Diff last.
@@ -203,23 +222,27 @@ when an agent stops. A "while you were away" digest on open.
   harnesses, before anything is a PR.
 
 ### 5. Make review cross-vendor, on top of agent-to-agent
-- ADR 0012 has shipped. Left: Linear cards (only Jira feeds the board), and the adapter for agents outside
-  Sikemux, deferred on purpose. Agent-to-agent across hosts waits on focus 1.
-- One button: "Claude builds, a GPT or open model attacks it" with a rubric the builder never sees.
-- **Definition-of-done gates:** checks an agent must pass before its card can move (tests, `pnpm check`
-  slices, hooks that reject and say why). Huntley: enforcement beats rules files.
+- ADR 0012 is built (section 13). First fix what the audit found: an agent can pass itself off as the
+  window, Auto merges with no review gate, and messages are neither durable nor logged.
+- Linear cards (#67; only Jira feeds the board). The adapter for agents outside Sikemux stays deferred.
+  Agent-to-agent across hosts waits on focus 1.
+- **A blind reviewer before Auto merges:** a different vendor, seeing only the diff and the card's
+  acceptance criteria, never the builder's transcript, must approve. Today it can be done by hand
+  (spawn a reviewer with `cli: "codex"`); nothing builds it in.
+- **Definition-of-done gates.** Auto runs a project's check command before it lands a card with no CI.
+  Make it a gate any agent's card must pass, with acceptance criteria on cards and hooks that reject and
+  say why. Huntley: enforcement beats rules files.
 - After landing on main: run affected checks; if main goes red, bisect to the agent and commit and tell
   that agent. "Revert Otter's last commit" without touching anyone else.
 
 ### 6. Close the parity gaps against T3 and Herdr UI, cheaply
-- PR babysitter: board Auto already waits on CI and gets one fix; extend its reviewing step to feed review
-  comments to the agent, reply and re-request review.
-- Auto-resume when a usage limit resets (the usage meter already knows the reset time), then
-  routines/schedules and webhook triggers on your own host.
+- Done: Auto hands review comments to the agent, replies and asks for review again.
+- Resume when a usage limit resets (in progress), then routines and webhook triggers on your own host.
 - An MCP/CLI surface outside agents can drive (T3's `/mcp` with OAuth). Plugins stay compiled in
-  (ADR 0002); this is about being drivable, not a marketplace.
-- Signals → board: Slack threads, Jira/Linear tickets, red CI become cards agents pick up.
-- Finish #71 (install/sign-in in app) and #106 (survive Wi-Fi drops).
+  (ADR 0002); this is about being drivable, not a marketplace. It needs the window-identity fix in
+  section 13 first.
+- Signals → board: Jira is in. Add Linear (#67), Slack threads and red CI.
+- Finish #71 (install and sign-in, #74–#77) and #106 (#107–#111).
 - Publish memory and CPU numbers with 20 agents open; it is T3's weakest point and herdr's open complaint.
 
 ### Stop or don't start
@@ -261,7 +284,8 @@ OpenAI now include cloud VMs free with the plan, so hosted compute for Claude/Co
 free. Herdr Cloud (waitlist) only links your own machines; it does not host agents.
 
 **Phase 1 — bring your own box (now).** The Host in focus #1. "Use this Mac mini as a shed" covers
-macOS/iOS work. Prerequisite: the Linux core (#10).
+macOS/iOS work. The core already builds, tests and runs as a service on Linux. Left: a core-only package
+and an installer (#10).
 
 **Phase 2 — one click into the user's own cloud account.** Hetzner project token or DigitalOcean OAuth,
 cloud-init installs the core with a join ticket. The token stays in the Mac Keychain, used once, never sent
@@ -354,8 +378,8 @@ moving single panes between devices.
 
 **The five moves that beat both:** Host over iroh before Herdr Cloud (focus 1); the model layer neither
 has (focus 2); native chat for every harness, kept fast and bounded on memory (their weakest points);
-attribution + inbox + evidence (focus 3–4) against T3's PR-centric review; agent-to-agent (already
-shipped on one host) extended across hosts with lineage, before T3 V2 reaches stable.
+attribution, inbox and evidence (focus 3–4, first versions built) against T3's PR-centric review;
+agent-to-agent (built on one host) extended across hosts with lineage, before T3 V2 reaches stable.
 
 ---
 
@@ -384,7 +408,7 @@ weight, and privacy (P2P and sealed shared chats vs a vendor-readable server).
 Ideas worth taking for Team: show whose account pays before a turn runs; take over at a safe checkpoint
 with one winner if two click; overlap checks plus advisory locks on exact paths; memories pinned to a file
 that go stale when the code moves; approvals enforced on the machine that runs the action; viewer /
-commenter / editor / owner roles.
+commenter / editor / owner roles. (Done: chats and cards say who pays.)
 
 ---
 
@@ -415,7 +439,8 @@ Sikemux: "How do you catch two agents making incompatible changes that don't pro
 
 What it means for Sikemux:
 - A third lab confirms focus #3's commit design: stale-base check, replay, no PRs, an outbox of who changed
-  what. Build the safe commit tool exactly this way, and let the outbox feed provenance and the inbox.
+  what. The safe commit tool is built this way. Add the outbox next and let it feed provenance and the
+  inbox.
 - Their "contract checked at submit" is the definition-of-done gate in focus #5.
 - Real files plus grep beat an index. Don't build a semantic index for agents; give them files, and text
   extracted from PDFs and Office files next to the originals (the PDFKit and Quick Look previews only
@@ -428,7 +453,85 @@ What it means for Sikemux:
 
 ---
 
-## 13. Go-to-market
+## 13. Agent-to-agent as built (audit, 2026-10-15)
+
+Read-only audit of the code on `main` against ADR 0012 and the rivals. Core paths below are under
+`src-tauri/crates/sikemux-core/src/server/`; line numbers may drift.
+
+**What exists.** `agent_list`, `agent_send`, `agent_spawn`, `agent_sessions`, `agent_read`, `agent_wait`,
+`ask`, `board_add/list/claim/update` and `git_commit`, all answered in the core and gated on each agent's
+own secret. Limits: two levels below an agent the person started, 6 open children per agent, 8
+agent-started agents per project. Workers inherit the lead's account and permission mode; the lead can't
+pick it. Report-back sends a worker's final answer at each turn end. `ask` goes to the lead first and
+reaches the person if the lead doesn't answer. Board Auto works cards the person added: a worktree per
+card, commit, push, PR on GitHub or Bitbucket, merge on CI or the project's check command, one rebase and
+one fix, up to 3 rounds of review comments, Jira status kept in step. The rail, phone and notch show
+teams under their lead, questions, and the board.
+
+**Which harnesses take part.**
+
+| Harness | Tools | Messages mid-turn | Its own "ask" routed |
+|---|---|---|---|
+| Claude (native) | yes | yes | yes (AskUserQuestion) |
+| Codex (native) | yes | yes (`turn/steer`) | no: answered empty |
+| Muse (native) | yes | yes | no |
+| OpenCode, Hermes, Pi, Grok, OMP (ACP) | yes | only if the agent offers steering; otherwise queued to turn end | no |
+| Terminal agents | yes | no; pasted in when idle | no |
+
+A Claude lead can start a Codex, OpenCode or open-model worker today, and route Claude or Codex through a
+connected provider. Mixed-vendor review works by hand; nothing builds it in.
+
+**Verdict.** Complete on one host and well differentiated: teams mix vendors and models without
+depending on any vendor's own team protocol, terminal agents join in, and the phone and notch answer
+questions. Claude Code's agent teams are Claude-only; T3 Code is ahead only on spawning across machines.
+The weak spots are trust, review and durability.
+
+**Gaps against the ADR and rivals.**
+- No spawn across hosts (T3 V2 `delegate_task`).
+- No blind reviewer: any agent can `agent_read` any other, across projects, so a reviewer can't be kept
+  from the builder's reasoning.
+- No review gate before Auto merges, and no acceptance criteria on cards.
+- No audit log of messages: they live only in each recipient's transcript and a 10-minute in-memory
+  digest.
+- Queued messages and open questions survive an app update but not a crash or plain restart; a blocked
+  worker could wait forever.
+
+**Problems found, most serious first.**
+1. **An agent can act as the person.** Any process running as the same user can register as the window
+   (`connection.rs`), then fetch any agent's secret or call person-only actions: answer questions, add
+   board cards Auto treats as the person's, or change the board's check command, which is a shell
+   command. Registering as the window also breaks the real window's pending calls. Fix: give the window a
+   token agents can't reach, instead of trusting every local connection.
+2. **The git guard misses bypass mode.** It runs only when an agent asks permission
+   (`chat/native/session.rs`), so Codex, Muse and ACP agents in bypass mode, the default, and terminal
+   agents can run `add -A`, `stash` or `reset --hard`. Only Claude's hook always runs.
+3. **Auto's merge gate is partial.** It checks open questions only for its own agent at ship time
+   (`board/finish.rs`); a worker's assumption, or a question raised after shipping, doesn't block the
+   merge, though the ADR says it should.
+4. **Messages can be lost.** Two identical worker reports within 2 minutes drop the second
+   (`messages.rs`). A terminal paste always counts as delivered, even if the prompt check was wrong. Any
+   message from a lead clears all of its worker's open questions, related or not.
+5. **Codex's own questions vanish:** `requestUserInput` is answered empty instead of going through `ask`
+   (`codex/state.rs`).
+6. **The depth limit can be bypassed:** when a middle lead closes and its workers are kept, a
+   grand-worker counts as one level down and can spawn again (`names/mod.rs`).
+7. **Polling instead of events:** a 400 ms tick drives questions, board, Auto and delivery
+   (`server/mod.rs`), and messages wait for the tick plus 1.5 s after a turn ends instead of reacting to
+   it. A few small maps are never pruned. Two agents can keep replying to each other up to 30 times per
+   10 minutes each way.
+
+**Next steps, ranked.**
+1. Close the identity boundary (problem 1).
+2. A blind reviewer stage in Auto on a different vendor, acceptance criteria on cards, and open questions
+   checked across the whole team before merging (problem 3).
+3. Durable message queue and questions, plus a per-project message log the rail and phone can show.
+4. Events instead of the tick, and fix the loss paths (problems 4 and 5).
+5. Enforce the git guard for every driver and warn when an agent edits lines another live agent hasn't
+   committed (problem 2); then spawn across hosts over iroh, with lineage.
+
+---
+
+## 14. Go-to-market
 
 - X: short screen recordings of what rivals can't show (two vendors' agents talking, an open model
   reviewing Claude's work, the inbox on the phone, closing the lid while the shed keeps going).
@@ -437,12 +540,14 @@ What it means for Sikemux:
 - Phone app in the App Store catches "Claude Code / Codex mobile" searches; word the listing carefully.
 - Discord for retention.
 
-## 14. Website implications
+## 15. Website implications
 
-If the Host, the model layer, the inbox, attribution or Team ship, sikemux.com needs new copy and a
-pricing page. The site can already claim browser annotate-to-agent and native chat for many harnesses.
+Once the next nightly ships, sikemux.com can claim the model layer (providers, coding plans, local
+runners, tool-call check), the inbox, per-line agent attribution, and agent teams that mix vendors. It can
+already claim browser annotate-to-agent and native chat for many harnesses. The Host and Team still need
+a pricing page when they ship.
 
-## 15. Main sources
+## 16. Main sources
 
 - Posts: [owengretzinger](https://x.com/owengretzinger/status/2109846365065052351),
   [brunogsantos](https://x.com/brunogsantos/status/2109964126810517775),
