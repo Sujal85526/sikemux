@@ -322,7 +322,7 @@
     background: var(--text-tertiary);
 }
 
-@container rnd-pane (max-width: 720px) {
+@container rnd-pane (max-width: 960px) {
     .rnd-history {
         --rnd-history-cols: 14px 48px minmax(0, 1fr) minmax(60px, 1fr) 60px;
     }
