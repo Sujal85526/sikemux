@@ -10,6 +10,7 @@ import type { GitStatus } from "../api/git";
 import type { GitArea } from "../state/types";
 import type { CardTicket } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
+import { nearestProjectSessionId } from "../agents/agentTargets";
 
 export { fsapi as files, type DirEntry } from "../api/fs";
 export { git } from "../api/git";
@@ -51,16 +52,23 @@ export function focusSignInBrowser(): Promise<void> {
     return invokeCommand<void>("macos_focus_app", { app: cloudBrowser, shortcut: cloudBrowserShortcut || null });
 }
 
-/** Puts a ticket on the board of the project in front of the person, as a card. Only the person does this. */
+function clipped(text: string, max: number, tail: string): string {
+    const points = Array.from(text);
+    return points.length > max ? points.slice(0, max).join("") + tail : text;
+}
+
+/** Puts a ticket on the board of the nearest open project, as a card. Only the person does this. */
 export async function sendToBoard(card: { title: string; details: string; ticket: CardTicket }): Promise<boolean> {
-    const session = getState().sessions[getState().activeSessionId];
-    if (session?.kind !== "project" || !session.cwd) {
+    const state = getState();
+    const session = state.sessions[nearestProjectSessionId(state) ?? ""];
+    if (!session?.cwd) {
         notify("error", "Open a project to put this on its board");
         return false;
     }
     try {
-        const details = card.details.length > 4000 ? `${card.details.slice(0, 4000)}\n\n[Cut short; the ticket has the rest.]` : card.details;
-        cmd.setAgentBoard(session.cwd, await agentBoardApi.add(session.cwd, { ...card, details }));
+        const title = clipped(card.title.replace(/\s+/g, " ").trim(), 199, "…");
+        const details = clipped(card.details, 4000, "\n\n[Cut short; the ticket has the rest.]");
+        cmd.setAgentBoard(session.cwd, await agentBoardApi.add(session.cwd, { ...card, title, details }));
         notify("success", `put ${card.ticket.key} on ${session.name}'s board`);
         return true;
     } catch (error) {
