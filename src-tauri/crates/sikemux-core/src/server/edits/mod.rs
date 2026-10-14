@@ -380,6 +380,7 @@ fn edits(done: Done, name: Option<String>) -> impl Iterator<Item = Edit> {
     } = done;
     changes.into_iter().map(move |(path, change)| {
         let path = cwd.join(path);
+        let path = std::fs::canonicalize(&path).unwrap_or(path);
         let text = read_text(&path);
         let lines = match change {
             Change::Lines(lines) => lines,
