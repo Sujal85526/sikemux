@@ -17,7 +17,6 @@ interface Showcase {
 const SESSION = "s-sikemux";
 const GIT = "w-sikemux-git";
 const OTHERS = ["w-sikemux-term", "w-sikemux-files"];
-const FRAME_MS = 1000 / 120;
 
 const showcase = () => (window as unknown as { showcase: Showcase }).showcase;
 const sleep = (ms: number) => new Promise((resume) => setTimeout(resume, ms));
@@ -49,11 +48,11 @@ async function frames(ms: number, during?: () => void): Promise<number[]> {
   return lengths;
 }
 
-/** How far the frames ran past a 120Hz budget in all, and the longest of them. */
-function jank(lengths: number[]) {
+/** How far the frames ran past the display's frame in all, and the longest of them. */
+function jank(lengths: number[], frameMs: number) {
   return {
     overBudgetMs: Math.round(
-      lengths.reduce((sum, length) => sum + Math.max(0, length - FRAME_MS), 0),
+      lengths.reduce((sum, length) => sum + Math.max(0, length - frameMs), 0),
     ),
     longestMs: Math.round(Math.max(0, ...lengths)),
   };
@@ -136,17 +135,25 @@ async function run({
   cmd.selectWindowId(OTHERS[0]);
   await sleep(1000);
 
-  const idle = jank(await frames(1000));
-  const open = jank(await frames(3000, () => cmd.selectWindowId(GIT)));
+  const idleFrames = await frames(1000);
+  // A headless browser may draw at 60Hz, so the budget is the cadence measured at rest.
+  const frameMs =
+    [...idleFrames].sort((a, b) => a - b)[idleFrames.length >> 1] ?? 1000 / 120;
+  const jankOf = (lengths: number[]) => jank(lengths, frameMs);
+  const idle = jankOf(idleFrames);
+  const open = jankOf(await frames(3000, () => cmd.selectWindowId(GIT)));
   const switching: ReturnType<typeof jank>[] = [];
   for (let round = 0; round < switches; round++) {
     for (const other of OTHERS) {
-      switching.push(jank(await frames(1000, () => cmd.selectWindowId(other))));
-      switching.push(jank(await frames(1000, () => cmd.selectWindowId(GIT))));
+      switching.push(
+        jankOf(await frames(1000, () => cmd.selectWindowId(other))),
+      );
+      switching.push(jankOf(await frames(1000, () => cmd.selectWindowId(GIT))));
     }
   }
   const result = {
     dirtyFiles,
+    frameMs: Math.round(frameMs * 100) / 100,
     idle,
     open,
     switch: {
