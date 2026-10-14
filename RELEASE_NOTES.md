@@ -1,24 +1,18 @@
-# Sikemux v0.5.3-nightly.1
+# Sikemux v0.5.3-nightly.2
 
-The first nightly on the 0.5.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
+The second nightly on the 0.5.3 line. Nightlies are signed and delivered exactly like stable releases, but they carry unreleased work and can break. Switch back to stable in Settings → About whenever you want; you keep the build you are on until a stable release passes it.
 
-## New since 0.5.2
+## New since nightly.1
 
-- **Updates keep your agents running.** Updating Sikemux carries running chat agents over to the new version, keeps agents' desk tabs and simulators, and tells agents their tabs survive. An agent that cannot be carried over is waited on before the restart, or you can force the update.
-- **Share a chat.** Share a chat read-only from the Mac. Anyone with the link watches it live, in Sikemux, on their phone or in the browser at app.sikemux.com. It is encrypted end to end, so the server only relays it.
-- **Skills.** Sikemux keeps a skills library that every agent loads beside its own skills, whether it runs in a chat, a terminal or from a paired phone. Make, install, remove and move skills in Settings → Skills, and agents can do the same with a skills tool. A skill an agent saves in its own global folder can be moved into Sikemux.
-- **Muse Code** joins the agents, driven natively over its own session protocol.
-- **Linux.** Every release now ships a deb, an rpm and an AppImage. Linux installs are sent to the releases page for updates, WebKit keeps drawing on the GPU with NVIDIA on Wayland, and the close button closes the window.
-- **Dictation** shows the words being dictated, dimmed, inside the message box, Enter ends dictation and leaves the words there, and a dictation you started by clicking keeps going when you press another key.
-- **Bitbucket for agents.** Agents can comment on, review, open, merge and decline pull requests, create, close and reopen issues, and rerun or stop pipelines. A folder of repositories offers the tools for the remotes inside it.
-- **Jira boards** can be narrowed to picked people, your issues, unassigned cards or words on a card, and an opened issue closes from its header. Agents' Jira search can return each issue's latest comments and page through results.
-- **PDFs** open in macOS's own PDF view, so they pinch, scroll and sit on the app's ground.
-- The Git pane's navigation moves into a labelled header.
-- The live stack folds subagents, shells and monitors one group at a time, and an agent waiting on its subagents shows as working.
-- Escape clears a selection, and stops a running turn only from an empty box.
-- A Claude workflow's agents show under its task row, and subagent and shell counts read in plain text, not muted.
-- Jira, Bitbucket, GitLab and AWS show their official marks.
+- **Agents work together.** Every agent gets a name, like Otter, shown in its tab, rows and header. Agents list each other and send messages with `agent_send`, start helpers with `agent_spawn` in a chat or a terminal, read what another agent said with `agent_read` and wait on it with `agent_wait`. A worker opens beside its lead in the same project and worktree, sits under it in the rail on its tree line, and its lead hears when its turn ends or fails. Closing a lead asks whether its agents stop with it. @ mentions name the project's other agents and its earlier chats.
+- **Questions.** Agents ask their lead or you with `ask`, and Claude's own questions go the same way. A question waiting on you shows under its agent in Needs input, in its notification and in the notch island, and you answer it in the chat, from the island or on your phone. Needs input also lists what an agent went on assuming.
+- **Boards.** Each project has a board of cards that agents add, claim and finish, from a Board row beside Files, Git and Search. Send a Jira issue to the board with its subtasks, and a card's ticket moves with it in Jira. Turn on Auto and Sikemux starts an agent on each card you add, in its own worktree, and lands its work once the agent and its workers are done.
+- **The rail.** Agent rows name their project, worktree and pull request, hung off the row as a tree. A line under the scope switch shows what is running, and New chat, New terminal and New browser rows sit at the top.
+- **Security.** rustls 0.23.46 fixes four advisories (RUSTSEC-2026-0346 to 0349), and every agent's tool calls carry a secret that proves they are its own.
+- Bitbucket agents can read one pull request with its builds, edit one, and merge the repository's way.
+- Jira shows people's pictures on the board, and a browser sign-in renews its token once when Jira refuses it.
+- A finished background subagent shows its own card, a workflow's row counts its finished agents, and connecting to a session no longer looks like a running turn.
+- Share sits on the chat's name, and a shared chat shows a green eye with its viewer count.
+- A Markdown preview follows the file when an agent edits it on disk.
 
-Thanks to Krisna Satria for the Linux packages and fixes, Sujal Rajput for the dictation preview and fixes, and Ankit Patidar for the Jira board filters and the Escape fix.
-
-For the complete patch history, compare [`v0.5.2...v0.5.3-nightly.1`](https://github.com/nodelike/sikemux/compare/v0.5.2...v0.5.3-nightly.1).
+For the complete patch history, compare [`v0.5.3-nightly.1...v0.5.3-nightly.2`](https://github.com/nodelike/sikemux/compare/v0.5.3-nightly.1...v0.5.3-nightly.2).

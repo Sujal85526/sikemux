@@ -1,6 +1,7 @@
-# 0.1.0-nightly.18
+# 0.1.0-nightly.19
 
-• Watch a chat someone shared with you, live and encrypted end to end.
-• Muse Code shows among your agents.
-• Tables, code and tool output scroll inside a message again.
-• Pictures dragged into a chat on your computer open on a phone with full control.
+• Answer an agent's question in its chat. Needs input shows the question it waits on, and a chat shows what its agent assumed.
+• Agents read "Otter · title", and workers sit under their lead.
+• A Board tab reads each project's board.
+• Messages from other agents read under "Message from Otter".
+• Updated TLS with security fixes.
