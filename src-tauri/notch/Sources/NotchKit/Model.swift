@@ -56,6 +56,25 @@ struct Inbox: Decodable, Equatable {
     let items: [InboxItem]
     /// Agents at work now, listed or not.
     let working: Int
+
+    init(items: [InboxItem], working: Int) {
+        self.items = items
+        self.working = working
+    }
+
+    /// An item this build cannot read, such as one in a tier added later, is left out rather than losing the whole view.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        items = try container.decode([Readable].self, forKey: .items).compactMap(\.item)
+        working = try container.decode(Int.self, forKey: .working)
+    }
+
+    private enum CodingKeys: String, CodingKey { case items, working }
+
+    private struct Readable: Decodable {
+        let item: InboxItem?
+        init(from decoder: Decoder) throws { item = try? InboxItem(from: decoder) }
+    }
 }
 
 struct InboxItem: Decodable, Equatable, Identifiable {
@@ -65,6 +84,12 @@ struct InboxItem: Decodable, Equatable, Identifiable {
 
     enum Kind: String, Decodable {
         case permission, question, input, held, assumption, pullRequest, changes, failed, finished, working
+        /// One added after this build; its tier still places it.
+        case other
+
+        init(from decoder: Decoder) throws {
+            self = Kind(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .other
+        }
     }
 
     struct Card: Decodable, Equatable {
