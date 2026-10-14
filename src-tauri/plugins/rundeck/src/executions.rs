@@ -104,8 +104,8 @@ where
 }
 
 #[derive(Deserialize)]
-struct ExecutionList {
-    executions: Vec<Execution>,
+pub struct ExecutionList {
+    pub executions: Vec<Execution>,
 }
 
 async fn job_executions(
@@ -123,10 +123,7 @@ async fn job_executions(
     Ok(list.executions)
 }
 
-pub async fn newest_succeeded(
-    session: &Session,
-    job_id: &str,
-) -> RundeckResult<Option<Execution>> {
+pub async fn newest_succeeded(session: &Session, job_id: &str) -> RundeckResult<Option<Execution>> {
     Ok(job_executions(session, job_id, 1, Some("succeeded"))
         .await?
         .into_iter()
@@ -142,7 +139,13 @@ pub async fn executions(
 ) -> RundeckResult<Vec<Execution>> {
     let limit = max.unwrap_or(25);
     let succeeded_only = only_succeeded.unwrap_or(false);
-    let history = job_executions(session, &job_id, limit, succeeded_only.then_some("succeeded")).await?;
+    let history = job_executions(
+        session,
+        &job_id,
+        limit,
+        succeeded_only.then_some("succeeded"),
+    )
+    .await?;
 
     let running = if succeeded_only {
         Vec::new()
@@ -443,10 +446,7 @@ pub struct WorkflowState {
     pub completed: Option<bool>,
 }
 
-pub async fn execution_state(
-    session: &Session,
-    execution_id: u64,
-) -> RundeckResult<WorkflowState> {
+pub async fn execution_state(session: &Session, execution_id: u64) -> RundeckResult<WorkflowState> {
     get_json(session, &format!("/execution/{execution_id}/state"), &[]).await
 }
 

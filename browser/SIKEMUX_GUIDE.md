@@ -52,9 +52,9 @@ from the list below.
   which takes only the lines you wrote and leaves theirs uncommitted; Sikemux
   refuses `git add -A`, `commit -a`, `stash`, `reset --hard` and the like.
 - Plugin tools (`github_*`, `bitbucket_*`, `gitlab_*`, `jira_*`, `signoz_*`,
-  `slack_*`, `aws_*`) are listed only when they can work here: signed in, and
-  for a code host a remote of this project on it. If one is missing, ask the
-  person to sign in from its pane and restart you.
+  `slack_*`, `rundeck_*`, `aws_*`) are listed only when they can work here:
+  signed in, and for a code host a remote of this project on it. If one is
+  missing, ask the person to sign in from its pane and restart you.
 
 ## Topics
 

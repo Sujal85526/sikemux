@@ -266,7 +266,11 @@ pub async fn validate_transport(
     ))?;
     let addresses: Vec<_> = tokio::net::lookup_host((host.as_str(), port))
         .await
-        .map_err(|_| RundeckError::BadArg("Rundeck HTTP host could not be resolved"))?
+        .map_err(|_| {
+            RundeckError::Transport(format!(
+                "can't reach Rundeck: {host} does not resolve; check the network or VPN"
+            ))
+        })?
         .collect();
     if addresses.is_empty()
         || addresses

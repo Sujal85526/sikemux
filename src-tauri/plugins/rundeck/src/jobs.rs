@@ -207,6 +207,30 @@ pub async fn job_detail(session: &Session, job_id: String) -> RundeckResult<JobD
     Ok(detail)
 }
 
+/// Every job in the project with its definition, in one request.
+pub async fn definitions(session: &Session, project: &str) -> RundeckResult<Vec<JobDetail>> {
+    let definitions: Value = get_json_at_version(
+        session,
+        JOB_DEFINITION_API_VERSION,
+        &format!("/project/{}/jobs/export", seg(project)?),
+        &[("format", "json".into())],
+    )
+    .await?;
+    let Value::Array(items) = definitions else {
+        return Ok(Vec::new());
+    };
+    Ok(items
+        .iter()
+        .filter_map(|item| parse_job_detail(item).ok())
+        .map(|mut detail| {
+            if detail.project.is_empty() {
+                detail.project = project.to_string();
+            }
+            detail
+        })
+        .collect())
+}
+
 // ---- remote option values -------------------------------------------------
 
 const OPTION_VALUES_TIMEOUT: Duration = Duration::from_secs(10);

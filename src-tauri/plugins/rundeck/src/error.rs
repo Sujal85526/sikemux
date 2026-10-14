@@ -12,6 +12,7 @@ pub enum RundeckError {
     Transport(String),
     Http { status: u16, message: String },
     BadArg(&'static str),
+    Unclear(String),
     Io(io::Error),
     Json(serde_json::Error),
 }
@@ -20,7 +21,7 @@ impl fmt::Display for RundeckError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Api(message) => write!(formatter, "rundeck: {message}"),
-            Self::Unconfigured => formatter.write_str("rundeck: not configured"),
+            Self::Unconfigured => formatter.write_str("not signed in to Rundeck"),
             Self::Auth(message) => write!(formatter, "rundeck: auth failed: {message}"),
             Self::Forbidden(message) => write!(formatter, "rundeck: not allowed: {message}"),
             Self::Transport(message) => write!(formatter, "rundeck: {message}"),
@@ -28,6 +29,7 @@ impl fmt::Display for RundeckError {
                 write!(formatter, "rundeck: http {status}: {message}")
             }
             Self::BadArg(message) => write!(formatter, "invalid argument: {message}"),
+            Self::Unclear(message) => formatter.write_str(message),
             Self::Io(error) => write!(formatter, "io: {error}"),
             Self::Json(error) => write!(formatter, "json: {error}"),
         }
@@ -48,7 +50,21 @@ impl From<serde_json::Error> for RundeckError {
 
 impl From<reqwest::Error> for RundeckError {
     fn from(error: reqwest::Error) -> Self {
-        Self::Transport(error.to_string())
+        if !(error.is_connect() || error.is_timeout()) {
+            return Self::Transport(error.to_string());
+        }
+        let host = error
+            .url()
+            .and_then(|url| url.host_str())
+            .unwrap_or("its address");
+        let how = if error.is_timeout() {
+            "it did not answer in time"
+        } else {
+            "the connection failed"
+        };
+        Self::Transport(format!(
+            "can't reach Rundeck at {host} ({how}); check the network or VPN"
+        ))
     }
 }
 
@@ -63,7 +79,9 @@ impl From<RundeckError> for PluginError {
             RundeckError::Auth(_) => PluginError::new("auth", message),
             RundeckError::Forbidden(_) => PluginError::forbidden(message),
             RundeckError::Http { status, .. } => PluginError::http(status, message),
-            RundeckError::BadArg(_) => PluginError::new("bad-params", message),
+            RundeckError::BadArg(_) | RundeckError::Unclear(_) => {
+                PluginError::new("bad-params", message)
+            }
             RundeckError::Io(_) => PluginError::new("io", message),
             RundeckError::Json(_) => PluginError::new("json", message),
         }

@@ -3,6 +3,7 @@
 // directly with reqwest.
 //
 // Module split:
+//   agent       — what the rundeck_* agent tools answer
 //   config      — the saved sign-in and settings, and whether the URL is safe to call
 //   client      — shared HTTP client, error classification, request limiter
 //   auth        — password login, token login, logout, status
@@ -13,6 +14,7 @@
 //   logs        — stream of log output with an offset cursor
 //   plan        — read-only git inspection (dirty / ahead-behind / relation)
 
+mod agent;
 mod auth;
 mod client;
 mod config;
@@ -109,6 +111,31 @@ struct PlanParams {
     target_branch: String,
     #[serde(default)]
     repo_path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FindJobsParams {
+    project: Option<String>,
+    filter: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OutcomeParams {
+    #[serde(deserialize_with = "executions::id_from_string_or_number")]
+    execution_id: u64,
+    #[serde(default)]
+    wait: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExcerptParams {
+    #[serde(deserialize_with = "executions::id_from_string_or_number")]
+    execution_id: u64,
+    tail: Option<usize>,
+    grep: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -231,9 +258,44 @@ impl Plugin for Rundeck {
                     ))
                     .await
                 }
+                "agentJobs" => {
+                    let FindJobsParams { project, filter } = params(input)?;
+                    answer(agent::find_jobs(session, project, filter)).await
+                }
+                "agentRun" => answer(agent::run(session, params(input)?)).await,
+                "agentExecutions" => {
+                    answer(agent::history(session, params(input)?, branch_options)).await
+                }
+                "agentExecution" => {
+                    let OutcomeParams { execution_id, wait } = params(input)?;
+                    answer(agent::execution(session, execution_id, wait)).await
+                }
+                "agentLogs" => {
+                    let ExcerptParams {
+                        execution_id,
+                        tail,
+                        grep,
+                    } = params(input)?;
+                    answer(logs::excerpt(
+                        session,
+                        execution_id,
+                        tail.unwrap_or(100),
+                        grep.as_deref(),
+                    ))
+                    .await
+                }
+                "agentPlan" => answer(agent::plan(session, params(input)?, branch_options)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
+    }
+
+    fn offers_agent_tools<'a>(
+        &'a self,
+        ctx: &'a PluginContext,
+        _remotes: &'a [String],
+    ) -> PluginFuture<'a, bool> {
+        Box::pin(async move { Ok(config::load(ctx.data_dir()).await?.is_signed_in()) })
     }
 
     fn stream<'a>(

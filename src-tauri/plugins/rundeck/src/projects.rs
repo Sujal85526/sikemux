@@ -212,5 +212,7 @@ pub async fn job_cells(
     branch_options: &[String],
 ) -> RundeckResult<Vec<MatrixCell>> {
     let deadline = tokio::time::Instant::now() + MATRIX_DEADLINE;
-    Ok(cells_until(session, &jobs, branch_options, deadline).await.0)
+    Ok(cells_until(session, &jobs, branch_options, deadline)
+        .await
+        .0)
 }
