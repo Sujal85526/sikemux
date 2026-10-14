@@ -8,6 +8,8 @@ import { notify, reportError } from "../state/toast";
 import type { PluginKind } from "../plugins/kinds";
 import type { GitStatus } from "../api/git";
 import type { GitArea } from "../state/types";
+import type { CardTicket } from "../agents/agentBoard";
+import { agentBoardApi } from "../api/agentBoard";
 
 export { fsapi as files, type DirEntry } from "../api/fs";
 export { git } from "../api/git";
@@ -47,6 +49,24 @@ export function focusSignInBrowser(): Promise<void> {
     const { cloudBrowser, cloudBrowserShortcut } = getState();
     if (!cloudBrowser) return Promise.resolve();
     return invokeCommand<void>("macos_focus_app", { app: cloudBrowser, shortcut: cloudBrowserShortcut || null });
+}
+
+/** Puts a ticket on the board of the project in front of the person, as a card. Only the person does this. */
+export async function sendToBoard(card: { title: string; details: string; ticket: CardTicket }): Promise<boolean> {
+    const session = getState().sessions[getState().activeSessionId];
+    if (session?.kind !== "project" || !session.cwd) {
+        notify("error", "Open a project to put this on its board");
+        return false;
+    }
+    try {
+        const details = card.details.length > 4000 ? `${card.details.slice(0, 4000)}\n\n[Cut short; the ticket has the rest.]` : card.details;
+        cmd.setAgentBoard(session.cwd, await agentBoardApi.add(session.cwd, { ...card, details }));
+        notify("success", `put ${card.ticket.key} on ${session.name}'s board`);
+        return true;
+    } catch (error) {
+        reportError("send to the board")(error);
+        return false;
+    }
 }
 
 /** The folder of the project in front of the person, or null when a project is not what they are looking at. */

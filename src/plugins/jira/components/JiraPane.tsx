@@ -1,5 +1,5 @@
 import { useCallback, useState, type MouseEvent, type ReactNode } from "react";
-import { gitOverviewR, notify, reportError, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
+import { gitOverviewR, notify, reportError, sendToBoard, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import {
     ContextMenu,
@@ -392,6 +392,19 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                         <IconExternal size={12} />
                     </button>
                     <span className="jira-grow" />
+                    <button
+                        type="button"
+                        className="jira-chip"
+                        title="Put this issue on the open project's board as a card for agents"
+                        onClick={() =>
+                            void sendToBoard({
+                                title: issue.summary,
+                                details: issue.description,
+                                ticket: { key: issue.key, url: issue.url, source: issue.issueType ?? undefined, provider: "jira" },
+                            })
+                        }>
+                        Send to board
+                    </button>
                     <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
                         <IconClose size={12} />
                     </button>
