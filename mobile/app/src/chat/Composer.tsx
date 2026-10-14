@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ActivityIndicator, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -399,6 +399,35 @@ export function AttachSheet({
   );
 }
 
+export type ComposerQuestion = {
+  name: string;
+  cli: string;
+  text: string;
+  onRemove: () => void;
+  onAnswer: (text: string) => Promise<boolean>;
+};
+
+function AnsweringChip({ question }: { question: ComposerQuestion }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.answering}>
+      <AgentIcon provider={question.cli} size={13} />
+      <Text style={styles.answeringText} numberOfLines={1}>
+        Answering {question.name} · {question.text}
+      </Text>
+      <Pressable
+        onPress={question.onRemove}
+        hitSlop={8}
+        style={styles.answeringX}
+        accessibilityRole="button"
+        accessibilityLabel={`Stop answering ${question.name}`}>
+        <Icon name="IconClose" size={10} color={colors.ground} />
+      </Pressable>
+    </View>
+  );
+}
+
 /** How far up an empty composer is pulled before it opens the recent prompts. */
 const PULL_UP = 18;
 
@@ -421,6 +450,8 @@ export const Composer = memo(function Composer({
   attachments,
   strip,
   onRecent,
+  question,
+  inputRef,
 }: {
   session: ChatSession;
   provider: string;
@@ -446,6 +477,10 @@ export const Composer = memo(function Composer({
   strip: ReactNode;
   /** Pulling an empty composer up opens what was sent before; absent when nothing was. */
   onRecent?: () => void;
+  /** The question an agent asked that whatever is sent answers. */
+  question?: ComposerQuestion | null;
+  /** Lets the screen hand the keyboard to the composer. */
+  inputRef?: RefObject<TextInput | null>;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -455,7 +490,8 @@ export const Composer = memo(function Composer({
   const uploading = attachments.some((attachment) => attachment.upload === 'sending');
   const room = MAX_ATTACHMENTS - attachments.length;
   const [focused, setFocused] = useState(false);
-  const input = useRef<TextInput>(null);
+  const ownInput = useRef<TextInput>(null);
+  const input = inputRef ?? ownInput;
   const [sheet, setSheet] = useState(false);
   const typing = useKeyboardShown();
   const configs = sessionConfigs(setup);
@@ -503,7 +539,8 @@ export const Composer = memo(function Composer({
       return;
     }
     haptics.tap();
-    void session.send(text).then((sent) => {
+    const sending = question && text ? question.onAnswer(text) : session.send(text);
+    void sending.then((sent) => {
       if (!sent) return;
       // Clearing the state alone leaves text the keyboard is still composing.
       input.current?.clear();
@@ -536,6 +573,7 @@ export const Composer = memo(function Composer({
       <Commands matches={matches} onPick={(name) => session.setDraft(`/${name} `)} />
       {dock || matches.length ? null : strip}
       <View style={[styles.composer, focused && { borderColor: colors.borderSelected }]} {...pullUp.panHandlers}>
+        {question ? <AnsweringChip question={question} /> : null}
         {attachments.length ? <ComposerAttachments attachments={attachments} onRemove={session.removeAttachment} onRetry={send} /> : null}
         <ComposerInput
           ref={input}
@@ -677,6 +715,24 @@ const makeStyles = (colors: Palette) => {
   return StyleSheet.create({
     wrap: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
     composer: { padding: 6, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.composer },
+    answering: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 7,
+      maxWidth: '100%',
+      margin: 4,
+      marginBottom: 2,
+      paddingVertical: 6,
+      paddingLeft: 9,
+      paddingRight: 6,
+      borderRadius: 9,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.sunken,
+    },
+    answeringText: { flexShrink: 1, fontFamily: fonts.ui, fontSize: 12, color: colors.inkDim },
+    answeringX: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
     bar: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 6 },
     add: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
     yolo: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 8, borderRadius: 7 },

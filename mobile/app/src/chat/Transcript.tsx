@@ -23,6 +23,7 @@ import { Markdown } from './Markdown';
 import { SentAttachments } from './Attachments';
 import type { Attachment, Held, Unsent } from './session';
 import { ToolGroup } from './Tools';
+import { AnsweredQuestion } from './Question';
 
 /** The chat's agent, whose mark its subagents carry. */
 export const ProviderContext = createContext('agent');
@@ -349,19 +350,23 @@ export function Message({
   if (letters) {
     return (
       <Pressable onPress={tap} onLongPress={keepLongPress} accessibilityHint={tap ? 'Tap for copy and the time it came' : undefined}>
-        {letters.map((letter, index) => (
-          <View key={index}>
-            <View style={styles.letterFrom}>
-              <View style={styles.letterRule} />
-              <AgentIcon provider={letter.cli} size={13} />
-              <Text style={styles.letterLabel}>
-                Message from <Text style={styles.letterName}>{letter.name}</Text>
-              </Text>
-              <View style={styles.letterRule} />
+        {letters.map((letter, index) =>
+          letter.kind === 'answer' ? (
+            <AnsweredQuestion key={index} asker={letter.asker} cli={letter.cli} question={letter.question} answer={letter.text} />
+          ) : (
+            <View key={index}>
+              <View style={styles.letterFrom}>
+                <View style={styles.letterRule} />
+                <AgentIcon provider={letter.cli} size={13} />
+                <Text style={styles.letterLabel}>
+                  Message from <Text style={styles.letterName}>{letter.name}</Text>
+                </Text>
+                <View style={styles.letterRule} />
+              </View>
+              <LongText id={`${message.id}/letter/${index}`} text={letter.text} live={false} style={styles.prose} />
             </View>
-            <LongText id={`${message.id}/letter/${index}`} text={letter.text} live={false} style={styles.prose} />
-          </View>
-        ))}
+          ),
+        )}
         {strip ? <Strip meta={{ ...strip, text: letters.map((letter) => letter.text).join('\n\n') }} mine={false} /> : null}
       </Pressable>
     );

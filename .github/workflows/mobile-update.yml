@@ -26,6 +26,7 @@ on:
       - "mobile/app/scripts/publish-update.mjs"
       - "mobile/app/scripts/rust-sources.js"
       - "src/agents/agentLaunch.ts"
+      - "src/agents/agentQuestions.ts"
       - "src/agents/catalog.ts"
       - "src/agents/generated/**"
       - "src/agents/catalog.ts"
