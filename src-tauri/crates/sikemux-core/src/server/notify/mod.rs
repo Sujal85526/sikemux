@@ -98,6 +98,8 @@ pub(crate) struct Notifier {
 #[derive(Default)]
 struct State {
     away: bool,
+    /// When the person last went away.
+    left_at: Option<u64>,
     /// Cards a phone was sent and that are still showing, by phone and card.
     alerted: HashSet<(String, String)>,
     turns: HashMap<String, u64>,
@@ -142,6 +144,12 @@ impl Notifier {
             .presence
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(presence);
+    }
+
+    /// When the person last went away, and whether they still are.
+    pub(crate) fn absence(&self) -> (Option<u64>, bool) {
+        let state = self.lock();
+        (state.left_at, state.away)
     }
 
     fn host_name(&self) -> String {
@@ -201,6 +209,9 @@ fn noted(core: &Core, away: bool, now: u64) {
         let mut state = core.notify.lock();
         let left = away && !state.away;
         state.away = away;
+        if left {
+            state.left_at = Some(now);
+        }
         left
     };
     if !left {
@@ -448,7 +459,7 @@ fn name(core: &Core, agent_id: &str) -> Option<Named> {
     })
 }
 
-fn clip(text: &str, limit: usize) -> String {
+pub(crate) fn clip(text: &str, limit: usize) -> String {
     let line = text
         .lines()
         .map(str::trim)

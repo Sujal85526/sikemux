@@ -1353,6 +1353,10 @@ pub struct DeviceView {
     /// Saved chats the app lists as recent, newest first, none of them open.
     #[serde(default)]
     pub recent: Vec<RecentInfo>,
+    /// What waits on the person, ranked, as the core's inbox JSON. Kept as
+    /// JSON so a change to its shape reaches phones over the air.
+    #[serde(default)]
+    pub inbox: Value,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1580,6 +1584,7 @@ mod tests {
             chats: Vec::new(),
             attentions: Vec::new(),
             recent: Vec::new(),
+            inbox: Value::Null,
         })
         .unwrap();
         view.as_object_mut().unwrap().remove("recent");

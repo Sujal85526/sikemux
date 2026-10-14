@@ -144,6 +144,16 @@ pub(crate) struct Questions {
     state: Mutex<State>,
 }
 
+/// A question that waits on the person.
+pub(crate) struct ForPerson {
+    pub id: String,
+    pub agent_id: String,
+    pub text: String,
+    pub blocked: bool,
+    pub assumption: Option<String>,
+    pub at: u64,
+}
+
 /// A question as an agent asked it.
 struct Asked {
     text: String,
@@ -193,6 +203,23 @@ impl Questions {
             .open
             .iter()
             .any(|question| question.agent_id == agent_id)
+    }
+
+    /// The questions put to the person, oldest first.
+    pub(crate) fn for_person(&self) -> Vec<ForPerson> {
+        self.lock()
+            .open
+            .iter()
+            .filter(|question| question.asks_person())
+            .map(|question| ForPerson {
+                id: question.id.clone(),
+                agent_id: question.agent_id.clone(),
+                text: question.text.clone(),
+                blocked: question.blocked,
+                assumption: question.assumption.clone(),
+                at: question.at,
+            })
+            .collect()
     }
 
     /// The boards changed, which may change the ticket a question names.

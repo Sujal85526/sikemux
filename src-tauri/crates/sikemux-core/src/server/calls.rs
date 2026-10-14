@@ -15,11 +15,12 @@ use super::connection::{blocking, ClientConn};
 use super::edits::{Edit, Filter};
 use super::names::{project_of, AgentName};
 use super::workspace::{self, AgentRun};
-use super::{board, plugins, questions, share, Core, CoreError, CoreResult};
+use super::{board, inbox, plugins, questions, share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
-        "chatFile" | "questions" | "boards" | "board" | "agentNames" | "edits" => Needs::Watch,
+        "chatFile" | "questions" | "boards" | "board" | "agentNames" | "edits" | "inbox"
+        | "digest" => Needs::Watch,
         "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
         | "boardRetry" => Needs::Full,
         _ => Needs::Local,
@@ -64,6 +65,8 @@ pub(crate) async fn call(
         "boardSettings" => answer(board::person_settings(&core, params).await?),
         "boardRetry" => answer(board::person_retry(&core, params).await?),
         "edits" => answer(edits(&core, parse(params)?).await?),
+        "inbox" => answer(inbox(&core).await?),
+        "digest" => answer(digest(&core, parse(params)?).await?),
         "plugin" => {
             only_window(&core, client)?;
             answer(plugins::window_call(&core, parse(params)?).await)
@@ -284,4 +287,27 @@ async fn edits(core: &Arc<Core>, filter: Filter) -> CoreResult<Vec<Edit>> {
         Ok(core.edits.read(&project, &filter))
     })
     .await
+}
+
+/// What waits on the person, ranked as devices' views list it.
+async fn inbox(core: &Arc<Core>) -> CoreResult<inbox::View> {
+    let core = core.clone();
+    blocking(move || {
+        let (chats, sessions) = core.ranked_infos();
+        Ok(inbox::view(&core, &chats, &sessions))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DigestParams {
+    #[serde(default)]
+    since: Option<u64>,
+}
+
+/// What finished, failed and waits since the person last left, or `since`.
+async fn digest(core: &Arc<Core>, params: DigestParams) -> CoreResult<inbox::Digest> {
+    let core = core.clone();
+    blocking(move || Ok(inbox::digest(&core, params.since))).await
 }

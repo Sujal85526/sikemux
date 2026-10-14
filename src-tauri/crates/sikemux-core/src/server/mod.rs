@@ -14,6 +14,7 @@ mod follow;
 mod handover;
 mod harness;
 mod host;
+mod inbox;
 mod join;
 mod messages;
 mod names;
@@ -298,6 +299,7 @@ pub(crate) struct Core {
     pub(crate) boards: board::Boards,
     pub(crate) edits: edits::Edits,
     pub(crate) notify: notify::Notifier,
+    pub(crate) inbox: inbox::Inbox,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
 }
@@ -348,6 +350,7 @@ impl Core {
             boards: board::Boards::new(data_dir),
             edits: edits::Edits::new(data_dir, me.clone()),
             notify: notify::Notifier::default(),
+            inbox: inbox::Inbox::default(),
             device_view: Mutex::new(Vec::new()),
         }))
     }
@@ -654,12 +657,14 @@ impl Core {
         let mut attentions = self.chats.attentions();
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         let recent = self.workspaces.recent(&chats);
+        let inbox = serde_json::to_value(inbox::view(self, &chats, &sessions)).ok()?;
         let view = DeviceView {
             workspace: self.workspaces.view(),
             sessions,
             chats,
             attentions,
             recent,
+            inbox,
         };
         encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },

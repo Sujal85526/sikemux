@@ -490,6 +490,14 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "board.list" => board::list(core, &request).await,
         "board.claim" => board::claim(core, &request).await,
         "board.update" => board::update(core, &request).await,
+        "browser.record" => {
+            let agent_id = request.agent_id.clone();
+            let answer = forward(core, request).await?;
+            if let Some(agent_id) = agent_id {
+                super::inbox::recorded(core, &agent_id, &answer);
+            }
+            Ok(answer)
+        }
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
         "plugins.tools" => super::plugins::agent_tools(&request.project).await,
         "plugins.call" => super::plugins::call_agent_tool(&request.params).await,

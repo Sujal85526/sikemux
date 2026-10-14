@@ -17,6 +17,7 @@ use crate::cli::protocol::HarnessRequest;
 use crate::protocol::WindowCall;
 
 use super::connection::{blocking, ClientId};
+use super::inbox::Recording;
 use super::messages;
 use super::names::project_of;
 use super::remote::unix_ms;
@@ -45,6 +46,7 @@ const LISTED_TEXT_CHARS: usize = 240;
 /// How long an agent has been idle before the board offers it cards.
 const IDLE_BEFORE_OFFER_MS: u64 = 5_000;
 const MAX_OFFERED: usize = 6;
+const MAX_RECORDINGS: usize = 8;
 const WINDOW_ANSWER_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +129,9 @@ struct Card {
     /// The run Auto gave the card, in a worktree of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auto: Option<Run>,
+    /// Browser recordings its owner made while on it, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    recordings: Vec<Recording>,
     at: u64,
     updated_at: u64,
 }
@@ -650,6 +655,7 @@ fn app_view(core: &Core, board: &Board, card: &Card) -> Value {
         "result": card.result,
         "ticket": card.ticket,
         "auto": card.auto.as_ref().map(Run::view),
+        "recordings": card.recordings,
         "at": card.at,
         "updatedAt": card.updated_at,
     })
@@ -787,6 +793,7 @@ fn add_card(
         result: None,
         ticket: adding.ticket,
         auto: None,
+        recordings: Vec::new(),
         at: now,
         updated_at: now,
     };
@@ -1241,16 +1248,21 @@ pub(crate) fn auto_has_work(core: &Core) -> bool {
     auto::has_work(core)
 }
 
+/// The card the agent works, else the one it touched last.
+fn held_card<'a>(state: &'a mut State, agent_id: &str) -> Option<(&'a String, &'a mut Card)> {
+    state
+        .boards
+        .iter_mut()
+        .flat_map(|(project, board)| board.cards.iter_mut().map(move |card| (project, card)))
+        .filter(|(_, card)| card.owner.as_deref() == Some(agent_id))
+        .max_by_key(|(_, card)| (card.status == Status::Progress, card.updated_at))
+}
+
 /// A line naming the agent's card, for the report its lead gets when its
 /// turn ends.
 pub(crate) fn card_line(core: &Core, agent_id: &str) -> Option<String> {
-    let state = core.boards.lock();
-    let card = state
-        .boards
-        .values()
-        .flat_map(|board| board.cards.iter())
-        .filter(|card| card.owner.as_deref() == Some(agent_id))
-        .max_by_key(|card| (card.status == Status::Progress, card.updated_at))?;
+    let mut state = core.boards.lock();
+    let (_, card) = held_card(&mut state, agent_id)?;
     Some(format!(
         "Its card on the board: {}, {}.",
         card.label(),
@@ -1281,6 +1293,93 @@ pub(crate) fn ticket_of_agent(core: &Core, agent_id: &str) -> Option<String> {
         }
         None
     })
+}
+
+/// What a card Auto handed back waits on the person for.
+pub(crate) enum Waits {
+    /// Its pull request is ready for review.
+    Review { url: Option<String> },
+    /// It came back, for the reason in `note`.
+    Held { note: Option<String> },
+}
+
+/// A card as the inbox lists it.
+pub(crate) struct Summary {
+    pub project: String,
+    pub id: u64,
+    pub title: String,
+    pub done: bool,
+    pub owner: Option<String>,
+    pub owner_name: Option<String>,
+    pub result: Option<String>,
+    pub recordings: Vec<Recording>,
+    pub waits: Option<Waits>,
+    pub updated_at: u64,
+}
+
+impl Card {
+    fn summary(&self, core: &Core, project: &str) -> Summary {
+        let waits = self.auto.as_ref().and_then(|run| match run.stage {
+            Stage::Review => Some(Waits::Review {
+                url: run.pull.as_ref().map(|pull| pull.url.clone()),
+            }),
+            Stage::Held => Some(Waits::Held {
+                note: run.note.clone(),
+            }),
+            _ => None,
+        });
+        Summary {
+            project: project.to_owned(),
+            id: self.id,
+            title: self.title.clone(),
+            done: self.status == Status::Done,
+            owner: self.owner.clone(),
+            owner_name: self.owner_name(core),
+            result: self.result.clone(),
+            recordings: self.recordings.clone(),
+            waits,
+            updated_at: self.updated_at,
+        }
+    }
+}
+
+pub(crate) fn agent_card(core: &Core, agent_id: &str) -> Option<Summary> {
+    let mut state = core.boards.lock();
+    let (project, card) = held_card(&mut state, agent_id)?;
+    Some(card.summary(core, project))
+}
+
+/// The cards Auto handed back to the person, and those done since
+/// `done_since`.
+pub(crate) fn cards_for_person(core: &Core, done_since: Option<u64>) -> Vec<Summary> {
+    let state = core.boards.lock();
+    state
+        .boards
+        .iter()
+        .flat_map(|(project, board)| board.cards.iter().map(move |card| (project, card)))
+        .filter(|(_, card)| {
+            card.auto
+                .as_ref()
+                .is_some_and(|run| matches!(run.stage, Stage::Review | Stage::Held))
+                || done_since
+                    .is_some_and(|since| card.status == Status::Done && card.updated_at >= since)
+        })
+        .map(|(project, card)| card.summary(core, project))
+        .collect()
+}
+
+/// Keeps a browser recording on the card the agent works.
+pub(crate) fn attach_recording(core: &Core, agent_id: &str, recording: Recording) {
+    let mut state = core.boards.lock();
+    let Some((project, card)) = held_card(&mut state, agent_id) else {
+        return;
+    };
+    if card.recordings.len() >= MAX_RECORDINGS {
+        card.recordings.remove(0);
+    }
+    card.recordings.push(recording);
+    let project = project.clone();
+    core.boards.save(&mut state, &project);
 }
 
 /// Every project's board, as the app draws them.

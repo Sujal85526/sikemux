@@ -35,6 +35,7 @@ impl Core {
         match activity {
             Activity::Started => {
                 self.seen.started(&agent_id);
+                self.inbox.started(&agent_id);
                 self.notify.send(Signal::TurnStarted { agent_id });
             }
             Activity::Working => self.seen.working(&agent_id),
@@ -42,8 +43,10 @@ impl Core {
                 super::questions::turn_ended(self, &agent_id);
                 if cancelled {
                     self.seen.active(&agent_id);
+                    self.inbox.stopped(&agent_id);
                 } else {
                     self.seen.wants_a_look(&agent_id);
+                    self.inbox.ended(&agent_id, None);
                 }
                 self.notify.send(Signal::TurnCompleted {
                     agent_id,
@@ -53,6 +56,7 @@ impl Core {
             Activity::NeedsYou => self.seen.wants_a_look(&agent_id),
             Activity::Problem(message) => {
                 self.seen.wants_a_look(&agent_id);
+                self.inbox.ended(&agent_id, Some(message));
                 self.notify.send(Signal::Problem {
                     agent_id,
                     message: message.to_owned(),
