@@ -47,7 +47,14 @@ struct Letter {
     /// What the agent reading it is told about it, when not the usual.
     note: Option<String>,
     /// The question this answers, when the person answered one.
-    answers: Option<String>,
+    answers: Option<Answered>,
+}
+
+/// A question the person answered, and the agent that asked it.
+pub(crate) struct Answered {
+    pub question: String,
+    pub asker: String,
+    pub cli: String,
 }
 
 /// The messages still waiting, as each agent reads them, for a core that
@@ -106,7 +113,7 @@ impl Mailbox {
         state
             .sent
             .retain(|sent| now.saturating_sub(sent.at) < PAIR_WINDOW_MS);
-        let digest = digest(&letter.text);
+        let digest = digest(&wrapped(letter));
         let pair: Vec<&Sent> = state
             .sent
             .iter()
@@ -139,7 +146,7 @@ impl Mailbox {
         self.lock().sent.push_back(Sent {
             from: letter.from_id.clone(),
             to: to.to_owned(),
-            digest: digest(&letter.text),
+            digest: digest(&wrapped(letter)),
             at: letter.at,
         });
     }
@@ -192,10 +199,12 @@ fn attribute(value: &str) -> String {
 /// A message as the agent reads it. The app reads the same form back out of
 /// a transcript to show who sent it.
 fn wrapped(letter: &Letter) -> String {
-    if let Some(question) = &letter.answers {
+    if let Some(answered) = &letter.answers {
         return format!(
-            "<question-answer question=\"{}\" note=\"{}\">\n{}\n</question-answer>",
-            attribute(question),
+            "<question-answer asker=\"{}\" cli=\"{}\" question=\"{}\" note=\"{}\">\n{}\n</question-answer>",
+            attribute(&answered.asker),
+            attribute(&answered.cli),
+            attribute(&answered.question),
             attribute(letter.note.as_deref().unwrap_or_default()),
             letter
                 .text
@@ -557,7 +566,7 @@ pub(crate) async fn tell(
 pub(crate) async fn answer(
     core: &Arc<Core>,
     to: String,
-    question: String,
+    answered: Answered,
     text: String,
     note: String,
 ) -> Result<Value, String> {
@@ -580,7 +589,7 @@ pub(crate) async fn answer(
         text,
         at: unix_ms(),
         note: Some(note),
-        answers: Some(question),
+        answers: Some(answered),
     };
     deliver(core, &target, letter).await
 }

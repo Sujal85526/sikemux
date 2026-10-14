@@ -670,10 +670,15 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
         ),
         None => "The person answered the question you asked; go on with it.".to_owned(),
     };
+    let answered = |question_text: &str| messages::Answered {
+        question: question_text.to_owned(),
+        asker: question.name.clone(),
+        cli: question.cli.clone(),
+    };
     if let Err(error) = messages::answer(
         core,
         question.agent_id.clone(),
-        question.asked.clone(),
+        answered(&question.asked),
         text.clone(),
         note,
     )
@@ -693,7 +698,7 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
             "The person answered {}'s question, which went to you first. {} has the answer too.",
             question.name, question.name
         );
-        let _ = messages::answer(core, lead_id.clone(), question.text.clone(), text, note).await;
+        let _ = messages::answer(core, lead_id.clone(), answered(&question.text), text, note).await;
     }
     Ok(json!({ "answered": true }))
 }
