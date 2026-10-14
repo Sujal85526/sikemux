@@ -3,8 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DiffRow } from "../api/git";
 import { DiffView, layoutRows } from "./DiffView";
 
-vi.mock("../chat/shikiTokens", () => ({
-    tokenizeLines: async (lines: readonly string[]) => lines.map((text) => [{ text, color: "#123456" }]),
+vi.mock("./diffColours", () => ({
+    finishedColours: () => undefined,
+    colourLines: (lines: readonly string[], _lang: string, _theme: unknown, _name: string, _max: number, listener: (colours: unknown) => void) => {
+        listener(lines.map((text) => [{ text, color: "#123456" }]));
+        return () => {};
+    },
 }));
 
 afterEach(cleanup);

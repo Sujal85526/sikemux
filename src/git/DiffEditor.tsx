@@ -197,6 +197,8 @@ export function DiffEditor({
         };
     }, [repo, path, baseRev, headRev, absPath, editable, changes]);
 
+    const showHidden = useCallback(() => setExpanded(diffKey), [diffKey]);
+
     const save = useCallback(() => {
         void fsapi
             .writeFile(absPath, latestHeadRef.current)
@@ -229,7 +231,7 @@ export function DiffEditor({
                 />
             </Suspense>
         );
-    else if (!editable && rows) body = <DiffView rows={rows} path={path} tinted={dark} notes={notes} onShowHidden={() => setExpanded(diffKey)} />;
+    else if (!editable && rows) body = <DiffView rows={rows} path={path} tinted={dark} notes={notes} onShowHidden={showHidden} />;
 
     return (
         <div className={`diff-editor${autoHeight ? " auto" : ""}`} onKeyDownCapture={onKeyDownCapture}>

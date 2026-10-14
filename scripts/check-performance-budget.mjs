@@ -166,6 +166,15 @@ const budgets = [
     gzip: 47_000,
   },
   {
+    // Colours diffs off the main thread with Oniguruma, whose WebAssembly
+    // engine is several times faster in WebKit than the JavaScript one. Fetched
+    // the first time a diff has something to colour.
+    label: "Diff colouring worker (shiki core + Oniguruma engine)",
+    pattern: /^(?:diffColours\.worker-.*\.js|onig-.*\.wasm)$/,
+    raw: 650_000,
+    gzip: 250_000,
+  },
+  {
     label: "Diffs language grammar chunks (one per language, loaded on demand)",
     pattern: diffLanguageChunkPattern,
     raw: 950_000,
@@ -188,7 +197,7 @@ const budgets = [
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
-      `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
+      `^(?!(?:highlighter|diffColours\\.worker|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
     raw: 3_820_000,
     gzip: 1_250_000,

@@ -14,11 +14,11 @@ import { DIFF_ROW, type DiffRow } from "../api/git";
 import { CodeRun } from "../chat/codeHighlight";
 import type { CodeLine } from "../chat/types";
 import { grammarFor } from "../languages";
-import { swallow } from "../state/toast";
 import { currentTheme, subscribeTheme } from "../themes/bus";
 import { codeThemeName } from "../themes/codeTheme";
+import { colourLines, finishedColours, type Colours } from "./diffColours";
 
-export const DIFF_TOKENIZE_MAX_LINES = 4000;
+export const DIFF_TOKENIZE_MAX_LINES = 10_000;
 const TOKENIZE_MAX_LINE_LENGTH = 1000;
 const LINE_HEIGHT = 19;
 const HIDDEN_HEIGHT = 4;
@@ -115,61 +115,65 @@ function useVisibleRows(host: RefObject<HTMLDivElement | null>, offsets: Float64
 
 const themeNameNow = () => codeThemeName(currentTheme());
 
+/** The lines each side of a diff had, so each is coloured as the file it came from. */
+function sidesOf(rows: readonly DiffRow[]): { before: string[]; after: string[]; deletes: boolean } {
+    const before: string[] = [];
+    const after: string[] = [];
+    let deletes = false;
+    for (const [kind, , text] of rows) {
+        if (kind === DIFF_ROW.hidden) continue;
+        if (kind !== DIFF_ROW.added) before.push(text);
+        if (kind !== DIFF_ROW.deleted) after.push(text);
+        if (kind === DIFF_ROW.deleted) deletes = true;
+    }
+    return { before, after, deletes };
+}
+
+function useColours(lines: readonly string[] | null, lang: string | null, themeName: string): Colours | null {
+    const [arrived, setArrived] = useState<{ lines: readonly string[]; colours: Colours } | null>(null);
+    const ready = useMemo(() => (lines && lang ? finishedColours(lines, lang, themeName) : undefined), [lines, lang, themeName]);
+
+    useEffect(() => {
+        if (!lines || !lang || ready) return;
+        return colourLines(lines, lang, currentTheme(), themeName, TOKENIZE_MAX_LINE_LENGTH, (colours) => setArrived({ lines, colours }));
+    }, [lines, lang, themeName, ready]);
+
+    if (!lines || !lang) return null;
+    return ready ?? (arrived?.lines === lines ? arrived.colours : null);
+}
+
 /**
  * Colours for each row. The two sides are read as the files they came from,
  * so a deleted line is coloured by the file it left and an unchanged line by
- * the file it is in now. Rows stay plain until the colours arrive.
+ * the file it is in now. Rows stay plain until their colours arrive.
  */
 function useRowTokens(rows: readonly DiffRow[], path: string): readonly (CodeLine | undefined)[] | null {
     const themeName = useSyncExternalStore(subscribeTheme, themeNameNow, themeNameNow);
     const lang = grammarFor(path);
-    const [tokens, setTokens] = useState<{ rows: readonly DiffRow[]; lines: (CodeLine | undefined)[] } | null>(null);
+    const sides = useMemo(() => {
+        const split = sidesOf(rows);
+        return split.before.length > DIFF_TOKENIZE_MAX_LINES || split.after.length > DIFF_TOKENIZE_MAX_LINES ? null : split;
+    }, [rows]);
+    const newSide = useColours(sides?.after ?? null, lang, themeName);
+    const oldSide = useColours(sides?.deletes ? sides.before : null, lang, themeName);
 
-    useEffect(() => {
-        const before: string[] = [];
-        const after: string[] = [];
-        let deletes = false;
-        for (const [kind, , text] of rows) {
-            if (kind === DIFF_ROW.hidden) continue;
-            if (kind !== DIFF_ROW.added) before.push(text);
-            if (kind !== DIFF_ROW.deleted) after.push(text);
-            if (kind === DIFF_ROW.deleted) deletes = true;
+    return useMemo(() => {
+        if (!newSide && !oldSide) return null;
+        const lines: (CodeLine | undefined)[] = [];
+        let old = 0;
+        let current = 0;
+        for (const [kind] of rows) {
+            if (kind === DIFF_ROW.deleted) lines.push(oldSide?.[old]);
+            else if (kind === DIFF_ROW.hidden) lines.push(undefined);
+            else lines.push(newSide?.[current]);
+            if (kind === DIFF_ROW.context || kind === DIFF_ROW.deleted) old++;
+            if (kind === DIFF_ROW.context || kind === DIFF_ROW.added) current++;
         }
-        if (!lang || before.length > DIFF_TOKENIZE_MAX_LINES || after.length > DIFF_TOKENIZE_MAX_LINES) return;
-        let stale = false;
-        const options = { maxLineLength: TOKENIZE_MAX_LINE_LENGTH, stale: () => stale };
-        const theme = currentTheme();
-        void import("../chat/shikiTokens")
-            .then((shiki) =>
-                Promise.all([
-                    shiki.tokenizeLines(after, lang, theme, themeName, options),
-                    deletes ? shiki.tokenizeLines(before, lang, theme, themeName, options) : null,
-                ]),
-            )
-            .then(([newSide, oldSide]) => {
-                if (stale || !newSide) return;
-                const lines: (CodeLine | undefined)[] = [];
-                let old = 0;
-                let current = 0;
-                for (const [kind] of rows) {
-                    if (kind === DIFF_ROW.deleted) lines.push(oldSide?.[old]);
-                    else if (kind === DIFF_ROW.hidden) lines.push(undefined);
-                    else lines.push(newSide[current]);
-                    if (kind === DIFF_ROW.context || kind === DIFF_ROW.deleted) old++;
-                    if (kind === DIFF_ROW.context || kind === DIFF_ROW.added) current++;
-                }
-                setTokens({ rows, lines });
-            })
-            .catch(swallow("colour a diff"));
-        return () => {
-            stale = true;
-        };
-    }, [rows, lang, themeName]);
-
-    return tokens?.rows === rows ? tokens.lines : null;
+        return lines;
+    }, [rows, newSide, oldSide]);
 }
 
-export function DiffView({
+export const DiffView = memo(function DiffView({
     rows,
     path,
     tinted,
@@ -228,7 +232,7 @@ export function DiffView({
             </div>
         </div>
     );
-}
+});
 
 const DiffLine = memo(function DiffLine({
     index,
