@@ -13,6 +13,7 @@ struct InCore(PluginHost);
 impl Plugins for InCore {
     fn call<'a>(&'a self, plugin: &'a str, method: &'a str, params: Value) -> PluginCall<'a> {
         Box::pin(async move {
+            self.0.read_disabled();
             self.0
                 .call(plugin, method, params)
                 .await

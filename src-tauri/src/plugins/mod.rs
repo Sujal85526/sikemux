@@ -5,7 +5,7 @@ mod in_core;
 pub use in_core::provide_to_core;
 
 use std::collections::{BTreeMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -44,7 +44,12 @@ pub struct PluginHost {
     spawner: Handle,
     /// Switched off in Settings: still built in, but nothing reaches them.
     disabled: RwLock<HashSet<String>>,
+    /// Where the switched-off list is kept, so the background core, which has
+    /// plugins of its own, leaves them alone too.
+    disabled_file: Option<PathBuf>,
 }
+
+const DISABLED_FILE: &str = "disabled.json";
 
 /// Every shell variable a built-in plugin reads.
 pub fn shell_variables() -> Vec<String> {
@@ -56,7 +61,10 @@ pub fn shell_variables() -> Vec<String> {
 
 impl PluginHost {
     pub fn with_builtins(data_root: &Path, sikemux: &Version) -> std::io::Result<Self> {
-        Self::new(data_root, sikemux, builtin::plugins(), CALL_TIMEOUT)
+        let mut host = Self::new(data_root, sikemux, builtin::plugins(), CALL_TIMEOUT)?;
+        host.disabled_file = Some(data_root.join(DISABLED_FILE));
+        host.read_disabled();
+        Ok(host)
     }
 
     fn new(
@@ -107,6 +115,7 @@ impl PluginHost {
             spawner: runtime.handle().clone(),
             runtime: Some(runtime),
             disabled: RwLock::default(),
+            disabled_file: None,
         })
     }
 
@@ -132,10 +141,40 @@ impl PluginHost {
     }
 
     pub fn set_disabled(&self, ids: Vec<String>) {
+        if let Some(file) = &self.disabled_file {
+            let written = serde_json::to_vec(&ids)
+                .map_err(std::io::Error::from)
+                .and_then(|bytes| {
+                    if let Some(folder) = file.parent() {
+                        std::fs::create_dir_all(folder)?;
+                    }
+                    sikemux_process::files::write_atomic(file, &bytes, false)
+                });
+            if let Err(error) = written {
+                eprintln!("the switched-off plugins were not saved: {error}");
+            }
+        }
+        self.keep_disabled(ids);
+    }
+
+    fn keep_disabled(&self, ids: Vec<String>) {
         *self
             .disabled
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = ids.into_iter().collect();
+    }
+
+    /// Takes up the switched-off list as last saved, which the app may have
+    /// changed since.
+    pub fn read_disabled(&self) {
+        let Some(file) = &self.disabled_file else {
+            return;
+        };
+        let ids = std::fs::read(file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Vec<String>>(&bytes).ok())
+            .unwrap_or_default();
+        self.keep_disabled(ids);
     }
 
     fn offers_agents_tools(&self, id: &str) -> bool {
