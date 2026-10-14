@@ -229,7 +229,7 @@ describe("agent rail", () => {
         render(<AgentRailBody />);
 
         await user.dblClick(await screen.findByRole("button", { name: "Fix terminal focus" }));
-        const field = screen.getByRole("textbox", { name: "Chat name" });
+        const field = screen.getByRole("textbox", { name: "Title" });
         await user.clear(field);
         await user.type(field, "Terminal focus bug{Enter}");
 
@@ -243,10 +243,10 @@ describe("agent rail", () => {
         render(<AgentRailBody />);
 
         await user.dblClick(await screen.findByRole("button", { name: "Fix terminal focus" }));
-        await user.type(screen.getByRole("textbox", { name: "Chat name" }), " draft{Escape}");
+        await user.type(screen.getByRole("textbox", { name: "Title" }), " draft{Escape}");
 
         expect(getState().agents["agent-open"].title).toBe("Fix terminal focus");
-        expect(screen.queryByRole("textbox", { name: "Chat name" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("textbox", { name: "Title" })).not.toBeInTheDocument();
     });
 
     it("opens the agent menu on right-click and renames from it", async () => {
@@ -259,7 +259,7 @@ describe("agent rail", () => {
         expect(screen.getByRole("menuitem", { name: /Copy Link/ })).toBeInTheDocument();
 
         await user.click(screen.getByRole("menuitem", { name: "Edit Title…" }));
-        expect(screen.getByRole("textbox", { name: "Chat name" })).toHaveValue("Fix terminal focus");
+        expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue("Fix terminal focus");
     });
 
     it("renames a recent chat in the provider's own session from the row's menu", async () => {
@@ -270,7 +270,7 @@ describe("agent rail", () => {
 
         await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /Fix terminal focus/ }) });
         await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
-        const field = screen.getByRole("textbox", { name: "Chat name" });
+        const field = screen.getByRole("textbox", { name: "Title" });
         await user.clear(field);
         await user.type(field, "Terminal focus bug{Enter}");
 

@@ -111,12 +111,12 @@ it("keeps Pi in its terminal, since it has no ACP mode", () => {
 it("renames the agent from its title on double-click", () => {
     render(<AgentSurface agent={agent} session={session} visible />);
     fireEvent.doubleClick(screen.getByText("Agent session"));
-    const field = screen.getByRole("textbox", { name: "Chat name" });
+    const field = screen.getByRole("textbox", { name: "Title" });
     fireEvent.change(field, { target: { value: "Parser rewrite" } });
     fireEvent.keyDown(field, { key: "Enter" });
 
     expect(mocks.renameAgent).toHaveBeenCalledWith("agent-1", "Parser rewrite");
-    expect(screen.queryByRole("textbox", { name: "Chat name" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Title" })).not.toBeInTheDocument();
 });
 
 it("types a delivered issue into a terminal agent as text", () => {
