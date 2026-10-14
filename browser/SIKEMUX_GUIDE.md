@@ -1007,7 +1007,9 @@ in a git worktree and branch of its own. Its task comes as a message from
 run the checks and commit on that branch. Do not push, open a pull request or
 merge: when your turn ends, Auto commits what is left, pushes, opens the pull
 request and merges it once its checks pass. So end your turn only when the
-work is done or you wait on an answer. Marking such a card done with
+work is done or you wait on an answer. If you start workers, Auto ships only
+once none of them is still working, so a turn that ends while they work does
+not ship half the change. Marking such a card done with
 `board_update` keeps it in progress until it lands. If its checks fail, a
 message from `Auto` asks you once to fix them.
 

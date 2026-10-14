@@ -427,7 +427,7 @@ fn task(card: &Card, tree: &git::Tree, settings: &Settings, ticket: Option<Strin
         Finish::Pr => "leaves it for the person to review and merge".to_owned(),
     };
     text.push_str(&format!(
-        "\n\nYou are in {} on branch {}, cut from {}.\n\n1. Plan first. Read what you need, then ask every question you have at once with ask, before you change anything. If you cannot go on without an answer, ask with blocked true and end your turn: the answer comes back to you. Otherwise say what you assume and go on.\n2. Do the work, and run the tests and checks that cover it.\n3. Commit it on {}, and put a short summary in the card's result with board_update.\n\nDo not push, open a pull request or merge. When your turn ends, Sikemux commits anything left, pushes the branch, opens the pull request and {landing}. So do not end your turn before the work is done, unless you are waiting on an answer.",
+        "\n\nYou are in {} on branch {}, cut from {}.\n\n1. Plan first. Read what you need, then ask every question you have at once with ask, before you change anything. If you cannot go on without an answer, ask with blocked true and end your turn: the answer comes back to you. Otherwise say what you assume and go on.\n2. Do the work, and run the tests and checks that cover it.\n3. Commit it on {}, and put a short summary in the card's result with board_update.\n\nDo not push, open a pull request or merge. When your turn ends, Sikemux commits anything left, pushes the branch, opens the pull request and {landing}. So do not end your turn before the work is done, unless you are waiting on an answer. If you start other agents to help, Sikemux ships only once none of them is still working.",
         tree.cwd.display(),
         tree.branch,
         tree.base,
@@ -535,6 +535,7 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: &Ending) {
         })
     };
     let Some((project, id, stage)) = found else {
+        worker_ended(core, agent_id);
         return;
     };
     let name = core
@@ -547,6 +548,7 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: &Ending) {
             if core.harness.questions.waits_on_answer(agent_id)
                 || core.harness.mailbox.has_waiting(agent_id)
                 || !stage.ships_on_turn_end()
+                || workers_busy(core, agent_id, agent_id)
             {
                 return;
             }
@@ -562,6 +564,60 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: &Ending) {
             _ => format!("{name} stopped running"),
         }),
     }
+}
+
+/// Whether the agent is in the middle of a turn.
+fn mid_turn(core: &Core, agent_id: &str) -> bool {
+    if let Some(chat) = core.chats.get(agent_id) {
+        return chat.turn_running();
+    }
+    core.agent_session(agent_id)
+        .and_then(|session| session.agent.as_ref().map(|agent| agent.busy()))
+        .unwrap_or(false)
+}
+
+/// Whether an agent `lead` started, or one that agent started, other than
+/// `but`, is still at work or has messages on the way to it.
+fn workers_busy(core: &Core, lead: &str, but: &str) -> bool {
+    core.running_agents().iter().any(|agent| {
+        agent != but
+            && core.names.leads(lead, agent)
+            && (mid_turn(core, agent) || core.harness.mailbox.has_waiting(agent))
+    })
+}
+
+/// A turn ended of an agent one of Auto's agents started. One that reports
+/// to nobody wakes nobody, so when its lead's run waits only on its workers,
+/// the run ships now.
+fn worker_ended(core: &Arc<Core>, agent_id: &str) {
+    if core.names.reports_to(agent_id).is_some() {
+        return;
+    }
+    let lead = core.names.team_of(agent_id);
+    if lead == agent_id {
+        return;
+    }
+    let found = {
+        let state = core.boards.lock();
+        state.boards.iter().find_map(|(project, board)| {
+            board.cards.iter().find_map(|card| {
+                let run = card.auto.as_ref()?;
+                (run.agent == lead && matches!(run.stage, Stage::Working | Stage::Fixing))
+                    .then(|| (project.clone(), card.id))
+            })
+        })
+    };
+    let Some((project, id)) = found else {
+        return;
+    };
+    if mid_turn(core, &lead)
+        || core.harness.questions.waits_on_answer(&lead)
+        || core.harness.mailbox.has_waiting(&lead)
+        || workers_busy(core, &lead, agent_id)
+    {
+        return;
+    }
+    finish::ship(core, project, id);
 }
 
 /// Whether the card is one of `agent`'s own runs, whose work ships when its
