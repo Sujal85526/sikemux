@@ -18,14 +18,17 @@ export function AgentRowTree({
     agentId,
     project,
     worktree,
+    runsOn = false,
 }: {
     agentId?: string;
     project?: { name: string; sessionId?: string };
     worktree?: AgentWorktree;
+    /** The tree's spine goes on past its last item, as the line of a team that continues below. */
+    runsOn?: boolean;
 }) {
     if (!project && !worktree) return null;
     return (
-        <div className="proj-children agent-tree">
+        <div className={`proj-children agent-tree${runsOn ? " runs-on" : ""}`}>
             {project && (
                 <TreeItem icon={<IconFolder size={12} />} className="agent-tree-project">
                     {project.sessionId ? (

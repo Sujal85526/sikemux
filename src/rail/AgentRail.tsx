@@ -29,6 +29,7 @@ import { AgentRowTree } from "./AgentRowTree";
 import { AllProjectsAgents } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
 import { ScopeTrack } from "./ScopeTrack";
+import { drawTeamLines, inTeams } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
@@ -216,6 +217,7 @@ export function AgentRailBody() {
      */
     useLayoutEffect(() => {
         const scroll = scrollRef.current;
+        if (scroll) drawTeamLines(scroll);
         const last = seen.current;
         const wraps = scroll ? [...scroll.querySelectorAll<HTMLElement>(".agent-row-wrap[data-agent-id]:not(.is-leaving)")] : [];
         const ids = new Set(wraps.map((w) => w.dataset.agentId ?? ""));
@@ -401,7 +403,7 @@ export function AgentRailBody() {
                 {scope === "project" && opens.length > 0 && (
                     <Panel variant="group" className="agent-group">
                         <PanelHeader label="Open" rule />
-                        {opens.map((a) => {
+                        {inTeams(opens).map(({ agent: a, link }) => {
                             const display = agentDisplayOf(
                                 { agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById },
                                 a.id,
@@ -413,7 +415,12 @@ export function AgentRailBody() {
                                 </span>
                             );
                             return (
-                                <div key={a.id} className="agent-row-wrap" data-agent-id={a.id} data-session={session.id} ref={leaveRow}>
+                                <div
+                                    key={a.id}
+                                    className={`agent-row-wrap${link === "head" ? " chain-head" : link ? ` chain${link === "last" ? " chain-last" : ""}` : ""}`}
+                                    data-agent-id={a.id}
+                                    data-session={session.id}
+                                    ref={leaveRow}>
                                     {renamingId === a.id ? (
                                         <div className={`agent-row${active ? " active" : ""}`}>
                                             {glyph}
@@ -450,7 +457,7 @@ export function AgentRailBody() {
                                             <IconClose size={11} />
                                         </button>
                                     </Tooltip>
-                                    <AgentRowTree agentId={a.id} worktree={a.worktree} />
+                                    <AgentRowTree agentId={a.id} worktree={a.worktree} runsOn={link === "head" || link === "member"} />
                                 </div>
                             );
                         })}
