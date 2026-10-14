@@ -909,15 +909,14 @@ export function hydrationAllowsPersistence(result: HydrationResult): boolean {
     return result === "empty" || result === "applied";
 }
 
-/**
- * Applies the saved workspace, with the agent accounts the core keeps. Accounts saved here before the core kept them
- * are taken up when the core has none (`null`) or could not be asked (`undefined`).
- */
+export function adoptAgentAccounts(book: AgentAccountBook): void {
+    const providerProfiles = normaliseProviderProfiles(book.profiles, []);
+    setState({ providerProfiles, selectedProviderProfileIds: normaliseProviderProfileSelection(book.selected, providerProfiles, {}) });
+}
+
+/** Applies the saved workspace, after the agent accounts the core keeps, which restoring its agents needs. */
 export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): HydrationResult {
-    if (accounts) {
-        const providerProfiles = normaliseProviderProfiles(accounts.profiles, []);
-        setState({ providerProfiles, selectedProviderProfileIds: normaliseProviderProfileSelection(accounts.selected, providerProfiles, {}) });
-    }
+    if (accounts) adoptAgentAccounts(accounts);
     if (!raw) return "empty";
     let decoded: unknown;
     try {
@@ -974,7 +973,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
     }
     const prefs = isRecord(decoded.prefs) ? decoded.prefs : {};
     const cur = getState();
-    const providerProfiles = accounts ? cur.providerProfiles : normaliseProviderProfiles(prefs.providerProfiles, cur.providerProfiles);
+    const providerProfiles = cur.providerProfiles;
     const restoreAgentTabs = typeof prefs.restoreAgentTabs === "boolean" ? prefs.restoreAgentTabs : true;
     const spaces = normaliseSpaces(prefs.spaces);
     // Before v8 an agent sat beside its session rather than in a window, and
@@ -1185,10 +1184,6 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         recentCommandKeys: Array.isArray(prefs.recentCommandKeys)
             ? prefs.recentCommandKeys.filter((value): value is string => typeof value === "string").slice(0, 20)
             : [],
-        providerProfiles,
-        selectedProviderProfileIds: accounts
-            ? cur.selectedProviderProfileIds
-            : normaliseProviderProfileSelection(prefs.selectedProviderProfileIds, providerProfiles, cur.selectedProviderProfileIds),
         // Every save wrote this boundary out, so an older snapshot cannot say
         // whether it was chosen or just inherited. Adopt today's default once.
         defaultAgentPermissionMode:
