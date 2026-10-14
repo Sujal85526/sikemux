@@ -143,7 +143,7 @@ pub(crate) fn read(
                 Cli::Codex => codex(&value, &mut items),
             }
             for (starts, item) in items {
-                push(&mut said, offset, starts, item);
+                push(&mut said, cli, offset, starts, item);
             }
         }
         offset += at as u64 + 1;
@@ -173,8 +173,9 @@ pub(crate) fn read(
 }
 
 /// Adds `item`, unless it repeats the one before it: a Codex rollout can
-/// carry the same message both as an event and as a finished item.
-fn push(said: &mut Vec<(u64, bool, Said)>, offset: u64, mut starts: bool, item: Said) {
+/// carry the same message both as an event and as a finished item. Claude
+/// writes nothing where a turn ends, so its next prompt ends the one before.
+fn push(said: &mut Vec<(u64, bool, Said)>, cli: Cli, offset: u64, mut starts: bool, item: Said) {
     if let Some((_, _, last)) = said.last() {
         let repeat = match (last, &item) {
             (Said::Asked(last), Said::Asked(text)) | (Said::Message(last), Said::Message(text)) => {
@@ -187,6 +188,10 @@ fn push(said: &mut Vec<(u64, bool, Said)>, offset: u64, mut starts: bool, item: 
         }
         if matches!(last, Said::TurnStarted) && matches!(item, Said::Asked(_)) {
             starts = false;
+        }
+        let open = !matches!(last, Said::TurnEnded { .. } | Said::Failed(_));
+        if cli == Cli::Claude && starts && open {
+            said.push((offset, false, Said::TurnEnded { cancelled: false }));
         }
     }
     said.push((offset, starts, item));
