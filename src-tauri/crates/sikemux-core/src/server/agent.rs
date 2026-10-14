@@ -18,6 +18,9 @@ use super::spawn::{self, Ending};
 use super::{now_ms, Core, CoreResult};
 
 const ACTIVITY_SETTLE: Duration = Duration::from_secs(2);
+/// How long an agent at rest must keep printing before that counts as a turn
+/// it began by itself rather than a redraw of its screen.
+const OUTPUT_MAKES_A_TURN: Duration = Duration::from_secs(5);
 const UNKNOWN: u8 = 0;
 const IDLE: u8 = 1;
 const WORKING: u8 = 2;
@@ -89,6 +92,9 @@ pub(crate) struct AgentActivity {
     revision: AtomicU64,
     last_detection_fingerprint: AtomicU64,
     last_detection_revision: AtomicU64,
+    last_output_ms: AtomicU64,
+    /// When the output an agent at rest has been printing without a pause began.
+    resting_output_since_ms: AtomicU64,
 }
 
 impl AgentActivity {
@@ -109,6 +115,8 @@ impl AgentActivity {
             revision: AtomicU64::new(0),
             last_detection_fingerprint: AtomicU64::new(0),
             last_detection_revision: AtomicU64::new(0),
+            last_output_ms: AtomicU64::new(0),
+            resting_output_since_ms: AtomicU64::new(0),
         })
     }
 
@@ -273,19 +281,33 @@ pub(crate) fn note_input(core: &Core, session: &Session, bytes: &[u8]) {
 }
 
 /// Startup banners and the first paint are output but not work. An agent
-/// stays ready until a submitted line arms it.
+/// stays ready until a submitted line arms it. Output from an agent at rest is
+/// a redraw, such as Claude's after each turn, unless it keeps going or its
+/// screen shows it at work.
 pub(crate) fn note_output(core: &Core, agent: &AgentActivity) {
-    if agent.kind.is_some() && agent.armed.load(Ordering::Acquire) {
-        agent.idle_confirmations.store(0, Ordering::Release);
-        agent.publish(
-            core,
-            WORKING,
-            "activity",
-            "medium",
-            "agent produced output",
-            None,
-        );
+    if agent.kind.is_none() || !agent.armed.load(Ordering::Acquire) {
+        return;
     }
+    agent.idle_confirmations.store(0, Ordering::Release);
+    let now = now_ms();
+    let previous = agent.last_output_ms.swap(now, Ordering::AcqRel);
+    if !agent.busy() {
+        if now.saturating_sub(previous) >= ACTIVITY_SETTLE.as_millis() as u64 {
+            agent.resting_output_since_ms.store(now, Ordering::Release);
+        }
+        let since = agent.resting_output_since_ms.load(Ordering::Acquire);
+        if now.saturating_sub(since) < OUTPUT_MAKES_A_TURN.as_millis() as u64 {
+            return;
+        }
+    }
+    agent.publish(
+        core,
+        WORKING,
+        "activity",
+        "medium",
+        "agent produced output",
+        None,
+    );
 }
 
 pub(crate) fn note_exit(core: &Core, agent: &AgentActivity, status: Option<&ExitStatus>) {
