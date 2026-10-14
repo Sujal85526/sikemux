@@ -14,7 +14,7 @@ import * as cmd from "../state/commands";
 import { reportError } from "../state/toast";
 import { useStore } from "../state/store";
 import { basename } from "../lib/paths";
-import { IconLink, IconRefresh } from "../ui/Icons";
+import { IconBoard, IconLink, IconRefresh } from "../ui/Icons";
 import { EmptyState } from "../ui/Panel";
 import { useCardDrag } from "../ui/kanbanDrag";
 import { Switch } from "../ui/Controls";
@@ -271,7 +271,9 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                 </header>
                 {cards.length === 0 ? (
                     <EmptyState
-                        message="No cards yet. Agents plan their work here with board_add, and you can add cards of your own."
+                        icon={<IconBoard size={14} />}
+                        title="No cards yet"
+                        message="Agents plan their work here with board_add, and you can add cards of your own."
                         action={{ label: "Add card", onClick: () => setSelected("new") }}
                     />
                 ) : shown.length === 0 ? (

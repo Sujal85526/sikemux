@@ -14,6 +14,28 @@
     overflow: hidden;
 }
 
+/* The pane's picture runs under the board, so everything read over it sits on the same frosted glass as the chat's header. */
+.board-pane .kanban-head,
+.board-pane .kanban > .empty-state,
+.board-band-head {
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--void) 62%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+}
+
+.board-pane .kanban-head {
+    margin: 10px 16px 6px;
+    padding: 10px 12px;
+    border-radius: var(--radius-3);
+}
+
+.board-pane .kanban > .empty-state {
+    margin: auto;
+    padding: var(--space-6);
+    border-radius: var(--radius-3);
+}
+
 .board-project {
     text-transform: none;
 }
@@ -33,7 +55,12 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 30px;
+    width: fit-content;
+    max-width: 100%;
+    height: 26px;
+    margin: 4px 0 8px;
+    padding: 0 10px;
+    border-radius: var(--radius-full);
     font-size: var(--text-xs);
     color: var(--text-secondary);
 }
