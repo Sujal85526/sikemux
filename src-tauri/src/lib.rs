@@ -28,6 +28,7 @@ mod git;
 mod grammars;
 mod harness;
 pub mod headless;
+mod inbox;
 mod login_item;
 mod lsp;
 mod markdown;
@@ -321,6 +322,7 @@ pub fn run() {
             share::share_call,
             agent_names::agent_name_call,
             agent_questions::agent_question_call,
+            inbox::inbox_call,
             agent_board::agent_board_call,
             remote::remote_answer_pairing,
             remote::remote_allow_devices,

@@ -39,6 +39,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "share_call",
     "agent_name_call",
     "agent_question_call",
+    "inbox_call",
     "agent_board_call",
     "remote_answer_pairing",
     "remote_allow_devices",

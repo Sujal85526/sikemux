@@ -239,6 +239,7 @@ impl PtyManager {
         client.register_window().await.map_err(core_error)?;
         crate::remote::connected(&settings.app, self.core_launch().as_ref(), &client).await;
         crate::agent_names::connected(&settings.app, &client).await;
+        crate::inbox::connected(&client).await;
         self.core_pid.store(client.core_pid(), Ordering::Release);
         if let Ok(mut current) = self.client.lock() {
             *current = Some(client.clone());

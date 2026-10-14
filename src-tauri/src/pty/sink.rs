@@ -8,6 +8,7 @@ use sikemux_pty::shell_protocol::PTY_SHELL_METADATA_EVENT;
 use sikemux_pty::task::TaskProcessExit;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::inbox::LastInbox;
 use crate::observability::{global_observability, Metadata, ScalarValue};
 
 use super::streams::StreamTable;
@@ -44,11 +45,16 @@ struct PtyExited {
 pub(super) struct AppSink {
     app: AppHandle,
     streams: Arc<StreamTable>,
+    inbox: LastInbox,
 }
 
 impl AppSink {
     pub(super) fn new(app: AppHandle, streams: Arc<StreamTable>) -> Self {
-        Self { app, streams }
+        Self {
+            app,
+            streams,
+            inbox: LastInbox::default(),
+        }
     }
 
     fn emit<S: serde::Serialize + Clone>(&self, event: &str, payload: S) {
@@ -177,8 +183,8 @@ impl EventSink for AppSink {
                 crate::harness::bring_to_front(&self.app);
                 self.emit("focus_agent", agent_id);
             }
-            Event::Attention { .. } | Event::AttentionCleared { .. } | Event::DeviceView { .. } => {
-            }
+            Event::DeviceView { view } => self.inbox.changed(&self.app, view.inbox),
+            Event::Attention { .. } | Event::AttentionCleared { .. } => {}
         }
     }
 
