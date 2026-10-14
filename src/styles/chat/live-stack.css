@@ -131,7 +131,8 @@
     white-space: nowrap;
 }
 
-.chat-workflow-cost + .chat-task-end {
+.chat-workflow-cost + .chat-task-end,
+.chat-task > .chat-workflow-cost + button {
     margin-left: 2px;
 }
 

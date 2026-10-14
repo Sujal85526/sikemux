@@ -43,6 +43,7 @@ export function BackgroundTasks({
                             <TaskIcon kind={kind} />
                             <span className="chat-task-name">{task.name}</span>
                             <span className="chat-task-detail">{taskDetail(task)}</span>
+                            {task.agents && task.agents.length > 0 && <span className="chat-workflow-cost">{workflowAgentCount(task.agents)}</span>}
                             {task.canStop && onStop && (
                                 <button
                                     type="button"
@@ -59,6 +60,11 @@ export function BackgroundTasks({
             ))}
         </>
     );
+}
+
+function workflowAgentCount(agents: AcpWorkflowAgent[]): string {
+    const finished = agents.filter((agent) => agent.state === "completed" || agent.state === "failed").length;
+    return `${finished}/${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
 }
 
 function WorkflowAgentRow({ agent }: { agent: AcpWorkflowAgent }) {
