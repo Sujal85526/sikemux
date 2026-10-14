@@ -1,10 +1,10 @@
 import { useMemo, useRef, type ReactNode } from "react";
 import { DiffEditor } from "./DiffEditor";
 import { FileReviewList } from "./FileReviewList";
-import { hasUnstaged, isStaged, type ChangeOwners, type GitFile } from "../api/git";
+import { hasUnstaged, isStaged, type GitFile } from "../api/git";
 import { joinPath } from "../lib/paths";
 import { gitFileBadges, gitStatusBadge, type GitStatusBadge } from "./gitFileStatus";
-import { ownedFile, type OwnedFile } from "./changeOwners";
+import { ownedFile, useChangeOwners, type OwnedFile } from "./changeOwners";
 
 const REVIEW_ROW_ESTIMATE = 250;
 const REVIEW_DOUBLE_ROW_ESTIMATE = 470;
@@ -33,8 +33,6 @@ export function MergeReview({
     onOpenFile,
     onSaved,
     fileActions,
-    owners,
-    stagedOwners,
 }: {
     repo: string;
     files: GitFile[];
@@ -43,11 +41,9 @@ export function MergeReview({
     onSaved: () => void;
     /** Buttons shown in a file's header while the pointer is on it. */
     fileActions?: (file: GitFile) => ReactNode;
-    /** Who wrote each changed line, against the index and against HEAD. */
-    owners?: ChangeOwners;
-    stagedOwners?: ChangeOwners;
 }) {
     const files = useStableFileList(incomingFiles);
+    const owners = useChangeOwners(repo, false);
     const byPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
     const paths = useMemo(() => files.map((file) => file.path), [files]);
     return (
@@ -77,7 +73,6 @@ export function MergeReview({
                     <MergeFileDiff
                         repo={repo}
                         file={file}
-                        stagedOwned={ownedFile(stagedOwners, path)}
                         owned={ownedFile(owners, path)}
                         editable={focused && hasUnstaged(file)}
                         onSaved={onSaved}
@@ -101,14 +96,12 @@ function GitStatusSymbol({ badge }: { badge: GitStatusBadge | null }) {
 function MergeFileDiff({
     repo,
     file,
-    stagedOwned,
     owned,
     editable,
     onSaved,
 }: {
     repo: string;
     file: GitFile;
-    stagedOwned: OwnedFile | undefined;
     owned: OwnedFile | undefined;
     editable: boolean;
     onSaved: () => void;
@@ -116,6 +109,7 @@ function MergeFileDiff({
     const path = file.path;
     const staged = isStaged(file);
     const unstaged = hasUnstaged(file);
+    const stagedOwners = useChangeOwners(repo, true, staged && unstaged);
     const indexBadge = gitStatusBadge(file.index, "staged");
     const worktreeBadge = gitStatusBadge(file.worktree, "unstaged");
 
@@ -128,7 +122,15 @@ function MergeFileDiff({
                             <GitStatusSymbol badge={indexBadge} />
                             <span>staged</span>
                         </div>
-                        <DiffEditor repo={repo} path={path} baseRev="HEAD" headRev=":index" editable={false} autoHeight owned={stagedOwned} />
+                        <DiffEditor
+                            repo={repo}
+                            path={path}
+                            baseRev="HEAD"
+                            headRev=":index"
+                            editable={false}
+                            autoHeight
+                            owned={ownedFile(stagedOwners, path)}
+                        />
                     </div>
                     <div className="merge-section">
                         <div className="merge-section-title">

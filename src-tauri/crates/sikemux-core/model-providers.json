@@ -1,28 +1,29 @@
 [
     {
         "id": "zai",
+        "modelsDev": "zai-coding-plan",
         "label": "Z.ai GLM Coding Plan",
         "kind": "plan",
         "signUpUrl": "https://z.ai/manage-apikey/apikey-list",
         "key": { "env": ["ZHIPU_API_KEY", "ZAI_API_KEY"], "check": "https://api.z.ai/api/coding/paas/v4/models" },
         "openai": "https://api.z.ai/api/coding/paas/v4",
         "anthropic": { "url": "https://api.z.ai/api/anthropic", "auth": "bearer" },
-        "model": "glm-5.3",
-        "agentModels": { "claude": "glm-5.3[1m]" }
+        "model": "glm-5.3"
     },
     {
         "id": "minimax",
+        "modelsDev": "minimax-coding-plan",
         "label": "MiniMax M Plan",
         "kind": "plan",
         "signUpUrl": "https://platform.minimax.io/console/plan",
         "key": { "env": ["MINIMAX_API_KEY"], "check": "https://api.minimax.io/v1/models" },
         "openai": "https://api.minimax.io/v1",
         "anthropic": { "url": "https://api.minimax.io/anthropic", "auth": "bearer" },
-        "model": "MiniMax-M3.1-Flash-Preview",
-        "agentModels": { "claude": "MiniMax-M3.1-Flash-Preview[1m]" }
+        "model": "MiniMax-M3.1-Flash-Preview"
     },
     {
         "id": "kimi-code",
+        "modelsDev": "kimi-code-plan-global",
         "label": "Kimi Code",
         "kind": "plan",
         "signUpUrl": "https://www.kimi.com/code/console",
@@ -33,6 +34,7 @@
     },
     {
         "id": "opencode-go",
+        "modelsDev": "opencode-go",
         "label": "OpenCode Go",
         "kind": "plan",
         "signUpUrl": "https://opencode.ai/console",
@@ -41,16 +43,18 @@
     },
     {
         "id": "synthetic",
+        "modelsDev": "synthetic",
         "label": "Synthetic",
         "kind": "plan",
         "signUpUrl": "https://dev.synthetic.new/docs/api/getting-started",
         "key": { "env": ["SYNTHETIC_API_KEY"], "check": "https://api.synthetic.new/v2/quotas" },
         "openai": "https://api.synthetic.new/openai/v1",
         "anthropic": { "url": "https://api.synthetic.new/anthropic", "auth": "bearer" },
-        "model": "syn:large:vision"
+        "model": "hf:zai-org/GLM-5.3"
     },
     {
         "id": "ollama-cloud",
+        "modelsDev": "ollama-cloud",
         "label": "Ollama Cloud",
         "kind": "plan",
         "signUpUrl": "https://ollama.com/settings/keys",
@@ -61,6 +65,7 @@
     },
     {
         "id": "openrouter",
+        "modelsDev": "openrouter",
         "label": "OpenRouter",
         "kind": "api",
         "signUpUrl": "https://openrouter.ai/settings/keys",
@@ -68,10 +73,12 @@
         "openai": "https://openrouter.ai/api/v1",
         "responses": true,
         "anthropic": { "url": "https://openrouter.ai/api", "auth": "bearer" },
-        "agentModels": { "claude": "~anthropic/claude-sonnet-latest[1m]", "codex": "~openai/gpt-sol-latest" }
+        "model": "~anthropic/claude-sonnet-latest",
+        "agentModels": { "codex": "~openai/gpt-sol-latest" }
     },
     {
         "id": "baseten",
+        "modelsDev": "baseten",
         "label": "Baseten",
         "kind": "api",
         "signUpUrl": "https://app.baseten.co/settings/api_keys",
@@ -80,6 +87,7 @@
     },
     {
         "id": "together",
+        "modelsDev": "togetherai",
         "label": "Together AI",
         "kind": "api",
         "signUpUrl": "https://api.together.ai/settings/api-keys",
@@ -89,6 +97,7 @@
     },
     {
         "id": "fireworks",
+        "modelsDev": "fireworks-ai",
         "label": "Fireworks",
         "kind": "api",
         "signUpUrl": "https://fireworks.ai/account/api-keys",
@@ -98,6 +107,7 @@
     },
     {
         "id": "groq",
+        "modelsDev": "groq",
         "label": "Groq",
         "kind": "api",
         "signUpUrl": "https://console.groq.com/keys",
@@ -107,6 +117,7 @@
     },
     {
         "id": "cerebras",
+        "modelsDev": "cerebras",
         "label": "Cerebras",
         "kind": "api",
         "signUpUrl": "https://cloud.cerebras.ai",
@@ -115,17 +126,18 @@
     },
     {
         "id": "deepseek",
+        "modelsDev": "deepseek",
         "label": "DeepSeek",
         "kind": "api",
         "signUpUrl": "https://platform.deepseek.com/api_keys",
         "key": { "env": ["DEEPSEEK_API_KEY"], "check": "https://api.deepseek.com/models" },
         "openai": "https://api.deepseek.com",
         "anthropic": { "url": "https://api.deepseek.com/anthropic", "auth": "x-api-key" },
-        "model": "deepseek-flash",
-        "agentModels": { "claude": "deepseek-flash[1m]" }
+        "model": "deepseek-flash"
     },
     {
         "id": "moonshot",
+        "modelsDev": "moonshotai",
         "label": "Moonshot AI",
         "kind": "api",
         "signUpUrl": "https://platform.moonshot.ai/console/api-keys",
@@ -135,6 +147,7 @@
     },
     {
         "id": "mistral",
+        "modelsDev": "mistral",
         "label": "Mistral",
         "kind": "api",
         "signUpUrl": "https://console.mistral.ai/api-keys",
@@ -144,6 +157,7 @@
     },
     {
         "id": "vercel",
+        "modelsDev": "vercel",
         "label": "Vercel AI Gateway",
         "kind": "api",
         "signUpUrl": "https://vercel.com/dashboard/ai-gateway/api-keys",
@@ -151,6 +165,7 @@
         "openai": "https://ai-gateway.vercel.sh/v1",
         "responses": true,
         "anthropic": { "url": "https://ai-gateway.vercel.sh", "auth": "bearer" },
+        "model": "anthropic/claude-sonnet-5.5",
         "agentModels": { "codex": "openai/gpt-6-astra" }
     },
     {

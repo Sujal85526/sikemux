@@ -1,14 +1,17 @@
 //! Where agents get models besides their makers' own accounts: pay-per-token
 //! APIs, coding plans and runners on this computer. The catalogue in
-//! `model-providers.json` holds every provider's facts; the keys the person
-//! connected stay in the Keychain and reach agents as they start.
+//! `model-providers.json` holds how each provider is reached, and models.dev
+//! what its models are; the keys the person connected stay in the Keychain
+//! and reach agents as they start.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
+
+use super::model_feed::{Feed, Snapshot};
 
 /// A development build keeps entries of its own, so it never spends or replaces the
 /// installed app's sign-in.
@@ -55,11 +58,14 @@ pub struct Provider {
     pub responses: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anthropic: Option<AnthropicApi>,
+    /// The provider's id on models.dev.
+    #[serde(default, skip_serializing)]
+    pub models_dev: Option<String>,
     /// The coding model the provider's own docs recommend, as its API names it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub model: Option<String>,
     /// The model an agent's own guide from the provider names, where it differs.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing)]
     pub agent_models: BTreeMap<String, String>,
 }
 
@@ -155,12 +161,47 @@ impl Helper {
 }
 
 impl Provider {
-    /// The model a chat of `agent` starts on here when none is picked.
-    pub fn coding_model(&self, agent: &str) -> Option<&str> {
-        self.agent_models
+    /// The model a chat of `agent` starts on here when none is picked: the
+    /// recommended one while models.dev lists it and the provider serves it,
+    /// else the newest that reasons and calls tools, else the first served.
+    /// `served` is what the provider listed, when it was asked. Claude Code
+    /// is told of a context of a million tokens by the `[1m]` suffix.
+    pub fn coding_model(
+        &self,
+        agent: &str,
+        feed: &Snapshot,
+        served: Option<&[String]>,
+    ) -> Option<String> {
+        let serves = |id: &str| served.is_none_or(|served| served.iter().any(|model| model == id));
+        let listed = self.models_dev.as_deref().and_then(|id| feed.models(id));
+        let recommended = self
+            .agent_models
             .get(agent)
             .or(self.model.as_ref())
-            .map(String::as_str)
+            .filter(|model| {
+                listed.is_some_and(|listed| listed.contains_key(*model)) && serves(model)
+            });
+        let newest = || {
+            listed?
+                .iter()
+                .filter(|(id, model)| {
+                    model.tool_call && model.reasoning && model.status.is_none() && serves(id)
+                })
+                .max_by(|(a_id, a), (b_id, b)| {
+                    (&a.release_date, a_id).cmp(&(&b.release_date, b_id))
+                })
+                .map(|(id, _)| id)
+        };
+        let model = recommended.or_else(newest).or_else(|| served?.first())?;
+        let long = agent == "claude"
+            && listed
+                .and_then(|listed| listed.get(model))
+                .is_some_and(|facts| facts.limit.context >= 1_000_000);
+        Some(if long {
+            format!("{model}[1m]")
+        } else {
+            model.clone()
+        })
     }
 
     pub fn routes(&self, agent: &str) -> bool {
@@ -179,7 +220,6 @@ impl Provider {
         }
         let mut env = BTreeMap::from([(ROUTED_ENV.to_owned(), self.id.clone())]);
         let token = key.unwrap_or(&self.id).to_owned();
-        let model = model.or(self.coding_model(agent));
         if agent == "claude" {
             let api = self.anthropic.as_ref()?;
             let (used, blanked) = match api.auth {
@@ -227,6 +267,7 @@ pub struct Providers {
     path: PathBuf,
     helper_path: PathBuf,
     state: Mutex<State>,
+    feed: Feed,
 }
 
 #[derive(Default)]
@@ -243,7 +284,19 @@ impl Providers {
             path: data_dir.join("model-providers.json"),
             helper_path: data_dir.join("model-helper.json"),
             state: Mutex::default(),
+            feed: Feed::new(data_dir),
         }
+    }
+
+    /// What models.dev says of every provider's models. Reads the disk, so it blocks.
+    pub fn feed(&self) -> Arc<Snapshot> {
+        self.feed.current()
+    }
+
+    /// The model a chat of `agent` starts on at the provider `id` when none
+    /// is picked. Reads the disk, so it blocks.
+    pub fn coding_model(&self, id: &str, agent: &str) -> Option<String> {
+        find(id)?.coding_model(agent, &self.feed(), None)
     }
 
     fn fresh(&self) -> MutexGuard<'_, State> {
@@ -358,6 +411,7 @@ impl Providers {
     /// What `agent` starts with: the keys it reads and, when `provider` is
     /// named, what points it there in place of its maker's account. Fails
     /// rather than let that account pay for a turn meant for the provider.
+    /// `model` is the one picked, or the provider's [`Providers::coding_model`].
     /// Reads the Keychain, so it blocks.
     pub fn wiring(
         &self,

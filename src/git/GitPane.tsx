@@ -145,7 +145,6 @@ function GitWorkbench({
     const commits = useMemo(() => (repo ? (overview.data?.log ?? []) : []), [repo, overview.data?.log]);
     const files = useMemo(() => status?.files ?? [], [status?.files]);
     const owners = useChangeOwners(repo, false, fetching && panel !== "branches");
-    const stagedOwners = useChangeOwners(repo, true, fetching && panel !== "branches" && files.some((file) => isStaged(file) && hasUnstaged(file)));
     const remotes = useMemo(() => (repo ? (remotesRes.data ?? []) : []), [repo, remotesRes.data]);
     const stashes = useMemo(() => (repo ? (stashesRes.data ?? []) : []), [repo, stashesRes.data]);
     const remoteBranches = useMemo(() => (repo && openRemote ? (remoteBranchesRes.data ?? []) : []), [repo, openRemote, remoteBranchesRes.data]);
@@ -1523,8 +1522,6 @@ function GitWorkbench({
                     onOpenFile={cmd.requestOpenFile}
                     onSaved={onReviewSaved}
                     fileActions={reviewActions}
-                    owners={owners}
-                    stagedOwners={stagedOwners}
                 />
             ) : latest ? (
                 <CommitReview

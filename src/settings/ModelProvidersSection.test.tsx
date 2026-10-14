@@ -25,6 +25,8 @@ beforeEach(() => {
             connected: false,
             agents: [],
             checks: {},
+            defaults: {},
+            facts: {},
         },
         {
             id: "baseten",
@@ -35,6 +37,8 @@ beforeEach(() => {
             connected: false,
             agents: [],
             checks: {},
+            defaults: {},
+            facts: {},
         },
     ];
     transport = new MemoryIpcTransport();

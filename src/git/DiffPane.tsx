@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { hasUnstaged, isStaged } from "../api/git";
 import * as cmd from "../state/commands";
 import { useCachedResourceEnabled } from "../state/resources";
 import { gitOverviewR } from "../state/resources.defs";
@@ -7,15 +6,12 @@ import { useStore } from "../state/store";
 import { reportError } from "../state/toast";
 import { CommitReview } from "./CommitReview";
 import { MergeReview } from "./MergeReview";
-import { useChangeOwners } from "./changeOwners";
 import { invalidateDiffContentCache } from "./DiffEditor";
 
 export function DiffPane({ cwd, visible }: { cwd: string; visible: boolean }) {
     const overview = useCachedResourceEnabled(visible && !!cwd, gitOverviewR, cwd || "");
     const target = useStore((s) => s.diffTarget[cwd] ?? null);
     const files = useMemo(() => overview.data?.status.files ?? [], [overview.data]);
-    const owners = useChangeOwners(cwd, false, visible && !!cwd);
-    const stagedOwners = useChangeOwners(cwd, true, visible && files.some((file) => isStaged(file) && hasUnstaged(file)));
 
     if (!cwd) return <div className="diff-pane-empty">open a project to review changes</div>;
     if (overview.error) return <div className="diff-pane-empty error">{overview.error}</div>;
@@ -45,8 +41,6 @@ export function DiffPane({ cwd, visible }: { cwd: string; visible: boolean }) {
                 repo={cwd}
                 files={files}
                 focusPath={focus}
-                owners={owners}
-                stagedOwners={stagedOwners}
                 onOpenFile={(abs) => cmd.requestOpenFile(abs)}
                 onSaved={() => {
                     invalidateDiffContentCache(cwd);

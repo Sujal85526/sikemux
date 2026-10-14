@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::agent_accounts::status::{self, AgentStatus};
 use crate::agent_accounts::Book;
 use crate::agent_catalog::AGENTS;
-use crate::launch::providers::{self, Helper, Providers, Wiring, ROUTED_ENV};
+use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
 use crate::launch::{skills, AgentSpec};
 use crate::protocol::{
     Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, Event, LauncherInfo,
@@ -320,10 +320,9 @@ impl Workspaces {
     ) -> Result<ChatLaunch, String> {
         let agent = &launcher.agent;
         let model = model.or_else(|| {
-            provider
-                .and_then(providers::find)
-                .and_then(|provider| provider.coding_model(&agent.provider))
-                .map(str::to_owned)
+            self.providers
+                .as_ref()?
+                .coding_model(provider?, &agent.provider)
         });
         let providers = match &self.providers {
             Some(providers) => providers.wiring(&agent.provider, provider, model.as_deref())?,

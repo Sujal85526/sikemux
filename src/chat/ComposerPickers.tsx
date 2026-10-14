@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AgentIcon, IconChevron } from "../ui/Icons";
 import type { ChatAgentType } from "../agents/agentLaunch";
 import { agentLabel } from "../agents/catalog";
-import { checkOf, checkWords, codingModel, modelProvidersApi, type ModelProvider } from "../api/modelProviders";
+import { modelProvidersApi, modelWords, type ModelProvider, type ServedModels } from "../api/modelProviders";
 import { swallow } from "../state/toast";
 import type { Agent, ProviderProfile } from "../state/types";
 import PickerMenu, { type AgentChoicesProps, type Choice } from "./PickerMenu";
@@ -111,7 +111,7 @@ function Picker({
 /** A connected provider this agent can run on, with the models it serves. */
 interface Route {
     provider: ModelProvider;
-    models: string[];
+    served: ServedModels;
 }
 
 /** The providers `agent` can run on, read when asked, since local runners are
@@ -127,11 +127,13 @@ function useRoutes(agent: Agent): [Route[], () => void] {
                         .filter((provider) => provider.connected && provider.agents.includes(agent.type))
                         .map(async (provider) => ({
                             provider,
-                            models: provider.models ?? (await modelProvidersApi.models(provider.id).catch(() => [])),
+                            served: provider.models
+                                ? { ...provider, models: provider.models }
+                                : await modelProvidersApi.models(provider.id).catch(() => ({ ...provider, models: [] })),
                         })),
                 ),
             )
-            .then((loaded) => setRoutes(loaded.filter((route) => route.models.length > 0 || route.provider.id === agent.modelProvider)))
+            .then((loaded) => setRoutes(loaded.filter((route) => route.served.models.length > 0 || route.provider.id === agent.modelProvider)))
             .catch(swallow("model providers"));
     }, [agent.type, agent.modelProvider]);
     useEffect(() => {
@@ -144,10 +146,8 @@ function payerTitle(provider: ModelProvider): string {
     return provider.kind === "local" ? `Runs on ${provider.label} on this computer` : `Paid with your ${provider.label} key`;
 }
 
-/** A served model's name, with whether it calls tools the way agents need once checked. */
-function servedLabel(provider: ModelProvider, model: string): string {
-    const check = checkOf(provider, model);
-    return check ? `${model} · ${checkWords(check)}` : model;
+function servedLabel(route: Route, model: string): string {
+    return [model, ...modelWords(route.served, route.provider.checks, model)].join(" · ");
 }
 
 /** Who pays for the chat's turns: the agent's own account, or a provider the
@@ -228,8 +228,8 @@ export function ComposerPickers({
                 const current = currentLabel(config) ?? (model ? agent.model || "Model" : agent.effort || "Effort");
                 const label = model && route ? `${current} · ${route.provider.label}` : current;
                 const listed = config?.options || [];
-                const served = model ? (route?.models ?? []).filter((value) => !listed.some((option) => option.value === value)) : [];
-                const options = [...listed, ...served.map((value) => ({ value, label: route ? servedLabel(route.provider, value) : value }))];
+                const served = model ? (route?.served.models ?? []).filter((value) => !listed.some((option) => option.value === value)) : [];
+                const options = [...listed, ...served.map((value) => ({ value, label: route ? servedLabel(route, value) : value }))];
                 return (
                     <Picker
                         key={id}
@@ -247,12 +247,7 @@ export function ComposerPickers({
                                     profile={profile}
                                     routes={routes}
                                     onPick={(next) =>
-                                        relaunch(
-                                            agent.type as ChatAgentType,
-                                            profile?.id,
-                                            next && codingModel(next.provider, agent.type, next.models),
-                                            next?.provider.id,
-                                        )
+                                        relaunch(agent.type as ChatAgentType, profile?.id, next?.served.defaults[agent.type], next?.provider.id)
                                     }
                                 />
                             ) : undefined

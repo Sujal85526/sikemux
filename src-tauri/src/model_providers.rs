@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
+use sikemux_core::launch::model_feed::Snapshot;
 use sikemux_core::launch::providers::{
     self, Helper, KeySpec, Kind, Provider, Providers, Wiring, KEY_SERVICE, ROUTED_AGENTS,
 };
@@ -44,6 +45,86 @@ pub struct ModelProvider {
     agents: Vec<&'static str>,
     /// Whether each model checked so far calls tools the way agents need.
     checks: BTreeMap<String, Check>,
+    #[serde(flatten)]
+    choices: Choices,
+}
+
+/// The models a provider serves, with what it starts chats on.
+#[derive(Serialize)]
+pub struct ServedModels {
+    models: Vec<String>,
+    #[serde(flatten)]
+    choices: Choices,
+}
+
+#[derive(Serialize)]
+pub struct Choices {
+    /// The coding model it starts helpers and checks on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    /// The model each agent's chat starts on.
+    defaults: BTreeMap<&'static str, String>,
+    /// What models.dev says of these models, by API name.
+    facts: BTreeMap<String, ModelFacts>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelFacts {
+    context: u64,
+    /// USD per million tokens; a plan's models cost nothing more.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output: Option<f64>,
+    /// Only a hint: a check is the final word.
+    tool_call: bool,
+}
+
+/// Claude Code's own suffix for a long context, which the APIs do not take.
+fn api_name(model: &str) -> &str {
+    model.strip_suffix("[1m]").unwrap_or(model)
+}
+
+fn choices(provider: &Provider, feed: &Snapshot, served: Option<&[String]>) -> Choices {
+    let model = provider.coding_model("", feed, served);
+    let defaults: BTreeMap<_, _> = ROUTED_AGENTS
+        .iter()
+        .filter(|agent| provider.routes(agent))
+        .filter_map(|agent| Some((*agent, provider.coding_model(agent, feed, served)?)))
+        .collect();
+    let listed = provider
+        .models_dev
+        .as_deref()
+        .and_then(|id| feed.models(id));
+    let named = served
+        .map(|served| served.iter().map(String::as_str).collect::<Vec<_>>())
+        .unwrap_or_else(|| {
+            model
+                .iter()
+                .chain(defaults.values())
+                .map(|model| api_name(model))
+                .collect()
+        });
+    let facts = named
+        .into_iter()
+        .filter_map(|name| {
+            let model = listed?.get(name)?;
+            let cost = model.cost.unwrap_or_default();
+            let facts = ModelFacts {
+                context: model.limit.context,
+                input: cost.input,
+                output: cost.output,
+                tool_call: model.tool_call,
+            };
+            Some((name.to_owned(), facts))
+        })
+        .collect();
+    Choices {
+        model,
+        defaults,
+        facts,
+    }
 }
 
 static STORE: OnceLock<Providers> = OnceLock::new();
@@ -89,16 +170,14 @@ pub async fn wiring(
     provider: Option<String>,
     model: Option<String>,
 ) -> Result<Wiring, String> {
-    let routed = provider.as_deref().and_then(providers::find);
-    let first = routed.and_then(|routed| {
-        model
-            .as_deref()
-            .or(routed.coding_model(agent))
-            .map(|model| (routed, model.to_owned()))
-    });
     let agent = agent.to_owned();
-    let wiring = blocking(move |store| store.wiring(&agent, provider.as_deref(), model.as_deref()))
-        .await??;
+    let (wiring, first) = blocking(move |store| {
+        let model = model.or_else(|| store.coding_model(provider.as_deref()?, &agent));
+        let wiring = store.wiring(&agent, provider.as_deref(), model.as_deref())?;
+        let routed = provider.as_deref().and_then(providers::find);
+        Ok::<_, String>((wiring, routed.zip(model)))
+    })
+    .await??;
     if let Some((routed, model)) = first {
         model_checks::first_use(routed, &model);
     }
@@ -180,9 +259,11 @@ async fn listed_models(
 /// Local runners are asked what they have on every call, so only when settings ask.
 #[tauri::command]
 pub async fn model_providers() -> Vec<ModelProvider> {
-    let saved = store().map(Providers::connected).unwrap_or_default();
+    let (saved, feed) = blocking(|store| (store.connected(), store.feed()))
+        .await
+        .unwrap_or_default();
     futures::future::join_all(providers::catalogue().iter().map(|provider| {
-        let saved = &saved;
+        let (saved, feed) = (&saved, &feed);
         async move {
             let models = match provider.kind {
                 Kind::Local => listed_models(provider, None, RUNNER_TIMEOUT).await,
@@ -191,6 +272,7 @@ pub async fn model_providers() -> Vec<ModelProvider> {
             ModelProvider {
                 provider,
                 connected: models.is_some() || saved.contains(&provider.id),
+                choices: choices(provider, feed, models.as_deref()),
                 models,
                 agents: ROUTED_AGENTS
                     .iter()
@@ -206,14 +288,17 @@ pub async fn model_providers() -> Vec<ModelProvider> {
 
 /// The models a connected provider serves, read with its key.
 #[tauri::command]
-pub async fn model_provider_models(id: String) -> Result<Vec<String>, String> {
+pub async fn model_provider_models(id: String) -> Result<ServedModels, String> {
     let (provider, _) = keyed(&id)?;
-    let key = blocking(move |store| store.key(&id))
-        .await?
-        .ok_or_else(|| format!("Connect {} first", provider.label))?;
-    listed_models(provider, Some(&key), CHECK_TIMEOUT)
+    let (key, feed) = blocking(move |store| (store.key(&id), store.feed())).await?;
+    let key = key.ok_or_else(|| format!("Connect {} first", provider.label))?;
+    let models = listed_models(provider, Some(&key), CHECK_TIMEOUT)
         .await
-        .ok_or_else(|| format!("{} did not list its models", provider.label))
+        .ok_or_else(|| format!("{} did not list its models", provider.label))?;
+    Ok(ServedModels {
+        choices: choices(provider, &feed, Some(&models)),
+        models,
+    })
 }
 
 /// Asks the provider whether `model` calls tools the way agents need, now.

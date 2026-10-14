@@ -3,6 +3,7 @@
 //! core, is built here.
 
 pub mod discovery;
+pub mod model_feed;
 pub mod providers;
 pub mod skills;
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { errorText } from "../lib/format";
-import { checkWords, codingModel, modelProvidersApi, type ModelHelper, type ModelProvider, type ModelProviderKind } from "../api/modelProviders";
+import { checkWords, modelProvidersApi, modelWords, type ModelHelper, type ModelProvider, type ModelProviderKind } from "../api/modelProviders";
 import { portsApi } from "../api/ports";
 import { CHAT_AGENT_TYPES } from "../agents/agentLaunch";
 import { agentLabel } from "../agents/catalog";
@@ -30,12 +30,13 @@ function chatsOn(provider: ModelProvider): string {
 /** The model a check asks about: the provider's coding model, else the first a local runner has. */
 const checkedModel = (provider: ModelProvider) => provider.model ?? provider.models?.[0];
 
-/** Each model checked on the provider, and whether it calls tools the way agents need. */
-function CheckedModels({ provider }: { provider: ModelProvider }) {
+/** The model it starts on with what models.dev says of it, and each model checked so far. */
+function ModelLines({ provider }: { provider: ModelProvider }) {
     const checked = Object.entries(provider.checks);
-    if (!checked.length) return null;
+    if (!provider.model && !checked.length) return null;
     return (
         <span className="model-provider-checks">
+            {provider.model && <span>Starts on {[provider.model, ...modelWords(provider, {}, provider.model)].join(" · ")}</span>}
             {checked.map(([model, check]) => (
                 <span key={model} title={check.detail} className={check.works ? undefined : "model-provider-failure"}>
                     {model} {checkWords(check)}, {new Date(check.at).toLocaleDateString()}
@@ -124,7 +125,7 @@ export function ModelProvidersSection() {
                     ) : provider.connected ? (
                         <>
                             {`Connected. Agents started from now on can use it. ${chatsOn(provider)}`.trim()}
-                            <CheckedModels provider={provider} />
+                            <ModelLines provider={provider} />
                         </>
                     ) : undefined
                 }>
@@ -225,7 +226,7 @@ function RunnerState({ provider }: { provider: ModelProvider }) {
     return (
         <>
             Running with <span className="model-provider-models">{models.join(", ")}</span>. {chatsOn(provider)}
-            <CheckedModels provider={provider} />
+            <ModelLines provider={provider} />
         </>
     );
 }
@@ -278,7 +279,7 @@ function HelpersSection({ providers }: { providers: ModelProvider[] }) {
                                 className="settings-input mono"
                                 spellCheck={false}
                                 aria-label="Helper model"
-                                placeholder={(route && codingModel(route, helper.agent)) ?? "The agent's own"}
+                                placeholder={route?.defaults[helper.agent] ?? "The agent's own"}
                                 value={draft ?? helper.model ?? ""}
                                 onChange={(event) => setDraft(event.target.value)}
                                 onBlur={() => {
