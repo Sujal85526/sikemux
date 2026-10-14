@@ -7,7 +7,7 @@ import { emit } from "../bus";
 import { getState, mutate, setState, type StoreState } from "../store";
 import { deskEditorId } from "../desks";
 import { notify, reportError } from "../toast";
-import { confirmDialog } from "../dialog";
+import { choiceDialog, confirmDialog } from "../dialog";
 import { editorPaneOf, projectSessionId } from "../selectors";
 import { isAgentBusy } from "../agentStatus";
 import { collectPanes, makePane, newId } from "../layout";
@@ -205,6 +205,48 @@ export function guardCloseAgents(agentIds: readonly string[], title: string, pro
         title,
         proceed,
     );
+}
+
+/** The open agents these agents started, and the ones those started, leaving out the agents themselves. */
+function workersOf(agentIds: readonly string[]): string[] {
+    const agents = Object.values(getState().agents);
+    const team = new Set(agentIds);
+    const workers: string[] = [];
+    for (let found = true; found;) {
+        found = false;
+        for (const agent of agents) {
+            if (!agent.lead || !team.has(agent.lead) || team.has(agent.id)) continue;
+            team.add(agent.id);
+            workers.push(agent.id);
+            found = true;
+        }
+    }
+    return workers;
+}
+
+/** Closing an agent that started others asks whether they stop with it or keep running on their own. */
+export function guardLeadWorkers(agentIds: readonly string[], proceed: (stop: readonly string[]) => void): void {
+    const workers = workersOf(agentIds);
+    if (workers.length === 0) {
+        proceed([]);
+        return;
+    }
+    const agents = getState().agents;
+    const label = (id: string) => agents[id]?.name ?? agents[id]?.title ?? "agent";
+    const leads = agentIds.filter((id) => workers.some((worker) => agents[worker]?.lead === id)).map(label);
+    const shown = workers.slice(0, 3).map(label);
+    if (workers.length > 3) shown.push(`${workers.length - 3} more`);
+    const listed = shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0];
+    const whose = leads.length === 1 ? `${leads[0]}'s agents` : "their agents";
+    void choiceDialog({
+        title: `Stop ${whose} too?`,
+        body: `${listed} ${workers.length === 1 ? "was" : "were"} started by ${leads.join(" and ")}. Stop ${workers.length === 1 ? "it" : "them"}, or keep ${workers.length === 1 ? "it" : "them"} running on ${workers.length === 1 ? "its" : "their"} own.`,
+        otherLabel: workers.length === 1 ? "Keep it" : "Keep them",
+        confirmLabel: workers.length === 1 ? "Stop it" : "Stop them",
+        destructive: true,
+    }).then((choice) => {
+        if (choice) proceed(choice === "confirm" ? workers : []);
+    });
 }
 
 /** Closing whatever holds these agents stops them, so it asks first. */

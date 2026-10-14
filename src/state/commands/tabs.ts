@@ -3,7 +3,17 @@ import { pluginDocuments } from "../../plugins/documents";
 import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { invalidate } from "../resources";
 import { getState, mutate } from "../store";
-import { agentPaneId, editorPaneOf, nextInCycle, ownerSessionId, selectTabRefs, stripOrder, tabRefKey, type TabSource } from "../selectors";
+import {
+    agentPaneId,
+    agentWindowId,
+    editorPaneOf,
+    nextInCycle,
+    ownerSessionId,
+    selectTabRefs,
+    stripOrder,
+    tabRefKey,
+    type TabSource,
+} from "../selectors";
 import { collectPanes, cloneLayout, newId } from "../layout";
 import type { Window, WindowRole, TabRef } from "../types";
 import { setEditorView } from "./editor";
@@ -13,6 +23,7 @@ import {
     dirtyPathsForWindow,
     guardCloseAgents,
     guardDiscardDirty,
+    guardLeadWorkers,
     makeWindow,
     pruneWindowViews,
     withActiveSession,
@@ -162,13 +173,21 @@ export function closeWindowsById(ids: readonly string[], askToStop = true): void
     const agentIds = closing.flatMap((win) => (win.role === "agent" ? (agentPaneId(win) ?? []) : []));
     const title =
         closing.length === 1 && agentIds.length === 1 ? `Close ${st.agents[agentIds[0]]?.title ?? "agent"}?` : `Close ${closing.length} tabs?`;
-    const close = () =>
+    const close = (workers: readonly string[] = []) =>
         guardDiscardDirty(
             closing.flatMap((win) => dirtyPathsForWindow(getState(), win)),
             closing.length === 1 ? "close window" : "close windows",
-            () => closing.forEach((win) => closeWindowNow(win.id)),
+            () => {
+                closing.forEach((win) => closeWindowNow(win.id));
+                const state = getState();
+                if (workers.length > 0)
+                    closeWindowsById(
+                        workers.flatMap((id) => agentWindowId(state, id) ?? []),
+                        false,
+                    );
+            },
         );
-    if (askToStop) guardCloseAgents(agentIds, title, close);
+    if (askToStop) guardCloseAgents(agentIds, title, () => guardLeadWorkers(agentIds, close));
     else close();
 }
 
