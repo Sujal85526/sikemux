@@ -207,25 +207,66 @@ async fn hand_task(core: &Arc<Core>, started: Started, prompt: String) {
     .await;
 }
 
+/// How a worker's turn, or the worker, came to an end.
+pub(crate) enum Ending {
+    Finished,
+    Stopped,
+    Failed(String),
+    /// The chat ended, `mid_turn` or while the worker was idle.
+    Gone {
+        reason: Option<String>,
+        mid_turn: bool,
+    },
+}
+
 /// Sends a worker's lead how the worker's turn ended.
-pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, cancelled: bool) {
+pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: Ending) {
     let Some(lead) = core.names.reports_to(agent_id) else {
         return;
     };
     let answer = core
         .chats
         .get(agent_id)
-        .and_then(|chat| chat.feed.last_answer());
-    let text = match (answer, cancelled) {
-        (Some(answer), false) => {
-            format!("Finished its turn. Its final answer:\n\n{}", cut(&answer))
-        }
-        (Some(answer), true) => format!(
-            "Was stopped before it finished its turn. What it wrote last:\n\n{}",
-            cut(&answer)
+        .and_then(|chat| chat.feed.last_answer())
+        .map(|answer| cut(&answer));
+    let because = |reason: Option<String>| match reason.filter(|reason| !reason.trim().is_empty()) {
+        Some(reason) => format!(": {reason}"),
+        None => ".".to_owned(),
+    };
+    let (what, last) = match ending {
+        Ending::Finished => match answer {
+            Some(answer) => (
+                format!("Finished its turn. Its final answer:\n\n{answer}"),
+                None,
+            ),
+            None => (
+                "Finished its turn without writing an answer.".to_owned(),
+                None,
+            ),
+        },
+        Ending::Stopped => (
+            "Was stopped before it finished its turn.".to_owned(),
+            answer,
         ),
-        (None, false) => "Finished its turn without writing an answer.".to_owned(),
-        (None, true) => "Was stopped before it finished its turn.".to_owned(),
+        Ending::Failed(reason) => (format!("Its turn failed{}", because(Some(reason))), answer),
+        Ending::Gone {
+            reason,
+            mid_turn: true,
+        } => (
+            format!(
+                "Stopped running before it finished its turn{}",
+                because(reason)
+            ),
+            answer,
+        ),
+        Ending::Gone {
+            reason,
+            mid_turn: false,
+        } => (format!("Stopped running{}", because(reason)), None),
+    };
+    let text = match last {
+        Some(last) => format!("{what}\n\nWhat it wrote last:\n\n{last}"),
+        None => what,
     };
     let (core, worker) = (core.clone(), agent_id.to_owned());
     tokio::spawn(async move { messages::report(&core, worker, lead, text).await });

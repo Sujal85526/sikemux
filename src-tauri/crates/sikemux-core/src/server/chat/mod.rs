@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::acp::{bounded_text, current_choice, native as acp_native, permission};
+use crate::acp::{bounded_text, current_choice, native as acp_native, permission, SessionEnd};
 use crate::protocol::{
     Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatEventKind, ChatInfo,
     ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId, Response,
@@ -27,6 +27,7 @@ use crate::protocol::{
 use super::activity::Activity;
 use super::connection::{ClientConn, ClientId};
 use super::remote::unix_ms;
+use super::spawn::Ending;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, FeedState, Standing};
 use native::Begin;
@@ -184,6 +185,11 @@ pub(crate) struct Chat {
     /// The chat is letting go of its agent, so the person's answers wait for
     /// the core that takes it over.
     releasing: AtomicBool,
+    /// A turn has started that the agent's lead has not yet heard the end of.
+    unreported: AtomicBool,
+    /// Why the turn in progress went wrong, for the lead when the chat ends
+    /// before the turn does.
+    failure: Mutex<Option<String>>,
 }
 
 impl Chat {
@@ -214,6 +220,8 @@ impl Chat {
         if kind == ChatEventKind::TurnStarted {
             self.turned.store(true, Ordering::Release);
             self.held.store(false, Ordering::Release);
+            self.unreported.store(true, Ordering::Release);
+            self.set_failure(None);
         }
         if let Some(core) = self.core.upgrade() {
             let activity = match kind {
@@ -237,15 +245,17 @@ impl Chat {
                 _ => None,
             };
             let ended = match &activity {
-                Some(Activity::Finished { cancelled }) => Some(*cancelled),
+                Some(Activity::Finished { cancelled: false }) => Some(Ending::Finished),
+                Some(Activity::Finished { cancelled: true }) => Some(Ending::Stopped),
+                Some(Activity::Problem(message)) => self.turn_failed(message),
                 _ => None,
             };
             if let Some(activity) = activity {
                 core.note_activity(self.agent_id(), activity);
             }
-            if let Some(cancelled) = ended {
+            if let Some(ending) = ended {
                 self.feed.emit(kind, payload);
-                super::spawn::turn_ended(&core, self.agent_id(), cancelled);
+                self.report_turn(&core, ending);
                 return;
             }
         }
@@ -281,8 +291,50 @@ impl Chat {
                 return;
             }
             core.note_activity(&agent_id, Activity::Finished { cancelled: false });
-            super::spawn::turn_ended(&core, &agent_id, false);
+            chat.report_turn(&core, Ending::Finished);
         });
+    }
+
+    /// How a turn ends when an error arrives: failed, once nothing is at work
+    /// on it any more. An error mid-turn is kept for when the chat ends first.
+    fn turn_failed(&self, message: &str) -> Option<Ending> {
+        if !self.unreported.load(Ordering::Acquire) {
+            return None;
+        }
+        if self.turn_running() || self.held.load(Ordering::Acquire) {
+            self.set_failure(Some(message.to_owned()));
+            return None;
+        }
+        Some(Ending::Failed(message.to_owned()))
+    }
+
+    fn set_failure(&self, failure: Option<String>) {
+        if let Ok(mut slot) = self.failure.lock() {
+            *slot = failure;
+        }
+    }
+
+    /// Tells the agent's lead how its turn ended, once per turn.
+    fn report_turn(&self, core: &Arc<Core>, ending: Ending) {
+        if self.unreported.swap(false, Ordering::AcqRel) {
+            super::spawn::turn_ended(core, self.agent_id(), ending);
+        }
+    }
+
+    /// Tells the agent's lead the chat has ended, when that cut a turn short
+    /// or the agent went away by itself after it had started.
+    fn report_end(&self, core: &Arc<Core>, result: &Result<SessionEnd, String>) {
+        let mid_turn = self.unreported.swap(false, Ordering::AcqRel);
+        let by_itself = !matches!(result, Ok(SessionEnd::Requested));
+        if !mid_turn && !(by_itself && self.is_ready()) {
+            return;
+        }
+        let reason = match result {
+            Err(error) => Some(error.clone()),
+            Ok(SessionEnd::Requested) => None,
+            Ok(_) => self.failure.lock().ok().and_then(|mut slot| slot.take()),
+        };
+        super::spawn::turn_ended(core, self.agent_id(), Ending::Gone { reason, mid_turn });
     }
 
     /// The agent began work nobody here asked for, such as answering a
@@ -1026,6 +1078,8 @@ impl Chats {
             approving: AtomicBool::new(flags.approving),
             at_rest: AtomicBool::new(false),
             releasing: AtomicBool::new(false),
+            unreported: AtomicBool::new(flags.running || flags.unprompted || flags.held),
+            failure: Mutex::new(None),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1127,6 +1181,7 @@ fn launch(
             }
         };
         ending.feed.close();
+        ending.report_end(&owner, &result);
         let started = ending.is_ready();
         ending.emit(
             ChatEventKind::Status,
