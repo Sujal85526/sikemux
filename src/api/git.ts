@@ -63,6 +63,8 @@ export interface GitCommit {
     subject: string;
     refs: string[];
     unpushed: boolean;
+    /** The agents its trailers say wrote it. */
+    agents?: string[];
 }
 
 export interface GitCompare {
@@ -117,6 +119,38 @@ export interface BlameCommit {
 export type DiffRow = [kind: 0 | 1 | 2, line: number, text: string] | [kind: 3, hidden: number, text: ""];
 
 export const DIFF_ROW = { context: 0, added: 1, deleted: 2, hidden: 3 } as const;
+
+/** An agent that wrote some of a checkout's uncommitted lines. */
+export interface ChangeAuthor {
+    agentId: string;
+    name: string;
+    cli: string;
+    model?: string;
+    /** The chat run of its latest edit. */
+    feed: string;
+}
+
+/** `count` lines from `start` that `author` wrote last; `over` is the agent whose lines it rewrote there. */
+export interface OwnedLines {
+    start: number;
+    count: number;
+    author: number;
+    over?: number;
+}
+
+/** The changed lines of a file agents wrote, numbered as in the working tree, or in the index for staged lines. */
+export interface FileOwners {
+    path: string;
+    lines: OwnedLines[];
+    /** Lines `author` took out just before line `at`. */
+    removed: { at: number; author: number }[];
+}
+
+/** Who wrote a checkout's uncommitted lines, as the core reads it from agents' edits. Lines no file lists have no known author. */
+export interface ChangeOwners {
+    authors: ChangeAuthor[];
+    files: FileOwners[];
+}
 
 /** Compact per-file blame: unique `commits` + a per-line index into them. */
 export interface GitBlame {
@@ -241,6 +275,7 @@ export const git = {
     compare: (repo: string, base: string, head: string) => invoke<GitCompare>("git_compare", { repo, base, head }),
     blame: (repo: string, path: string, contents?: string | null) => invoke<GitBlame>("git_blame", { repo, path, contents: contents ?? null }),
     commit: (repo: string, message: string) => invoke<string>("git_commit", { repo, message }),
+    changeOwners: (repo: string, staged: boolean) => invoke<ChangeOwners>("git_change_owners", { repo, staged }),
     push: (repo: string) => invoke<string>("git_push", { repo }),
     pull: (repo: string) => invoke<string>("git_pull", { repo }),
     aiMessage: (repo: string, provider: string, model: string, onChunk: (chunk: string) => void) => {

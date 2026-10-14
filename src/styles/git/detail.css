@@ -54,6 +54,9 @@
     font-size: var(--text-3xs);
     letter-spacing: 0;
 }
+.git-chip.agent {
+    gap: 4px;
+}
 .git-chip.warn {
     color: var(--warn);
     border-color: color-mix(in oklab, var(--warn) 35%, transparent);

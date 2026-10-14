@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GitPane } from "./GitPane";
-import { gitOverviewR } from "../state/resources.defs";
+import { gitChangeOwnersR, gitOverviewR } from "../state/resources.defs";
 import { getState, setState } from "../state/store";
 import { useGitWorkbench } from "../state/gitWorkbench";
 import { useStageMotion } from "../state/nativeViews";
@@ -19,10 +19,12 @@ const resources = vi.hoisted(() => ({
         refresh: vi.fn(),
     },
     empty: { status: "ok", data: [], refresh: vi.fn() },
+    owners: { status: "ok", data: { authors: [], files: [] }, refresh: vi.fn() },
 }));
 vi.mock("../state/resources", async (original) => ({
     ...(await original<typeof import("../state/resources")>()),
     useCachedResourceEnabled: (enabled: boolean, definition: unknown) => {
+        if (definition === gitChangeOwnersR) return resources.owners;
         if (definition !== gitOverviewR) return resources.empty;
         resources.overviewEnabled = enabled;
         return resources.overview;

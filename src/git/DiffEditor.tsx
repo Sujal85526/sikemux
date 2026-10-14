@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { git, type DiffRow } from "../api/git";
 import { fsapi } from "../api/fs";
 import { currentTheme, subscribeTheme } from "../themes/bus";
@@ -7,6 +7,7 @@ import { joinPath } from "../lib/paths";
 import { formatBytes } from "../lib/format";
 import { subscribe } from "../state/bus";
 import { DiffView } from "./DiffView";
+import { diffRowNotes, type OwnedFile } from "./changeOwners";
 
 const DiffMergeEditor = lazy(() => import("./DiffMergeEditor"));
 
@@ -101,6 +102,7 @@ export function DiffEditor({
     headRev,
     editable,
     autoHeight,
+    owned,
     onSaved,
 }: {
     repo: string;
@@ -109,6 +111,8 @@ export function DiffEditor({
     headRev?: string;
     editable: boolean;
     autoHeight?: boolean;
+    /** Which agents wrote the changed lines, numbered as on the diff's newer side. */
+    owned?: OwnedFile;
     onSaved?: () => void;
 }) {
     const [rows, setRows] = useState<DiffRow[] | null>(null);
@@ -127,6 +131,7 @@ export function DiffEditor({
     // Bumped when the working tree or the index may have moved under this diff, so it reads again.
     const [changes, setChanges] = useState(0);
     const moving = !headRev || headRev === ":index";
+    const notes = useMemo(() => (rows ? diffRowNotes(rows, owned) : null), [rows, owned]);
 
     useEffect(() => {
         if (!moving) return;
@@ -217,13 +222,14 @@ export function DiffEditor({
                     head={files.head}
                     path={path}
                     tinted={dark}
+                    owned={owned}
                     onChange={(text) => {
                         latestHeadRef.current = text;
                     }}
                 />
             </Suspense>
         );
-    else if (!editable && rows) body = <DiffView rows={rows} path={path} tinted={dark} onShowHidden={() => setExpanded(diffKey)} />;
+    else if (!editable && rows) body = <DiffView rows={rows} path={path} tinted={dark} notes={notes} onShowHidden={() => setExpanded(diffKey)} />;
 
     return (
         <div className={`diff-editor${autoHeight ? " auto" : ""}`} onKeyDownCapture={onKeyDownCapture}>

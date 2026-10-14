@@ -1,9 +1,24 @@
+use tauri::State;
+
+use super::agents::commit_trailers;
 use super::{
     current_branch_name, default_remote, git_command, has_upstream, run_blocking,
     run_command_with_timeout, run_git, GIT_COMMAND_TIMEOUT,
 };
+use crate::pty::PtyManager;
 
-pub(super) fn commit_with_message(repo: &str, message: &str) -> Result<String, String> {
+/// Commits what is staged with `message`, naming the agents that wrote it.
+pub(super) async fn commit_staged(
+    manager: &PtyManager,
+    repo: String,
+    message: String,
+) -> Result<String, String> {
+    let trailers = commit_trailers(manager, &repo).await;
+    let message = sikemux_core::trailers::append(&message, &trailers);
+    run_blocking(move || commit_with_message(&repo, &message)).await
+}
+
+fn commit_with_message(repo: &str, message: &str) -> Result<String, String> {
     let mut command = git_command(repo);
     command.args(["commit", "-F", "-"]);
     let out =
@@ -17,8 +32,12 @@ pub(super) fn commit_with_message(repo: &str, message: &str) -> Result<String, S
 }
 
 #[tauri::command]
-pub async fn git_commit(repo: String, message: String) -> Result<String, String> {
-    run_blocking(move || commit_with_message(&repo, &message)).await
+pub async fn git_commit(
+    manager: State<'_, PtyManager>,
+    repo: String,
+    message: String,
+) -> Result<String, String> {
+    commit_staged(&manager, repo, message).await
 }
 
 #[tauri::command]

@@ -1,7 +1,16 @@
 import { agentApi, type AgentInfo, type AgentSession, type AgentUsage, type AgentAccountStatus } from "../api/agents";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
 import { filesApi } from "../api/files";
-import { git, type DiscoveredRepo, type GitOverview, type GitRemote, type GitRemoteBranch, type GitStash, type GitWorktree } from "../api/git";
+import {
+    git,
+    type ChangeOwners,
+    type DiscoveredRepo,
+    type GitOverview,
+    type GitRemote,
+    type GitRemoteBranch,
+    type GitStash,
+    type GitWorktree,
+} from "../api/git";
 import { settingsApi, type ProjectEntry } from "../api/settings";
 import { sshApi, type SshHost } from "../api/ssh";
 import type { AgentType, ProjectRoot } from "./types";
@@ -10,6 +19,12 @@ import { resource } from "./resources";
 export const gitOverviewR = resource({
     kind: "git.overview",
     fetch: (repo: string): Promise<GitOverview> => git.overview(repo),
+    staleAfterMs: 5_000,
+});
+
+export const gitChangeOwnersR = resource({
+    kind: "git.changeOwners",
+    fetch: (repo: string, staged: boolean): Promise<ChangeOwners> => git.changeOwners(repo, staged),
     staleAfterMs: 5_000,
 });
 

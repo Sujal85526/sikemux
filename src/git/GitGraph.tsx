@@ -364,7 +364,7 @@ export const GitGraph = memo(function GitGraph({
                         style={{ height: ROW_H, paddingLeft: gutter }}
                         onClick={() => onSelect(i)}
                         onDoubleClick={onActivate}
-                        title={`${c.subject} — ${c.hash} · ${c.author}${c.refs.length ? ` · ${c.refs.join(", ")}` : ""}`}>
+                        title={`${c.subject} — ${c.hash} · ${c.author}${c.agents?.length ? ` · written by ${c.agents.join(", ")}` : ""}${c.refs.length ? ` · ${c.refs.join(", ")}` : ""}`}>
                         <AuthorAvatar name={c.author} email={c.author_email} />
                         {refs.length > 0 && (
                             <span className="gg-refs">
@@ -379,6 +379,7 @@ export const GitGraph = memo(function GitGraph({
                             </span>
                         )}
                         <span className="gg-subj">{withoutScope(c.subject)}</span>
+                        {c.agents?.length ? <span className="gg-agents">{c.agents.join(", ")}</span> : null}
                         <span className="gg-hash">{c.hash}</span>
                         <span className="gg-when">{c.date}</span>
                     </div>

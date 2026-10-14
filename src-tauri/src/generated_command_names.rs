@@ -162,6 +162,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "git_compare",
     "git_blame",
     "git_commit",
+    "git_change_owners",
     "git_push",
     "git_pull",
     "git_ai_commit",

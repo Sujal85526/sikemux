@@ -160,13 +160,13 @@ export function gitChangeInvalidates(kind: string, args: unknown[], repo: string
     if (nested !== null) {
         const touched = !paths?.length || paths.some((path) => path === nested || path.startsWith(`${nested}/`));
         if (!touched || !kind.startsWith("git.")) return false;
-        return !paths?.length || kind === "git.overview" || kind === "git.status";
+        return !paths?.length || kind === "git.overview" || kind === "git.status" || kind === "git.changeOwners";
     }
     if (repo && args[0] !== repo) return false;
     if (kind === "files.list") return true;
     if (!kind.startsWith("git.")) return false;
     if (!paths?.length) return true;
-    return kind === "git.overview" || kind === "git.status" || kind === "git.discoveredRepos";
+    return kind === "git.overview" || kind === "git.status" || kind === "git.discoveredRepos" || kind === "git.changeOwners";
 }
 
 export function subscribeGitChanged(signal?: AbortSignal): Promise<IpcUnsubscribe> {

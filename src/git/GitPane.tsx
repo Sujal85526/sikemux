@@ -28,6 +28,7 @@ import type { Pull } from "../codehost/types";
 import { FileIcon } from "../ui/FileIcon";
 import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
 import {
+    IconAgent,
     IconCheckout,
     IconChevron,
     IconCopy,
@@ -55,6 +56,7 @@ import { GitGraph } from "./GitGraph";
 import { GitModalRenderer } from "./GitModalRenderer";
 import { VirtualPanelRows } from "./VirtualPanelRows";
 import { gitStatusDecoration } from "./gitFileStatus";
+import { fileAgentNames, ownedFile, useChangeOwners } from "./changeOwners";
 import { GitColumns } from "./GitColumns";
 import { HISTORY_CLEARANCE, HISTORY_MIN, ResizeHandle } from "./ResizeHandle";
 import { SkeletonRows } from "../ui/Skeleton";
@@ -142,6 +144,7 @@ function GitWorkbench({
     const branches = useMemo(() => (repo ? (overview.data?.branches ?? []) : []), [repo, overview.data?.branches]);
     const commits = useMemo(() => (repo ? (overview.data?.log ?? []) : []), [repo, overview.data?.log]);
     const files = useMemo(() => status?.files ?? [], [status?.files]);
+    const owners = useChangeOwners(repo, false, fetching && panel !== "branches");
     const remotes = useMemo(() => (repo ? (remotesRes.data ?? []) : []), [repo, remotesRes.data]);
     const stashes = useMemo(() => (repo ? (stashesRes.data ?? []) : []), [repo, stashesRes.data]);
     const remoteBranches = useMemo(() => (repo && openRemote ? (remoteBranchesRes.data ?? []) : []), [repo, openRemote, remoteBranchesRes.data]);
@@ -989,6 +992,7 @@ function GitWorkbench({
         const selected = panel === "files" && selectedFileIndex === i;
         const dir = dirname(file.path);
         const status = gitStatusDecoration(side === "staged" ? file.index : file.worktree);
+        const agents = fileAgentNames(ownedFile(owners, file.path)).join(", ");
         return (
             <div
                 role="button"
@@ -1005,6 +1009,11 @@ function GitWorkbench({
                     {basenameOf(file.path)}
                     {dir && <span className="git-row-dir">{dir}</span>}
                 </span>
+                {agents && (
+                    <span className="git-row-hint git-row-agents" title={`Written by ${agents}`}>
+                        {agents}
+                    </span>
+                )}
                 <span className="git-row-actions">
                     {side === "unstaged" && (
                         <RowButton label="Discard changes" onClick={() => discardFile(file)}>
@@ -1136,6 +1145,12 @@ function GitWorkbench({
             <div className="git-detail-meta">
                 <AuthorAvatar name={c.author} email={c.author_email} />
                 <span>{c.author}</span>
+                {c.agents?.map((agent) => (
+                    <span key={agent} className="git-chip agent" title={`${agent} wrote this commit`}>
+                        <IconAgent size={10} />
+                        {agent}
+                    </span>
+                ))}
                 <span>·</span>
                 <span>{c.date}</span>
                 <span>·</span>

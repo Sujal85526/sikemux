@@ -21,6 +21,9 @@ pub struct GitCommit {
     author_email: String,
     date: String,
     pub(super) subject: String,
+    /// The agents its trailers say wrote it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    agents: Vec<String>,
     /// Ref decorations pointing at this commit: `HEAD`, local branches,
     /// `origin/main`, `tag: v0.1.11`. Rendered as lazygit-style badges.
     refs: Vec<String>,
@@ -227,6 +230,7 @@ pub(super) fn describe_commits(
             author_email: commit.author().email().unwrap_or("").to_string(),
             date: relative_time(commit.time().seconds()),
             subject: commit.summary().ok().flatten().unwrap_or("").to_string(),
+            agents: sikemux_core::trailers::agents(commit.message().unwrap_or_default()),
             unpushed: unpushed.contains(&oid),
             refs: ref_map.get(&oid).cloned().unwrap_or_default(),
         });

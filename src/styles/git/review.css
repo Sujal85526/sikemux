@@ -221,6 +221,12 @@
     padding: 0 1ch;
     white-space: pre;
 }
+.diff-note {
+    margin-left: 4ch;
+    color: var(--ink-faint);
+    font: var(--text-2xs) / 19px var(--ui);
+    user-select: none;
+}
 .diff-row[data-kind="added"] .diff-num::before,
 .diff-row[data-kind="deleted"] .diff-num::before {
     content: "";

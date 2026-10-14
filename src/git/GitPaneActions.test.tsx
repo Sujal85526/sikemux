@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { git, type GitBranch, type GitCommit, type GitFile, type GitRemote, type GitRemoteBranch, type GitStash } from "../api/git";
-import { gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
+import { gitChangeOwnersR, gitOverviewR, gitRemoteBranchesR, gitRemotesR, gitStashesR } from "../state/resources.defs";
 import { getState, setState } from "../state/store";
 import { useGitWorkbench } from "../state/gitWorkbench";
 import { useToasts } from "../state/toast";
@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
     stashes: null as unknown as Resource<unknown[]>,
     remoteBranches: null as unknown as Resource<unknown[]>,
     empty: null as unknown as Resource<unknown[]>,
+    owners: null as unknown as Resource<{ authors: unknown[]; files: unknown[] }>,
     copyText: vi.fn(),
 }));
 
@@ -27,6 +28,7 @@ vi.mock("../state/resources", async (original) => ({
         if (definition === gitRemotesR) return h.remotes;
         if (definition === gitStashesR) return h.stashes;
         if (definition === gitRemoteBranchesR) return h.remoteBranches;
+        if (definition === gitChangeOwnersR) return h.owners;
         return h.empty;
     },
 }));
@@ -150,6 +152,7 @@ beforeEach(() => {
         remoteBranch("topic"),
     ]);
     h.empty = resource<unknown[]>([]);
+    h.owners = resource({ authors: [], files: [] });
     h.copyText.mockReset().mockResolvedValue(undefined);
     for (const name of gitCalls) vi.spyOn(git, name).mockResolvedValue("" as never);
     vi.spyOn(git, "status").mockResolvedValue({ branch: "main", upstream: null, ahead: 0, behind: 0, files: files() });

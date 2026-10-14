@@ -36,6 +36,14 @@
 .gg-row.ranged {
     background: rgba(124, 197, 255, 0.08);
 }
+.gg-agents {
+    flex: none;
+    max-width: 30%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+}
 .gg-hash {
     color: var(--text-tertiary);
     font-family: var(--mono);

@@ -173,11 +173,14 @@ export function DiffView({
     rows,
     path,
     tinted,
+    notes,
     onShowHidden,
 }: {
     rows: readonly DiffRow[];
     path: string;
     tinted: boolean;
+    /** A quiet note after each row's code, such as the agent that wrote it. */
+    notes?: readonly (string | undefined)[] | null;
     onShowHidden?: () => void;
 }) {
     const host = useRef<HTMLDivElement>(null);
@@ -220,18 +223,31 @@ export function DiffView({
                             />
                         );
                     }
-                    return <DiffLine key={index} index={index} row={row} tokens={tokens?.[index]} />;
+                    return <DiffLine key={index} index={index} row={row} tokens={tokens?.[index]} note={notes?.[index]} />;
                 })}
             </div>
         </div>
     );
 }
 
-const DiffLine = memo(function DiffLine({ index, row, tokens }: { index: number; row: DiffRow; tokens: CodeLine | undefined }) {
+const DiffLine = memo(function DiffLine({
+    index,
+    row,
+    tokens,
+    note,
+}: {
+    index: number;
+    row: DiffRow;
+    tokens: CodeLine | undefined;
+    note: string | undefined;
+}) {
     return (
         <div className="diff-row" data-kind={KIND[row[0]]} data-row={index}>
             <span className="diff-num">{row[1]}</span>
-            <span className="diff-code">{tokens ? <CodeRun tokens={tokens} /> : row[2]}</span>
+            <span className="diff-code">
+                {tokens ? <CodeRun tokens={tokens} /> : row[2]}
+                {note && <span className="diff-note">{note}</span>}
+            </span>
         </div>
     );
 });

@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod ai;
 mod ai_provider;
 pub mod blame;
