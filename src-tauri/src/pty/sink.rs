@@ -173,6 +173,7 @@ impl EventSink for AppSink {
             }
             Event::ChatBegun { chat } => self.emit("remote_chat_begun", chat),
             Event::WakeChat { agent_id } => self.emit("remote_chat_wake", agent_id),
+            Event::Network { change } => self.emit("network_changed", change),
             Event::FocusAgent { agent_id } => {
                 crate::harness::bring_to_front(&self.app);
                 self.emit("focus_agent", agent_id);

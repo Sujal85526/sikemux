@@ -309,6 +309,8 @@ pub async fn run<A: Account>(
                 if gone.is_err() {
                     return;
                 }
+                // Something changed, such as the network coming back: start the backoff over.
+                failures = 0;
             }
         }
     }

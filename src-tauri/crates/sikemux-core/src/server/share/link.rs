@@ -84,6 +84,10 @@ pub(super) async fn run(
                 message = queue.recv() => match message {
                     Some(ToLink::Heard(..) | ToLink::Send(_)) => {}
                     Some(ToLink::Open(_) | ToLink::Close(_)) => break,
+                    Some(ToLink::Retry) => {
+                        failures = 0;
+                        break;
+                    }
                     None => return,
                 },
             }
@@ -278,6 +282,7 @@ async fn session(
                     ToLink::Close(id) => Some(close_message(&id)),
                     ToLink::Heard(id, frame) => publish(core, &id, &frame),
                     ToLink::Send(message) => Some(message),
+                    ToLink::Retry => None,
                 };
                 if let Some(outgoing) = outgoing {
                     if !send(&mut socket, outgoing).await {

@@ -17,6 +17,7 @@ mod host;
 mod join;
 mod messages;
 mod names;
+mod network_watch;
 mod notify;
 pub mod plugins;
 mod prepare;
@@ -974,6 +975,7 @@ pub(crate) async fn run_core(
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
         tokio::spawn(notify::run(core.clone())),
+        tokio::spawn(network_watch::run(core.clone())),
     ];
     let mut shutdown = core.shutdown.subscribe();
     let mut frozen = core.frozen.subscribe();
