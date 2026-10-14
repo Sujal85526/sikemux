@@ -57,6 +57,7 @@ export function mentionContext(text: string, mates: readonly Mate[]): PromptCont
                 `CLI: ${agentLabel(mate.type)}`,
                 `Status: ${mate.display?.label ?? "Asleep"}`,
                 `Working on: ${mate.title}`,
+                `To message it, call agent_send with to "${mate.name}".`,
             ].join("\n"),
         }));
 }
