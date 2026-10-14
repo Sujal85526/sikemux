@@ -171,7 +171,7 @@ jobs:
         working-directory: src-tauri
 
       - name: Run the core's tests on Linux
-        run: cargo test --locked -p sikemux-core -p sikemux-pty -p sikemux-process -p sikemux-wire -p sikemux-client
+        run: cargo test --locked -p sikemux-core -p sikemux-pty -p sikemux-process -p sikemux-wire -p sikemux-client -p sikemux-keychain
         working-directory: src-tauri
 
   simulator-helper:
