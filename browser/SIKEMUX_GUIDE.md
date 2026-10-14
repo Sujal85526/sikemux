@@ -48,6 +48,9 @@ from the list below.
   rather than with sleeps or screenshots.
 - Every state says whether the tab is `visible` to the person; never tell
   them a hidden page is on their screen.
+- Other agents may be changing the same checkout. Commit with `git_commit`,
+  which takes only the lines you wrote and leaves theirs uncommitted; Sikemux
+  refuses `git add -A`, `commit -a`, `stash`, `reset --hard` and the like.
 - Plugin tools (`github_*`, `bitbucket_*`, `gitlab_*`, `jira_*`, `signoz_*`,
   `slack_*`) are listed only when they can work here: signed in, and for a code
   host a remote of this project on it. If one is missing, ask the person to

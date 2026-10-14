@@ -19,6 +19,7 @@ use super::super::rebind::{
     error_message, next_account, on_account, switch_notice, Carried, Outcome, Rebind, Replay,
 };
 use super::super::{stall_later, Asked, Chat, ChatCommand, Delivery, Respond};
+use super::git_guard;
 use super::process::{AgentRecord, Lines, Process, Released, Writer};
 
 /// What the person sent, for the agent to read in its own form.
@@ -239,6 +240,12 @@ impl Sink {
     /// `respond` is told the chosen option's id, or none when it was
     /// cancelled.
     pub fn ask(&self, mut request: Value, reply: Value, respond: Respond) {
+        let choices = permission::choices(&request);
+        let guarded = choices.command.as_deref().and_then(git_guard::refusal);
+        if let (Some(reject), Some(_)) = (choices.reject, guarded) {
+            respond(Some(reject));
+            return;
+        }
         if self.chat.approves() {
             if let Some(option_id) = permission::approval(&request) {
                 respond(Some(option_id));

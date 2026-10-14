@@ -237,7 +237,9 @@ impl Claude {
         let initialized = tokio::select! {
             answer = control.request(json!({
                 "subtype": "initialize",
-                "hooks": {},
+                "hooks": {
+                    "PreToolUse": [{ "matcher": "Bash", "hookCallbackIds": ["git-guard"] }],
+                },
                 "forwardSubagentText": true,
                 "perTaskStopAffordance": true,
             })) => answer,

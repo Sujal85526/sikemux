@@ -5,6 +5,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
+use super::super::git_guard;
 use super::tools;
 
 const ALLOW: &str = "allow-once";
@@ -141,6 +142,25 @@ pub(crate) fn request(
         tool_call["locations"] = json!(locations);
     }
     json!({ "sessionId": session, "toolCall": tool_call, "options": options })
+}
+
+/// The answer to the hook Claude Code calls before each Bash command, which
+/// runs even when it asks no permission: a guarded git command is denied.
+pub(crate) fn hook_answer(request: &Value) -> Value {
+    let refusal = request
+        .pointer("/input/tool_input/command")
+        .and_then(Value::as_str)
+        .and_then(git_guard::refusal);
+    match refusal {
+        Some(reason) => json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            },
+        }),
+        None => json!({ "continue": true }),
+    }
 }
 
 /// Claude Code's answer for the option the person chose, or for no answer.
