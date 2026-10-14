@@ -88,6 +88,8 @@ pub(crate) struct AgentName {
 pub(crate) struct Worker<'a> {
     pub agent_id: &'a str,
     pub lead: &'a str,
+    /// The project it opens in, when not its lead's.
+    pub project: Option<String>,
     pub provider: &'a str,
     /// Its final answer goes to its lead each time its turn ends.
     pub reports: bool,
@@ -167,8 +169,8 @@ impl Names {
         (named, changed)
     }
 
-    /// Names a worker for `worker.lead`, in the lead's project, unless the
-    /// lead may not start another. `running` holds the agents running here.
+    /// Names a worker for `worker.lead`, in the project it opens in, unless
+    /// the lead may not start another. `running` holds the agents running here.
     pub(crate) fn hire(
         &self,
         worker: Worker<'_>,
@@ -189,6 +191,7 @@ impl Names {
                 lead.name
             ));
         }
+        let project = worker.project.unwrap_or_else(|| lead.project.clone());
         let live = |entry: &&Entry| open.contains(&entry.agent_id);
         let children = book
             .agents
@@ -206,7 +209,7 @@ impl Names {
             .agents
             .iter()
             .filter(live)
-            .filter(|entry| entry.project == lead.project && entry.parent.is_some())
+            .filter(|entry| entry.project == project && entry.parent.is_some())
             .count();
         if spawned >= MAX_SPAWNED_PER_PROJECT {
             return Err(format!(
@@ -215,8 +218,8 @@ impl Names {
         }
         let entry = Entry {
             agent_id: worker.agent_id.to_owned(),
-            name: book.fresh(&lead.project, worker.agent_id, &open),
-            project: lead.project,
+            name: book.fresh(&project, worker.agent_id, &open),
+            project,
             parent: Some(worker.lead.to_owned()),
             quiet: !worker.reports,
             provider: Some(worker.provider.to_owned()),

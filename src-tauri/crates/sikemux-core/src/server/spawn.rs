@@ -20,7 +20,7 @@ use super::chat;
 use super::connection::blocking;
 use super::follow::{self, TerminalAnswer};
 use super::messages;
-use super::names::Worker;
+use super::names::{self, Worker};
 use super::saved::{self, Saved};
 use super::workspace::{own_launch, Lead, Paid};
 use super::Core;
@@ -185,10 +185,12 @@ fn start(
         .worker_launch(&lead, &provider, &cwd, model, paid)?;
     launch.resume_id = resume.map(|saved| saved.session_id.clone());
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
+    let project = names::project_of(&launch.cwd, &core.workspaces.project_paths());
     let named = core.names.hire(
         Worker {
             agent_id: &agent_id,
             lead: &lead_id,
+            project: Some(project),
             provider: &provider,
             reports,
         },
@@ -406,6 +408,7 @@ fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, Strin
         Worker {
             agent_id: &agent_id,
             lead: &lead_id,
+            project: None,
             provider: &provider,
             reports,
         },
