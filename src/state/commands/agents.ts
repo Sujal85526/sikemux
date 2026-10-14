@@ -202,9 +202,12 @@ export function adoptChat(chat: AcpChat): boolean {
     let adopted = false;
     mutate((d) => {
         if (d.agents[chat.agentId]) return;
-        const sessionId = projectSessionInBackground(d as unknown as StoreState, chat.cwd);
-        const permissionMode = normalizePermissionMode(type, chat.permissionMode as AgentPermissionMode);
         const lead = chat.startedBy ? d.agents[chat.startedBy] : undefined;
+        const leadWindowId = lead ? agentWindowId(d, lead.id) : null;
+        const sessionId = (leadWindowId && ownerSessionId(d, leadWindowId)) || projectSessionInBackground(d as unknown as StoreState, chat.cwd);
+        const leadTree = lead?.worktree;
+        const worktree = leadTree && (chat.cwd === leadTree.path || chat.cwd.startsWith(`${leadTree.path}/`)) ? { ...leadTree } : undefined;
+        const permissionMode = normalizePermissionMode(type, chat.permissionMode as AgentPermissionMode);
         const profileId = profileOfLauncher(chat.launcher, d.providerProfiles, type) ?? (lead?.type === type ? lead.profileId : undefined);
         const profile = profileOf(d, { profileId, type });
         const model = chat.model ?? undefined;
@@ -225,6 +228,7 @@ export function adoptChat(chat: AcpChat): boolean {
             cwd: chat.cwd,
             model,
             effort,
+            ...(worktree ? { worktree } : {}),
             ...(permissionMode === "bypass" ? { skipPermissions: true } : {}),
             launchState: "live",
         };
