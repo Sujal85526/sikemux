@@ -332,6 +332,17 @@ export function invalidate(predicate: (kind: string, args: unknown[]) => boolean
     pruneCache();
 }
 
+/** Fetches again everything on screen whose last fetch failed, as when the network comes back. */
+export function refetchFailed(): void {
+    for (const [key, entry] of [...cache]) {
+        if (entry.status !== "error" || !subs.has(key) || inflight.has(key)) continue;
+        const def = defsByKind.get(entry.kind);
+        if (!def) continue;
+        generations.set(key, (generations.get(key) ?? 0) + 1);
+        void trigger(def, key, entry.args).catch(() => {});
+    }
+}
+
 export function resetResourcesForTests(): void {
     cache.clear();
     inflight.clear();
