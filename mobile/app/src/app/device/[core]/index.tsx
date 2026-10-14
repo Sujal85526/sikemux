@@ -223,18 +223,29 @@ function Agents({
   const placeOf = (chat: ChatInfo) => (scope ? undefined : projectName(snapshot, chat.cwd));
   const attentionOf = (chat: ChatInfo) => snapshot.attentions.find((known) => known.agentId === chat.agentId && askingOf(known));
   const listed = new Map(chats.map((chat) => [chat.agentId, chat]));
-  // A worker sits in its lead's group, unless it waits on the person itself.
-  const sectionOf = (chat: ChatInfo, depth = 0): AgentGroup => {
-    const own = assumedQuestion(questions, chat.agentId) ? 'blocked' : chatDisplay(chat).group;
-    const lead = listed.get(leads.get(chat.agentId) ?? '');
-    if (own === 'blocked' || !lead || depth > listed.size) return own;
-    const theirs = sectionOf(lead, depth + 1);
-    return theirs === 'blocked' ? own : theirs;
+  const headOf = (chat: ChatInfo): ChatInfo => {
+    let head = chat;
+    for (let steps = 0; steps < listed.size; steps++) {
+      const lead = listed.get(leads.get(head.agentId) ?? '');
+      if (!lead) break;
+      head = lead;
+    }
+    return head;
   };
-  const groupOf = (group: AgentGroup) => {
+  // A team sits in its first lead's group, so it stays together; one of its agents waiting on the person shows in
+  // Needs input on its own row as well.
+  const sectionOf = (chat: ChatInfo): AgentGroup => chatDisplay(headOf(chat)).group;
+  const groupOf = (group: AgentGroup): { chat: ChatInfo; link?: TeamLink }[] => {
     const rows = chats.filter((chat) => sectionOf(chat) === group);
     if (group === 'done' || group === 'idle') rows.sort((x, y) => (y.activeAt ?? 0) - (x.activeAt ?? 0));
-    return inTeams(rows.map((chat) => ({ id: chat.agentId, lead: leads.get(chat.agentId), chat })));
+    const teams = inTeams(rows.map((chat) => ({ id: chat.agentId, lead: leads.get(chat.agentId), chat }))).map(
+      ({ agent: { chat }, link }) => ({ chat, link }),
+    );
+    if (group !== 'blocked') return teams;
+    const elsewhere = chats.filter((chat) => sectionOf(chat) !== 'blocked');
+    const waiting = elsewhere.filter((chat) => chatDisplay(chat).group === 'blocked');
+    const assuming = elsewhere.filter((chat) => !waiting.includes(chat) && assumedQuestion(questions, chat.agentId));
+    return [...teams, ...waiting.map((chat) => ({ chat })), ...assuming.map((chat) => ({ chat }))];
   };
 
   return (
@@ -246,7 +257,7 @@ function Agents({
           <View key={group}>
             <SectionLabel>{AGENT_LABELS[group]}</SectionLabel>
             <Rows>
-              {rows.map(({ agent: { chat }, link }) => (
+              {rows.map(({ chat, link }) => (
                 <ChatRow
                   key={chat.agentId}
                   core={core}
