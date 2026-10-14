@@ -17,7 +17,8 @@
 /* The pane's picture runs under the board, so everything read over it sits on the same frosted glass as the chat's header. */
 .board-pane .kanban-head,
 .board-pane .kanban > .empty-state,
-.board-band-head {
+.board-band-head,
+.board-card-panel {
     border: 1px solid var(--border);
     background: color-mix(in srgb, var(--void) 62%, transparent);
     -webkit-backdrop-filter: blur(14px) saturate(1.2);
@@ -169,9 +170,15 @@
     flex-direction: column;
     gap: 12px;
     min-height: 0;
+    margin: 10px 16px 10px 0;
     padding: 12px 16px 16px;
-    border-left: 1px solid var(--border);
+    border-radius: var(--radius-3);
     overflow-y: auto;
+}
+
+/* The side panel is where cards are written, so it holds more of its own colour than the glass around it. */
+.board-pane .board-card-panel {
+    background: color-mix(in srgb, var(--void) 80%, transparent);
 }
 
 .board-panel-head,
@@ -254,7 +261,7 @@
     font-size: var(--text-sm);
     line-height: 1.45;
     color: var(--text-primary);
-    background: transparent;
+    background: color-mix(in srgb, var(--surface) 70%, transparent);
     resize: vertical;
 }
 
@@ -358,7 +365,7 @@
     font-family: inherit;
     font-size: var(--text-sm);
     color: var(--text-primary);
-    background: transparent;
+    background: color-mix(in srgb, var(--surface) 70%, transparent);
 }
 
 .board-auto-input.mono {
