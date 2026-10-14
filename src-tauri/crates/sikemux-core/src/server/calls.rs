@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use super::access::{Needs, Peer};
 use super::attachments;
-use super::connection::blocking;
+use super::connection::{blocking, ClientConn};
 use super::names::AgentName;
 use super::{share, Core, CoreError, CoreResult};
 
@@ -24,13 +24,13 @@ pub(crate) fn needs(method: &str) -> Needs {
 
 pub(crate) async fn call(
     core: Arc<Core>,
-    peer: &Peer,
+    client: &ClientConn,
     method: &str,
     params: Value,
 ) -> CoreResult<Value> {
     match method {
-        "chatFile" => answer(chat_file(&core, peer, parse(params)?).await?),
-        "agentSecret" => answer(agent_secret(&core, parse(params)?)?),
+        "chatFile" => answer(chat_file(&core, &client.peer, parse(params)?).await?),
+        "agentSecret" => answer(agent_secret(&core, client, parse(params)?)?),
         "nameAgent" => answer(name_agent(&core, parse(params)?).await?),
         "renameAgent" => answer(rename_agent(&core, parse(params)?).await?),
         "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
@@ -122,8 +122,16 @@ struct AgentSecret {
 }
 
 /// What an agent the app starts carries in its tool calls to show which agent
-/// it is. Only a client on this machine may ask.
-fn agent_secret(core: &Core, params: AgentSecretParams) -> CoreResult<AgentSecret> {
+/// it is. Only the app's window may ask, so one agent cannot ask for
+/// another's.
+fn agent_secret(
+    core: &Core,
+    client: &ClientConn,
+    params: AgentSecretParams,
+) -> CoreResult<AgentSecret> {
+    if !core.window.is_window(client.id) {
+        return Err("only Sikemux's window may ask for an agent's secret".into());
+    }
     if !crate::cli::protocol::is_tool_agent_id(&params.agent_id) {
         return Err("that is not an agent id".into());
     }

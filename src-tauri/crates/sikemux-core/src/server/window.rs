@@ -65,6 +65,15 @@ impl Window {
         self.next_call.fetch_max(mark, Ordering::AcqRel);
     }
 
+    pub(crate) fn is_window(&self, client: ClientId) -> bool {
+        self.inner.lock().is_ok_and(|inner| {
+            inner
+                .client
+                .as_ref()
+                .is_some_and(|window| window.id == client)
+        })
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.inner.lock().is_ok_and(|inner| inner.client.is_some())
     }
