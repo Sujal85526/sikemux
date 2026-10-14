@@ -253,7 +253,7 @@ pub fn tool_result(
     tool_use_result: Option<&Value>,
     _cwd: &Path,
 ) -> Value {
-    let is_error = truthy(result.get("is_error"));
+    let is_error = failed(name, result);
     let mut update = Map::new();
     update.insert("sessionUpdate".into(), "tool_call_update".into());
     update.insert("toolCallId".into(), id.into());
@@ -311,6 +311,12 @@ fn content_field(blocks: Vec<Value>) -> Fields {
     vec![("content".to_string(), Value::Array(blocks))]
 }
 
+/// Sikemux answers AskUserQuestion by refusing it and asking the person
+/// itself, so that refusal is not a failure.
+fn failed(name: &str, result: &Value) -> bool {
+    truthy(result.get("is_error")) && name != "AskUserQuestion"
+}
+
 fn result_fields(
     name: &str,
     input: &Value,
@@ -318,7 +324,7 @@ fn result_fields(
     tool_use_result: Option<&Value>,
 ) -> Fields {
     let content = result.get("content");
-    let is_error = truthy(result.get("is_error"));
+    let is_error = failed(name, result);
     if is_error && content.is_some_and(|c| js_length(c) > 0) {
         return content_update(content, true);
     }
