@@ -133,6 +133,17 @@ impl Names {
             .map(Entry::view)
     }
 
+    /// The names of the agents in `agent_ids`, each with the agent that
+    /// started it.
+    pub(crate) fn of(&self, agent_ids: &HashSet<String>) -> Vec<AgentName> {
+        self.lock()
+            .agents
+            .iter()
+            .filter(|entry| agent_ids.contains(&entry.agent_id))
+            .map(Entry::view)
+            .collect()
+    }
+
     /// The agent's name, given now when it has none, and whether that changed
     /// anything. `running` holds the agents running here.
     pub(crate) fn give(

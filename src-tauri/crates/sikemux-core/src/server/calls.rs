@@ -18,7 +18,7 @@ use super::{board, questions, share, Core, CoreError, CoreResult};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
-        "chatFile" | "questions" | "boards" | "board" => Needs::Watch,
+        "chatFile" | "questions" | "boards" | "board" | "agentNames" => Needs::Watch,
         "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
         | "boardRetry" => Needs::Full,
         _ => Needs::Local,
@@ -37,6 +37,7 @@ pub(crate) async fn call(
         "nameAgent" => answer(name_agent(&core, parse(params)?).await?),
         "renameAgent" => answer(rename_agent(&core, parse(params)?).await?),
         "agentsInApp" => answer(agents_in_app(&core, parse(params)?).await?),
+        "agentNames" => answer(agent_names(&core).await?),
         "shareChat" => {
             let params: ShareChatParams = parse(params)?;
             answer(share::share_chat(
@@ -202,6 +203,13 @@ async fn rename_agent(core: &Arc<Core>, params: RenameAgentParams) -> CoreResult
         Ok(named)
     })
     .await
+}
+
+/// The names of the agents running here, each with the agent that started
+/// it, so a device can list workers after their lead.
+async fn agent_names(core: &Arc<Core>) -> CoreResult<Vec<AgentName>> {
+    let core = core.clone();
+    blocking(move || Ok(core.names.of(&core.running_agents()))).await
 }
 
 /// The most agents the app may say it holds.
