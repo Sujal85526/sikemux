@@ -222,6 +222,34 @@ impl Names {
             .and_then(|entry| entry.parent.clone())
     }
 
+    /// The agent at the top of `agent_id`'s chain of leads, the one the person
+    /// started, which names its team.
+    pub(crate) fn team_of(&self, agent_id: &str) -> String {
+        let book = self.lock();
+        let mut current = agent_id;
+        for _ in 0..=book.agents.len() {
+            match book.parent(current) {
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+        current.to_owned()
+    }
+
+    /// Whether `lead` started `agent_id`, or started an agent that did.
+    pub(crate) fn leads(&self, lead: &str, agent_id: &str) -> bool {
+        let book = self.lock();
+        let mut current = agent_id;
+        for _ in 0..=book.agents.len() {
+            match book.parent(current) {
+                Some(parent) if parent == lead => return true,
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+        false
+    }
+
     /// Takes the app's word for which agents it holds.
     pub(crate) fn set_in_app(&self, agent_ids: HashSet<String>) {
         let mut book = self.lock();
@@ -300,16 +328,18 @@ impl Book {
         running
     }
 
+    fn parent(&self, agent_id: &str) -> Option<&str> {
+        self.agents
+            .iter()
+            .find(|entry| entry.agent_id == agent_id)
+            .and_then(|entry| entry.parent.as_deref())
+    }
+
     /// How many agents up the chain of leads the person's own agent is.
     fn depth(&self, agent_id: &str) -> usize {
         let mut depth = 0;
         let mut current = agent_id;
-        while let Some(parent) = self
-            .agents
-            .iter()
-            .find(|entry| entry.agent_id == current)
-            .and_then(|entry| entry.parent.as_deref())
-        {
+        while let Some(parent) = self.parent(current) {
             depth += 1;
             if depth > self.agents.len() {
                 break;

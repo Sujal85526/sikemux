@@ -272,10 +272,13 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: Ending) {
             mid_turn: false,
         } => (format!("Stopped running{}", because(reason)), None),
     };
-    let text = match last {
+    let mut text = match last {
         Some(last) => format!("{what}\n\nWhat it wrote last:\n\n{last}"),
         None => what,
     };
+    if let Some(card) = super::board::card_line(core, agent_id) {
+        text.push_str(&format!("\n\n{card}"));
+    }
     let (core, worker) = (core.clone(), agent_id.to_owned());
     tokio::spawn(async move { messages::report(&core, worker, lead, text).await });
 }

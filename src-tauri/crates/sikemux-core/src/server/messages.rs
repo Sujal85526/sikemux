@@ -152,7 +152,7 @@ impl Mailbox {
         });
     }
 
-    fn has_waiting(&self, agent_id: &str) -> bool {
+    pub(crate) fn has_waiting(&self, agent_id: &str) -> bool {
         self.lock().waiting.contains_key(agent_id)
     }
 
@@ -591,6 +591,37 @@ pub(crate) async fn answer(
         at: unix_ms(),
         note: Some(note),
         answers: Some(answered),
+    };
+    deliver(core, &target, letter).await
+}
+
+/// Hands an agent a note from Sikemux's board about its cards. Fails when the
+/// agent has stopped or is gone.
+pub(crate) async fn from_board(
+    core: &Arc<Core>,
+    to: String,
+    text: String,
+    note: String,
+) -> Result<Value, String> {
+    let target = {
+        let core = core.clone();
+        blocking(move || {
+            listed(&core)
+                .into_iter()
+                .find(|agent| agent.agent_id == to && agent.reach != Reach::Stopped)
+                .ok_or_else(|| "that agent is not running".into())
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
+    let letter = Letter {
+        from_id: "board".to_owned(),
+        from_name: "Board".to_owned(),
+        cli: "sikemux".to_owned(),
+        text,
+        at: unix_ms(),
+        note: Some(note),
+        answers: None,
     };
     deliver(core, &target, letter).await
 }

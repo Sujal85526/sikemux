@@ -529,7 +529,7 @@
       "name": "browser_console",
       "row": {"verb": "read", "kind": "read", "icon": "terminal", "target": ["the page console"]},
       "method": "browser.console",
-      "description": "List the page's console messages and uncaught errors.",
+      "description": "List the page's console messages and errors.",
       "properties": {
         "limit": {
           "type": "integer",
@@ -1160,7 +1160,7 @@
       "name": "workspace_inspect",
       "row": {"verb": "inspect", "kind": "read", "icon": "folder", "target": ["the workspace"]},
       "method": "workspace.inspect",
-      "description": "Inspect the open project: tasks, runs and listening ports.",
+      "description": "The open project: tasks, runs and listening ports.",
       "properties": {},
       "required": []
     },
@@ -1206,7 +1206,7 @@
       "name": "task_restart",
       "row": {"verb": "restart", "kind": "execute", "icon": "refresh", "target": ["{taskId}"]},
       "method": "task.restart",
-      "description": "Stop a task's latest execution and start a new one.",
+      "description": "Stop a task's latest run and start it again.",
       "properties": {
         "taskId": {
           "type": "string"
@@ -1262,7 +1262,7 @@
       "name": "task_stop",
       "row": {"verb": "stop", "kind": "execute", "icon": "stop", "target": ["{taskId}", "{executionId}"]},
       "method": "task.stop",
-      "description": "Stop a managed task execution and its process tree.",
+      "description": "Stop a task's run and its process tree.",
       "properties": {
         "executionId": {
           "type": "string"
@@ -1358,7 +1358,7 @@
       "name": "events_wait",
       "row": {"verb": "wait", "kind": "think", "icon": "clock", "target": ["for {executionId}", "for events"]},
       "method": "events.wait",
-      "description": "Wait for project task or UI events after an event cursor.",
+      "description": "Wait for task or UI events after an event cursor.",
       "properties": {
         "cursor": {
           "type": "string"
@@ -1489,6 +1489,116 @@
       },
       "required": [
         "question"
+      ]
+    },
+    {
+      "name": "board_add",
+      "row": {"verb": "add", "kind": "edit", "icon": "square-plus", "target": ["card {title}"]},
+      "method": "board.add",
+      "description": "Add a board card.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "details": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "parent": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dependsOn": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "claim": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "title"
+      ]
+    },
+    {
+      "name": "board_list",
+      "row": {"verb": "list", "kind": "read", "icon": "dashboard", "target": ["card #{card}", "the board"]},
+      "method": "board.list",
+      "description": "List the board.",
+      "properties": {
+        "card": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": []
+    },
+    {
+      "name": "board_claim",
+      "row": {"verb": "claim", "kind": "edit", "icon": "issue", "target": ["card #{card}"]},
+      "method": "board.claim",
+      "description": "Claim a card.",
+      "properties": {
+        "card": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "card"
+      ]
+    },
+    {
+      "name": "board_update",
+      "row": {"verb": "update", "kind": "edit", "icon": "issue", "target": ["card #{card} to {status}", "card #{card}"], "detail": ["{result}"]},
+      "method": "board.update",
+      "description": "Change a card.",
+      "properties": {
+        "card": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "details": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "done"
+          ]
+        },
+        "result": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "dependsOn": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "parent": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "card"
       ]
     },
     {

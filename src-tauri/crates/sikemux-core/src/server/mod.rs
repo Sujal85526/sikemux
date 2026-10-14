@@ -3,6 +3,7 @@ mod activity;
 mod agent;
 mod agent_key;
 mod attachments;
+mod board;
 mod calls;
 mod chat;
 mod connection;
@@ -288,6 +289,7 @@ pub(crate) struct Core {
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
     pub(crate) names: names::Names,
+    pub(crate) boards: board::Boards,
     pub(crate) notify: notify::Notifier,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
@@ -335,6 +337,7 @@ impl Core {
             workspaces: workspace::Workspaces::default(),
             seen: seen::Seen::default(),
             names: names::Names::new(data_dir),
+            boards: board::Boards::new(data_dir),
             notify: notify::Notifier::default(),
             device_view: Mutex::new(Vec::new()),
         }))
@@ -892,6 +895,7 @@ async fn device_views(core: Arc<Core>) {
             core.broadcast_to(&event, |client| client.peer.is_local());
         }
         questions::tick(&core);
+        board::tick(&core);
         core.publish_device_view();
         messages::deliver_waiting(&core);
     }

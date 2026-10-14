@@ -653,12 +653,23 @@ pub(crate) fn ask_claude(core: &Arc<Core>, agent_id: &str, input: &Value) -> Str
 
 /// The open questions, for the app, the notch and phones.
 pub(crate) fn views(core: &Core) -> Vec<Value> {
-    core.harness
-        .questions
-        .lock()
-        .open
-        .iter()
-        .map(Question::view)
+    let open = core.harness.questions.lock().open.clone();
+    with_tickets(core, open)
+}
+
+/// Each question's view, with the ticket of the card its asker holds.
+fn with_tickets(core: &Core, open: Vec<Question>) -> Vec<Value> {
+    open.iter()
+        .map(|question| {
+            let mut view = question.view();
+            if let (Some(ticket), Some(fields)) = (
+                super::board::ticket_of_agent(core, &question.agent_id),
+                view.as_object_mut(),
+            ) {
+                fields.insert("ticket".into(), ticket.into());
+            }
+            view
+        })
         .collect()
 }
 
@@ -902,7 +913,7 @@ fn tell_phones(core: &Core) {
 /// opened that has not had them.
 fn tell_window(core: &Arc<Core>) {
     let window = core.window.client_id();
-    let views = {
+    let open = {
         let mut state = core.harness.questions.lock();
         if !state.dirty && state.told_window == window {
             return;
@@ -912,8 +923,9 @@ fn tell_window(core: &Arc<Core>) {
         if window.is_none() {
             return;
         }
-        state.open.iter().map(Question::view).collect::<Vec<_>>()
+        state.open.clone()
     };
+    let views = with_tickets(core, open);
     let request = json!({
         "id": "agent-questions",
         "project": "/",

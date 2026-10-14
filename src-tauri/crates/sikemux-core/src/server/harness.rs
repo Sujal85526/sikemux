@@ -26,8 +26,8 @@ use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
 use super::connection::blocking;
 use super::messages::{self, Mailbox, MailboxRecord};
 use super::questions::{self, Questions, QuestionsRecord};
-use super::spawn;
 use super::window::{self, Call};
+use super::{board, spawn};
 use super::{session, Core};
 use crate::skills;
 
@@ -54,7 +54,7 @@ const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const TOOL_CALLS_FILE: &str = "agent-tool-calls.json";
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
 /// Tools only an agent that proves who it is may call.
-const AGENT_METHODS: &str = "agent.";
+const AGENT_METHODS: [&str; 2] = ["agent.", "board."];
 
 const WINDOW_CLOSED_NOTE: &str = "Sikemux's window is closed, so this lists only the runs you started and the event cursor. Panes, the tasks in sikemux.json and listening ports need the window open.";
 const AWAITING_TRUST_NOTE: &str = "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.";
@@ -406,7 +406,11 @@ pub(crate) async fn call(core: &Arc<Core>, mut request: HarnessRequest) -> Resul
         }
         None => false,
     };
-    if request.method.starts_with(AGENT_METHODS) && !proven {
+    if AGENT_METHODS
+        .iter()
+        .any(|prefix| request.method.starts_with(prefix))
+        && !proven
+    {
         return Err(format!(
             "{} works only for an agent Sikemux started, which proves who it is; start this agent from Sikemux again",
             request.method.replace('.', "_")
@@ -449,6 +453,10 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "agent.send" => messages::send(core, &request).await,
         "agent.spawn" => spawn::spawn(core, &request).await,
         "agent.ask" => questions::ask(core, &request).await,
+        "board.add" => board::add(core, &request).await,
+        "board.list" => board::list(core, &request).await,
+        "board.claim" => board::claim(core, &request).await,
+        "board.update" => board::update(core, &request).await,
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
         "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,
