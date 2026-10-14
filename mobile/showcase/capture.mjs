@@ -32,6 +32,8 @@ const SCENES = [
   { name: 'home', route: '/' },
   { name: 'device', route: `/device/${CORE}` },
   { name: 'terminals', route: `/device/${CORE}`, tap: 'Terminals' },
+  { name: 'boards', route: `/device/${CORE}?tab=board` },
+  { name: 'board', route: `/device/${CORE}?tab=board`, tap: 'acme-shop' },
   { name: 'chat', route: `/device/${CORE}/chat/chat-login` },
   { name: 'asking', route: `/device/${CORE}/chat/chat-dark-mode` },
   { name: 'question', route: `/device/${CORE}/chat/chat-release` },

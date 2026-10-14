@@ -5,6 +5,7 @@
  */
 import { ChatAttachment, CoreEvent, MobileError } from '../app/test/mocks/sikemux-native';
 import {
+  BOARDS,
   CHATS,
   CORE,
   HOST,
@@ -160,7 +161,13 @@ class Connection {
   async saveBackdrop() {
     return undefined;
   }
-  async call(method: string): Promise<string> {
+  async call(method: string, params: string): Promise<string> {
+    if (method === 'boards') return JSON.stringify(BOARDS);
+    if (method === 'board') {
+      const { project } = JSON.parse(params) as { project: string };
+      const board = BOARDS.find((known) => known.project === project);
+      return JSON.stringify(board ?? { ...BOARDS[0], project, cards: [] });
+    }
     if (method === 'agentNames')
       return JSON.stringify(
         CHATS.map((chat) => ({ agentId: chat.agentId, name: chat.name, project: projectPath(chat.project), parent: chat.lead ?? null })),

@@ -489,6 +489,11 @@
   .rows .row .s .place svg { display: inline-block; vertical-align: -1px; }
   .rows .row code { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
   .rows .row.ask { margin-top: 8px; }
+  .rows .row .s b { font-weight: 500; color: var(--text-secondary); }
+  .rows .row .mark.folder { color: var(--live); }
+  .rows .row .mark.nobody .hollow { width: 9px; height: 9px; border-radius: 999px; border: 1.5px solid var(--gray-700); }
+  .rows .row.done .t { color: var(--text-tertiary); }
+  .rows .row .check-done { color: var(--text-tertiary); display: grid; place-items: center; }
   .rows .row.chain-head, .rows .row.chain { position: relative; }
   .rows .row.chain-head::after, .rows .row.chain:not(.chain-last)::after { content: ""; position: absolute; left: 18.5px; width: 1px; top: calc(50% + 13px); bottom: -1px; background: var(--tree-spine); }
   .rows .row.chain::before { content: ""; position: absolute; left: 18.5px; width: 1px; top: -3px; bottom: calc(50% + 13px); background: var(--tree-spine); }
@@ -1394,6 +1399,63 @@
       <figcaption><b>Removed on the host</b><div class="note">When the host has unpaired this phone, trying again can't help, so the phone stops trying and says so. Forget this host forgets it here and goes back to Devices, where a host on the account offers Connect again.</div></figcaption>
     </figure>
 
+
+  </div>
+</section>
+
+<!-- ================================================================ -->
+<section class="flow on-host">
+  <h2>The board</h2>
+  <p>Each project's board, the one agents plan their work on and Auto runs, read on the phone. Board joins Agents and Terminals on the host's bar. It only reads: cards move on the Mac, or by the agents themselves.</p>
+  <div class="phones">
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · 5 agents · 2 terminals</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span>Agents <i class="count">2</i></span><span>Terminals</span><span class="on">Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>sikemux<span class="ch">{{IconChevron:12}}</span></span></div>
+        <div class="pad grow">
+          <div class="glabel">Needs you <span class="n">1</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Store amounts in cents</div><div class="s asked"><b>Maple</b> asks: Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.</div><div class="s"><b>Maple</b> · <span class="m">PROJ-14</span> Story</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+          </div>
+          <div class="glabel">In progress <span class="n">2</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Move the ledger import</div><div class="s"><b>Otter</b> · <span class="m">PROJ-12</span> Epic · <span class="m">1/3</span></div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t">Backfill the old invoices</div><div class="s"><b>Wren</b> · under <span class="m">PROJ-12</span> · ⛓ after Move the ledger…</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+          </div>
+          <div class="glabel">Open <span class="n">1</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark nobody"><span class="hollow"></span></span><div class="body"><div class="t">Show amounts in the account currency</div><div class="s">Nobody yet · <span class="m">PROJ-15</span> Story</div></div><span class="status-slot"></span></div>
+          </div>
+          <div class="glabel">Done <span class="n">1</span></div>
+          <div class="rows">
+            <div class="row done"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t">Migration for the amounts table</div><div class="s"><b>Comet</b> · under <span class="m">PROJ-12</span></div></div><span class="status-slot"><span class="check-done">{{IconCheck:13}}</span></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>One project</b><div class="note">The Mac's four columns become groups, Needs you first: a card whose agent waits on your answer, with the question in two lines, or one Auto handed back. Then In progress, Open and Done. A card leads with its owner's mark and its title; the line under it names the owner, then the ticket key and its type, or the ticket it is filed under, its cards done out of those under it, and the card it waits for. The end shows the owner's state as the agents list does, and a check once it is done. A card nobody has taken yet says so. Tapping a card whose agent is still open opens its chat.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · 5 agents · 2 terminals</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span>Agents <i class="count">2</i></span><span>Terminals</span><span class="on">Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
+        <div class="pad grow">
+          <div class="glabel">Boards</div>
+          <div class="rows">
+            <div class="row"><span class="mark folder">{{IconFolder:18}}</span><div class="body"><div class="t">sikemux</div><div class="s">1 needs you · 2 in progress · 1 open · 1 done</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+            <div class="row"><span class="mark folder">{{IconFolder:18}}</span><div class="body"><div class="t">sikemux-front</div><div class="s">3 open</div></div><span class="status-slot"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>All projects</b><div class="note">Unscoped, each project with cards is one row counting its cards by group, with the white dot when one needs you. Tapping it scopes the device to that project, as the picker does.</div></figcaption>
+    </figure>
 
   </div>
 </section>

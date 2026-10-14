@@ -12,6 +12,7 @@ import { AGENT_GROUPS, AGENT_LABELS, type AgentDisplay, type AgentGroup } from '
 import type { Attention, ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
 import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
+import { Board } from '@/devices/Board';
 import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { asking as askingOf } from '@/devices/asking';
@@ -29,7 +30,7 @@ import { Nav, Screen, useBottomGap } from '@/ui/screen';
 import { Dot, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
-type Tab = 'agents' | 'terminals';
+type Tab = 'agents' | 'terminals' | 'board';
 
 /** The New chat pill's height, which the list leaves room for below its last row. */
 const NEW_CHAT_HEIGHT = 52;
@@ -515,11 +516,11 @@ export default function Device() {
   const live = useLive(core);
   const status = useHostStatus(core);
   const scrollPause = useScrollPause();
-  const [tab, setTab] = useState<Tab>(linkedTab === 'terminals' ? 'terminals' : 'agents');
+  const [tab, setTab] = useState<Tab>(linkedTab === 'terminals' || linkedTab === 'board' ? linkedTab : 'agents');
   const [followedLink, setFollowedLink] = useState(linkedTab);
   if (linkedTab !== followedLink) {
     setFollowedLink(linkedTab);
-    if (linkedTab === 'agents' || linkedTab === 'terminals') setTab(linkedTab);
+    if (linkedTab === 'agents' || linkedTab === 'terminals' || linkedTab === 'board') setTab(linkedTab);
   }
   const behind = status.outdated;
   const away = live.status === 'closed' || !!status.problem;
@@ -646,8 +647,16 @@ export default function Device() {
                         full={device?.access === 'full'}
                         hostName={hostName}
                       />
-                    ) : (
+                    ) : tab === 'terminals' ? (
                       <Terminals snapshot={snapshot} scope={scope} />
+                    ) : (
+                      <Board
+                        core={core}
+                        connection={live.status === 'open' ? live.connection : undefined}
+                        snapshot={snapshot}
+                        scope={scope}
+                        onScope={scopeTo}
+                      />
                     )
                   ) : null}
                 </View>
@@ -660,6 +669,7 @@ export default function Device() {
                 <View style={styles.tabs} accessibilityRole="tablist">
                   <HostTab label="Agents" count={asking} on={tab === 'agents'} onPress={() => switchTo('agents')} />
                   <HostTab label="Terminals" on={tab === 'terminals'} onPress={() => switchTo('terminals')} />
+                  <HostTab label="Board" on={tab === 'board'} onPress={() => switchTo('board')} />
                 </View>
                 {snapshot.workspace.projects.length || filtering ? (
                   <Pressable
