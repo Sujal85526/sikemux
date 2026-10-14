@@ -2,15 +2,13 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// What every island shows: the agents in the core's device view, and the
+/// What every island shows: the inbox in the core's device view, and the
 /// actions that reach back to the core.
 @Observable
 final class NotchStore {
     private(set) var view = DeviceView.empty
-    private(set) var agents: [AgentItem] = []
+    private(set) var entries: [Entry] = []
     private(set) var settings: NotchSettings
-    /// When each agent entered the state it is in, for the times beside it.
-    private(set) var since: [String: Date] = [:]
     private(set) var error: String?
     /// Devices waiting to be let in, oldest first.
     private(set) var devices: [PendingDevice] = []
@@ -20,10 +18,7 @@ final class NotchStore {
     @ObservationIgnored let options: Options
     @ObservationIgnored private var link: CoreLink?
     @ObservationIgnored private var startedCore = false
-    @ObservationIgnored private var seenAttentions: Set<String> = []
     @ObservationIgnored private var questions: [AgentQuestion] = []
-    /// The state each agent was last seen in, kept across a reconnect so its time does not restart.
-    @ObservationIgnored private var lastStates: [String: AgentState] = [:]
     @ObservationIgnored private var heard = false
     @ObservationIgnored private var errorTimer: DispatchWorkItem?
     @ObservationIgnored var onPeek: ((Peek) -> Void)?
@@ -89,48 +84,17 @@ final class NotchStore {
     }
 
     func apply(_ view: DeviceView) {
-        let before = lastStates
-        let fresh = asked(view.agents)
-        let now = Date()
-        var since: [String: Date] = [:]
-        for agent in fresh {
-            let unchanged = before[agent.id] == agent.state
-            since[agent.id] = unchanged ? self.since[agent.id] ?? now : now
-        }
-        for attention in view.attentions {
-            since[attention.agentId] = Date(timeIntervalSince1970: attention.at / 1000)
-        }
-        let newAsks = view.attentions.filter { !seenAttentions.contains($0.id) }.map(\.agentId)
-        // A terminal agent asks in its own terminal, and an agent's question comes from a call, so the notch hears
-        // only that it is now blocked.
-        let asking = Set(view.attentions.map(\.agentId))
-        let newlyBlocked = fresh.filter { $0.state == .blocked && before[$0.id] != .blocked && !asking.contains($0.id) }.map(\.id)
-        let finished = fresh.filter { $0.state == .done && before[$0.id].map { $0 != .done } ?? false }
-        seenAttentions = Set(view.attentions.map(\.id))
-        lastStates = Dictionary(uniqueKeysWithValues: fresh.map { ($0.id, $0.state) })
+        let before = Dictionary(entries.map { ($0.id, $0.item.kind) }, uniquingKeysWith: { first, _ in first })
         self.view = view
-        withAnimation(Motion.open) { agents = fresh }
-        self.since = since
-        if fresh.contains(where: { $0.state == .blocked }) {
-            readQuestions()
-        } else if !questions.isEmpty {
-            questions = []
-        }
+        withAnimation(Motion.open) { entries = view.entries(questions) }
+        if !Set(view.inbox.items.compactMap(\.questionId)).isSubset(of: questions.map(\.id)) { readQuestions() }
         defer { heard = true }
         guard heard else { return }
-        if let ask = (newAsks + newlyBlocked).last {
-            onPeek?(.ask(ask))
-        } else if let done = finished.last {
+        let items = view.inbox.items
+        if let ask = items.last(where: { $0.tier == .needs && before[$0.id] == nil }) {
+            onPeek?(.ask(ask.id))
+        } else if let done = items.last(where: { before[$0.id] == .working && $0.kind != .working }) {
             onPeek?(.done(done.id))
-        }
-    }
-
-    /// Each agent with the question it waits on the person to answer.
-    private func asked(_ items: [AgentItem]) -> [AgentItem] {
-        items.map { item in
-            var item = item
-            item.question = questions.first { $0.agentId == item.id && $0.blocked && $0.lead == nil }
-            return item
         }
     }
 
@@ -147,7 +111,7 @@ final class NotchStore {
     func apply(_ questions: [AgentQuestion]) {
         guard questions != self.questions else { return }
         self.questions = questions
-        withAnimation(Motion.open) { agents = asked(view.agents) }
+        withAnimation(Motion.open) { entries = view.entries(questions) }
     }
 
     private func receiveRemote(_ raw: Any?) {
@@ -170,7 +134,8 @@ final class NotchStore {
     private func disconnected() {
         heard = false
         view = .empty
-        withAnimation(Motion.open) { agents = [] }
+        questions = []
+        withAnimation(Motion.open) { entries = [] }
         devices = []
         deviceAsked = [:]
     }
@@ -186,7 +151,8 @@ final class NotchStore {
 
     // MARK: Actions
 
-    func answer(_ ask: Ask, agentId: String, optionId: String) {
+    func answer(_ ask: Ask, agentId: String?, optionId: String) {
+        guard let agentId else { return }
         link?.request([
             "op": "acpPermissionReply",
             "agentId": agentId,
@@ -219,6 +185,17 @@ final class NotchStore {
             case .success(let response): self?.receiveRemote(response["status"])
             case .failure(let error): self?.fail(error.message)
             }
+        }
+    }
+
+    /// Shows what the entry is about: its agent in Sikemux, or else its pull request.
+    func open(_ entry: Entry) {
+        if let agentId = entry.item.agentId {
+            focus(agentId)
+        } else if let url = entry.item.url.flatMap(URL.init(string:)) {
+            NSWorkspace.shared.open(url)
+        } else {
+            openApp()
         }
     }
 
@@ -312,17 +289,18 @@ final class NotchStore {
     }
 
     /// Hands files to an agent: into the turn it is running, or as its next prompt.
-    func send(_ paths: [String], to agent: AgentItem) {
+    func send(_ paths: [String], to entry: Entry) {
+        guard let agentId = entry.item.agentId else { return }
         let text = paths.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ")
-        if agent.state == .working {
-            link?.request(["op": "acpSteer", "agentId": agent.id, "text": text, "paths": paths, "context": [Any]()]) {
+        if entry.item.kind == .working {
+            link?.request(["op": "acpSteer", "agentId": agentId, "text": text, "paths": paths, "context": [Any]()]) {
                 [weak self] result in
                 if case .success(let response) = result, response["outcome"] as? String == "promptRequired" {
-                    self?.prompt(agent.id, text: text, paths: paths)
+                    self?.prompt(agentId, text: text, paths: paths)
                 }
             }
         } else {
-            prompt(agent.id, text: text, paths: paths)
+            prompt(agentId, text: text, paths: paths)
         }
     }
 
@@ -333,24 +311,24 @@ final class NotchStore {
         }
     }
 
-    /// The project shown first when starting an agent: the one most of the running agents are in.
+    /// The project shown first when starting an agent: the one most of the inbox is in.
     var defaultProject: Project? {
         let projects = view.workspace.projects
-        let counts = Dictionary(grouping: agents, by: \.project).mapValues(\.count)
+        let counts = Dictionary(grouping: entries, by: \.project).mapValues(\.count)
         return projects.max { (counts[$0.name] ?? 0) < (counts[$1.name] ?? 0) } ?? projects.first
     }
 
-    /// How many agents need you, work, left shells running and are done, most pressing first, leaving out
-    /// what no agent is doing. Shells left running sit beside working: the agent is still at something.
+    /// How many items need you, how many agents work or left shells running, and how many items are done, leaving
+    /// out what is none. Shells left running sit beside working: the agent is still at something.
     var rollups: [(mark: Rollup, count: Int)] {
-        [Rollup.state(.blocked), .state(.working), .stillRunning, .state(.done)].compactMap { mark in
-            let count = agents.filter { agent in
-                switch mark {
-                case .state(let state): agent.state == state
-                case .stillRunning: agent.state == .idle && agent.background
-                }
-            }.count
-            return count > 0 ? (mark, count) : nil
-        }
+        let listed = Set(entries.compactMap(\.item.agentId))
+        let still = view.chats.filter { ($0.subagents > 0 || $0.tasks > 0) && !listed.contains($0.agentId) }.count
+        let counts: [(Rollup, Int)] = [
+            (.mark(.needs), entries.filter { $0.mark == .needs }.count),
+            (.mark(.working), view.inbox.working),
+            (.stillRunning, still),
+            (.mark(.done), entries.filter { $0.mark == .done || $0.mark == .failed }.count),
+        ]
+        return counts.filter { $0.1 > 0 }.map { (mark: $0.0, count: $0.1) }
     }
 }
