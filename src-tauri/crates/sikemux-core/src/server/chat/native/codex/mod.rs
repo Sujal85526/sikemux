@@ -30,7 +30,7 @@ use super::session::{Backend, Opened, Prompt, Sink, TurnEnd};
 use approvals::Question;
 use commands::Command;
 use config::{Mode, Models};
-use state::{Effect, Reply, Session};
+use state::{user_input_told, Effect, Reply, Session};
 
 /// How long a finished turn waits for the subagents it started.
 const SUBAGENT_WAIT: Duration = Duration::from_secs(10 * 60);
@@ -140,6 +140,10 @@ impl Driver {
         let reply = self.lock().question(method, params);
         match reply {
             Reply::Answer(answer) => self.rpc.respond(id, answer),
+            Reply::PutQuestion => {
+                let told = self.sink.question(params);
+                self.rpc.respond(id, user_input_told(params, &told));
+            }
             Reply::Refuse => self
                 .rpc
                 .refuse(id, &format!("Sikemux does not handle {method}")),

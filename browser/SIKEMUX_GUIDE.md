@@ -978,8 +978,9 @@ one per turn.
 An agent another agent started asks its lead first, which answers or passes it
 to the person; an agent with no lead asks the person, in its chat, the rail,
 the notch and on their phone. The answer says `askedOf`. Do not ask the same
-question again, or ask it in your reply as well. Claude's own AskUserQuestion
-goes the same way.
+question again, or ask it in your reply as well. Your CLI's own question
+tool, such as Claude's AskUserQuestion or Codex's and Muse's
+request_user_input, goes the same way.
 
 An answer from the person arrives like this:
 

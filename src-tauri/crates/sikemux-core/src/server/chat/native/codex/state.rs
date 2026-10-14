@@ -33,8 +33,24 @@ pub(super) enum Effect {
 /// How to answer one of Codex's requests.
 pub(super) enum Reply {
     Ask(Question),
+    /// Codex asks something with request_user_input, which goes the way of
+    /// Sikemux's own questions.
+    PutQuestion,
     Answer(Value),
     Refuse,
+}
+
+/// Codex's request_user_input answered with what the agent is told in place
+/// of the answer, which comes later as a message.
+pub(super) fn user_input_told(params: &Value, told: &str) -> Value {
+    let answers: serde_json::Map<String, Value> = params["questions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|question| question["id"].as_str())
+        .map(|id| (id.to_owned(), json!({ "answers": [told] })))
+        .collect();
+    json!({ "answers": answers })
 }
 
 /// The turn this side prompted.
@@ -608,7 +624,8 @@ impl Session {
             "item/permissions/requestApproval" => {
                 Reply::Ask(approvals::permissions(&session, params))
             }
-            "item/tool/requestUserInput" => Reply::Answer(json!({ "answers": {} })),
+            "item/tool/requestUserInput" if stale => Reply::Answer(json!({ "answers": {} })),
+            "item/tool/requestUserInput" => Reply::PutQuestion,
             "mcpServer/elicitation/request" if stale => {
                 Reply::Answer(approvals::cancelled_elicitation())
             }
@@ -925,8 +942,11 @@ mod tests {
             json!([{ "path": "/nowhere/a.txt" }])
         );
         assert!(matches!(
-            session.question("item/tool/requestUserInput", &json!({ "threadId": "thread" })),
-            Reply::Answer(answer) if answer == json!({ "answers": {} })
+            session.question(
+                "item/tool/requestUserInput",
+                &json!({ "threadId": "thread" })
+            ),
+            Reply::PutQuestion
         ));
         assert!(matches!(
             session.question("item/tool/call", &json!({})),

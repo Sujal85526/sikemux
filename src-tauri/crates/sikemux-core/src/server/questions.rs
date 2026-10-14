@@ -1,4 +1,4 @@
-//! What `ask` answers, and Claude's own AskUserQuestion with it. An agent's
+//! What `ask` answers, and the CLIs' own question tools with it. An agent's
 //! question goes first to the agent that started it, and to the person when
 //! that agent passes it on, has stopped, or ends its turn without answering.
 //! The person answers in the asker's chat, the notch or Sikemux's rail, and
@@ -671,9 +671,10 @@ fn pass_on(
     }))
 }
 
-/// Takes Claude's AskUserQuestion into the same questions, and says what
-/// Claude is told in place of an answer.
-pub(crate) fn ask_claude(core: &Arc<Core>, agent_id: &str, input: &Value) -> String {
+/// Takes a question asked with a CLI's own tool, such as Claude's
+/// AskUserQuestion or Codex's request_user_input, into the same questions,
+/// and says what the agent is told in place of an answer.
+pub(crate) fn ask_from_cli(core: &Arc<Core>, agent_id: &str, input: &Value) -> String {
     let asked: Vec<Asked> = input
         .get("questions")
         .and_then(Value::as_array)

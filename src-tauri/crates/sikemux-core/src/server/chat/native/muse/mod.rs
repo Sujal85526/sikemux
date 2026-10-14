@@ -252,18 +252,22 @@ impl Driver {
                 self.rpc.respond(id, json!({}));
                 self.ask(params);
             }
-            // The chat asks Muse to make its own assumptions rather than stop
-            // to ask, so a question that comes anyway is turned down.
             "userInput/request" => {
                 self.rpc.respond(id, json!({}));
+                let told = self.sink.question(params);
                 let rpc = self.rpc.clone();
                 let params = json!({
                     "sessionId": params["sessionId"],
                     "commandId": command_id(),
                     "userInputId": params["userInputId"],
+                    "clarification": { "format": "text", "content": told },
                 });
                 tokio::spawn(async move {
-                    let _ = rpc.request("userInput/cancel", params).await;
+                    if let Err(error) = rpc.request("userInput/clarify", params).await {
+                        eprintln!(
+                            "sikemux core: Muse did not take the note on its question: {error}"
+                        );
+                    }
                 });
             }
             _ => self
@@ -347,7 +351,7 @@ impl Host {
                     "clientInfo": { "name": "sikemux", "title": "Sikemux", "version": env!("CARGO_PKG_VERSION") },
                     "capabilities": {
                         "requestedCapabilities": ["sessionMcp"],
-                        "userInputDialogs": false,
+                        "userInputDialogs": true,
                     },
                 }),
             )

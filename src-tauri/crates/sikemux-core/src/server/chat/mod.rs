@@ -397,7 +397,7 @@ impl Chat {
     /// Sikemux's, and says what the agent is told in its place.
     pub(crate) fn ask_question(&self, input: &Value) -> String {
         match self.core.upgrade() {
-            Some(core) => super::questions::ask_claude(&core, self.agent_id(), input),
+            Some(core) => super::questions::ask_from_cli(&core, self.agent_id(), input),
             None => "Sikemux is shutting down; ask again later.".to_owned(),
         }
     }
