@@ -4,7 +4,20 @@
  * of the network.
  */
 import { ChatAttachment, CoreEvent, MobileError } from '../app/test/mocks/sikemux-native';
-import { CHATS, CORE, HOST, LAUNCHERS, PANE_PICTURE, PROJECTS, RECENT, SESSIONS, chatEvents, permissionPayload, setupOf } from './world';
+import {
+  CHATS,
+  CORE,
+  HOST,
+  LAUNCHERS,
+  PANE_PICTURE,
+  PROJECTS,
+  QUESTIONS,
+  RECENT,
+  SESSIONS,
+  chatEvents,
+  permissionPayload,
+  setupOf,
+} from './world';
 
 export { ChatAttachment, CoreEvent, MobileError };
 
@@ -62,6 +75,7 @@ function view() {
       launcher: chat.provider,
       permissionMode: chat.permissionMode,
       asleep: chat.asleep ?? false,
+      group: QUESTIONS.some((question) => question.agentId === chat.agentId && question.blocked) ? 'blocked' : undefined,
     })),
     attentions: CHATS.flatMap((chat) => {
       const request = permissionPayload(chat);
@@ -151,6 +165,7 @@ class Connection {
       return JSON.stringify(
         CHATS.map((chat) => ({ agentId: chat.agentId, name: chat.name, project: projectPath(chat.project), parent: chat.lead ?? null })),
       );
+    if (method === 'questions') return JSON.stringify(QUESTIONS);
     throw new Error(`the showcase host does not know ${method}`);
   }
   async callToFile(method: string): Promise<string> {

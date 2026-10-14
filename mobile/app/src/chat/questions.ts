@@ -6,6 +6,8 @@ import { asksPerson, type AgentQuestion, type QuestionAnswer } from '@mac/agents
 export type ChatQuestions = {
   /** What the agent asked the person and waits on, oldest first. */
   open: AgentQuestion[];
+  /** Questions the agent went on without, on an assumption. */
+  assumed: AgentQuestion[];
   /** Answered from this phone, until the transcript holds the answer. */
   answered: { question: AgentQuestion; answer: string }[];
   busy: string | null;
@@ -13,7 +15,8 @@ export type ChatQuestions = {
   composing: AgentQuestion | null;
   /** The person chose to write the answer. */
   writing: boolean;
-  answer: (question: AgentQuestion, given: QuestionAnswer, shown: string) => Promise<boolean>;
+  /** `shown` is what the transcript shows as the answer until the agent has it; none for an assumption let stand. */
+  answer: (question: AgentQuestion, given: QuestionAnswer, shown: string | null) => Promise<boolean>;
   write: (question: AgentQuestion) => void;
   stopComposing: () => void;
 };
@@ -31,7 +34,7 @@ export function useQuestions(
 ): ChatQuestions {
   const [all, setAll] = useState<AgentQuestion[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
-  const [sent, setSent] = useState<{ question: AgentQuestion; answer: string }[]>([]);
+  const [sent, setSent] = useState<{ question: AgentQuestion; answer: string | null }[]>([]);
   const [writingId, setWritingId] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -43,7 +46,7 @@ export function useQuestions(
     connection.call('questions', 'null').then(
       (text) => {
         const list = JSON.parse(text) as AgentQuestion[];
-        if (current) setAll(list.filter((question) => question.agentId === agentId && asksPerson(question) && question.blocked));
+        if (current) setAll(list.filter((question) => question.agentId === agentId && asksPerson(question)));
       },
       (error: unknown) => {
         if (current) onError(`could not read this agent's questions: ${error instanceof Error ? error.message : String(error)}`);
@@ -54,13 +57,18 @@ export function useQuestions(
     };
   }, [connection, agentId, seen, reads, onError]);
 
-  const open = useMemo(() => all.filter((question) => !sent.some((answered) => answered.question.id === question.id)), [all, sent]);
-  const answered = useMemo(() => sent.filter(({ question }) => !arrived.has(question.asked)), [sent, arrived]);
-  const writing = open.find((question) => question.id === writingId) ?? null;
+  const unanswered = useMemo(() => all.filter((question) => !sent.some((answered) => answered.question.id === question.id)), [all, sent]);
+  const open = useMemo(() => unanswered.filter((question) => question.blocked), [unanswered]);
+  const assumed = useMemo(() => unanswered.filter((question) => !question.blocked), [unanswered]);
+  const answered = useMemo(
+    () => sent.flatMap(({ question, answer }) => (answer === null || arrived.has(question.asked) ? [] : [{ question, answer }])),
+    [sent, arrived],
+  );
+  const writing = unanswered.find((question) => question.id === writingId) ?? null;
   const composing = writing ?? open.find((question) => !dismissed.has(question.id)) ?? null;
 
   const answer = useCallback(
-    async (question: AgentQuestion, given: QuestionAnswer, shown: string) => {
+    async (question: AgentQuestion, given: QuestionAnswer, shown: string | null) => {
       if (!connection) return false;
       setBusy(question.id);
       try {
@@ -79,12 +87,20 @@ export function useQuestions(
     [connection, onError],
   );
 
-  const write = useCallback((question: AgentQuestion) => setWritingId(question.id), []);
+  const write = useCallback((question: AgentQuestion) => {
+    setWritingId(question.id);
+    setDismissed((current) => {
+      if (!current.has(question.id)) return current;
+      const next = new Set(current);
+      next.delete(question.id);
+      return next;
+    });
+  }, []);
   const stopComposing = useCallback(() => {
     if (!composing) return;
     setWritingId(null);
     setDismissed((current) => new Set(current).add(composing.id));
   }, [composing]);
 
-  return { open, answered, busy, composing, writing: writing !== null, answer, write, stopComposing };
+  return { open, assumed, answered, busy, composing, writing: writing !== null, answer, write, stopComposing };
 }

@@ -34,6 +34,8 @@ const SCENES = [
   { name: 'terminals', route: `/device/${CORE}`, tap: 'Terminals' },
   { name: 'chat', route: `/device/${CORE}/chat/chat-login` },
   { name: 'asking', route: `/device/${CORE}/chat/chat-dark-mode` },
+  { name: 'question', route: `/device/${CORE}/chat/chat-release` },
+  { name: 'assumed', route: `/device/${CORE}/chat/chat-login-check` },
   { name: 'new-chat', route: `/device/${CORE}/new` },
 ].filter((scene) => only.length === 0 || only.includes(scene.name));
 

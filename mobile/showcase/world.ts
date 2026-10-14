@@ -181,6 +181,46 @@ export const CHATS: DemoChat[] = [
   },
 ];
 
+/** Questions agents put to the person, as the host's questions call lists them. */
+export const QUESTIONS = [
+  {
+    id: 'q-release',
+    agentId: 'chat-release',
+    name: 'Birch',
+    cli: 'hermes',
+    project: `${HOME}/marketing-site`,
+    asked: 'Should the notes call out the new prices, or leave them for the blog post?',
+    text: 'Should the notes call out the new prices, or leave them for the blog post?',
+    choices: [
+      { label: 'Call them out', detail: 'one line under Faster checkout' },
+      { label: 'Leave them', detail: 'the blog post covers them' },
+    ],
+    blocked: true,
+    assumption: null,
+    at: Date.now() - 120_000,
+    lead: null,
+    via: null,
+    passed: false,
+    ticket: 'SITE-41',
+  },
+  {
+    id: 'q-widths',
+    agentId: 'chat-login-check',
+    name: 'Wren',
+    cli: 'claude',
+    project: `${HOME}/acme-shop`,
+    asked: 'Which phone widths should I check?',
+    text: 'Which phone widths should I check?',
+    choices: [],
+    blocked: false,
+    assumption: '320, 375 and 430 points cover the phones we support',
+    at: Date.now() - 60_000,
+    lead: null,
+    via: null,
+    passed: false,
+  },
+];
+
 /** Saved chats the host lists as recent, with how many hours ago each was last written to. */
 export const RECENT = [
   { id: 'claude:r1', provider: 'claude', title: 'Move checkout totals into the order service', project: 'p-shop', hours: 3 },

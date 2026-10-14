@@ -11,9 +11,13 @@ export function chatTitle(chat: Pick<ChatInfo, 'title' | 'provider'>): string {
   return chat.title ?? `New ${agentLabel(chat.provider)} chat`;
 }
 
-/** Where a chat's turn is, grouped and counted as the Mac's rail does (src/state/agentStatus.ts). */
+/**
+ * Where a chat's turn is, grouped and counted as the Mac's rail does (src/state/agentStatus.ts). The core's group says
+ * when it waits on the person to answer its question.
+ */
 export function chatDisplay(chat: ChatInfo): AgentDisplay {
-  const state = chat.pendingPermissions.length ? 'blocked' : chat.running ? 'working' : chat.unread ? 'done' : 'idle';
+  const blocked = chat.pendingPermissions.length > 0 || chat.group === 'blocked';
+  const state = blocked ? 'blocked' : chat.running ? 'working' : chat.unread ? 'done' : 'idle';
   return agentDisplay(state, { subagents: chat.subagents, tasks: chat.tasks });
 }
 

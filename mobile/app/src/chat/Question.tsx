@@ -3,11 +3,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { viaNote, type AgentQuestion } from '@mac/agents/agentQuestions';
 import { haptics } from '@/ui/haptics';
-import { AgentIcon } from '@/ui/Icon';
+import { AgentIcon, Icon } from '@/ui/Icon';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
 
-/** Who is asking, above the question itself. */
-function AskedBy({ cli, children }: { cli: string; children: ReactNode }) {
+/** Who is asking, above the question itself, and the ticket of the board card it works. */
+function AskedBy({ cli, ticket, children }: { cli: string; ticket?: string; children: ReactNode }) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.who}>
@@ -15,6 +15,7 @@ function AskedBy({ cli, children }: { cli: string; children: ReactNode }) {
       <Text style={styles.whoText} numberOfLines={1}>
         {children}
       </Text>
+      {ticket ? <Text style={styles.ticket}>{ticket}</Text> : null}
     </View>
   );
 }
@@ -80,7 +81,7 @@ export function OpenQuestion({
   );
   return (
     <View accessibilityLiveRegion="polite">
-      <AskedBy cli={question.cli}>
+      <AskedBy cli={question.cli} ticket={question.ticket}>
         <Text style={styles.name}>{question.name}</Text> asks you{via ? ` · ${via}` : ''}
       </AskedBy>
       <Text style={styles.prose} selectable>
@@ -92,6 +93,54 @@ export function OpenQuestion({
           {row('other', question.choices.length + 1, 'Something else…', writing ? 'answering below' : undefined, true, onWrite)}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** A question the agent went on without, on the assumption it stated: Fine lets it stand, Change answers it. */
+export function AssumedQuestion({
+  question,
+  canAnswer,
+  busy,
+  onFine,
+  onChange,
+}: {
+  question: AgentQuestion;
+  canAnswer: boolean;
+  busy: boolean;
+  onFine: () => void;
+  onChange: () => void;
+}) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const act = (label: string, onPress: () => void) => (
+    <Text
+      style={styles.act}
+      disabled={busy}
+      onPress={() => {
+        haptics.select();
+        onPress();
+      }}
+      accessibilityRole="button">
+      {label}
+    </Text>
+  );
+  return (
+    <View style={styles.assumed}>
+      <View style={styles.check}>
+        <Icon name="IconCheck" size={13} color={colors.inkDim} />
+      </View>
+      <Text style={styles.assumedText}>
+        <Text style={styles.name}>{question.name}</Text> assumed {question.assumption}
+        {canAnswer ? (
+          <>
+            {'  ·  '}
+            {act('Fine', onFine)}
+            {'   '}
+            {act('Change', onChange)}
+          </>
+        ) : null}
+      </Text>
     </View>
   );
 }
@@ -109,4 +158,9 @@ const makeStyles = (colors: Palette) =>
     why: { fontSize: 13, color: colors.inkDim },
     answered: { marginTop: 4, marginBottom: 8, fontFamily: fonts.ui, fontSize: 13, lineHeight: 19, color: colors.inkDim },
     answer: { color: colors.ink },
+    ticket: { fontFamily: fonts.mono, fontSize: 11, color: colors.inkDim, marginLeft: 'auto' },
+    assumed: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: 10, marginBottom: 6 },
+    check: { height: 18, justifyContent: 'center' },
+    assumedText: { flex: 1, fontFamily: fonts.ui, fontSize: 12.5, lineHeight: 18, color: colors.inkDim },
+    act: { fontFamily: fonts.uiMedium, color: colors.ink },
   });

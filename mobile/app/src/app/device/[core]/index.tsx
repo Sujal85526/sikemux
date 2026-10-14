@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
+import { assumedQuestion, blockingQuestion, type AgentQuestion } from '@mac/agents/agentQuestions';
 import { agentLabel } from '@mac/agents/catalog';
 import { inTeams, type TeamLink } from '@mac/agents/teams';
 import { formatAge } from '@mac/lib/format';
@@ -15,6 +16,7 @@ import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
 import { asking as askingOf } from '@/devices/asking';
 import { useLeads } from '@/devices/leads';
+import { useHostQuestions } from '@/devices/questions';
 import { summary } from '@/devices/status';
 import { chatDisplay, chatState, chatTitle, folder } from '@/devices/words';
 import { Wants } from '@/screens/Wants';
@@ -203,12 +205,17 @@ function Agents({
 }) {
   const styles = useStyles(makeStyles);
   const live = useLive(core);
+  const connection = live.status === 'open' ? live.connection : undefined;
   const leads = useLeads(
-    live.status === 'open' ? live.connection : undefined,
+    connection,
     snapshot.chats
       .map((chat) => chat.agentId)
       .sort()
       .join(' '),
+  );
+  const questions = useHostQuestions(
+    connection,
+    snapshot.chats.map((chat) => `${chat.agentId}:${chat.group}:${chat.activeAt}:${chat.unread}`).join(' '),
   );
   const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
   const chats = scoped.filter((chat) => provider === 'all' || chat.provider === provider);
@@ -217,7 +224,7 @@ function Agents({
   const listed = new Map(chats.map((chat) => [chat.agentId, chat]));
   // A worker sits in its lead's group, unless it waits on the person itself.
   const sectionOf = (chat: ChatInfo, depth = 0): AgentGroup => {
-    const own = chatDisplay(chat).group;
+    const own = assumedQuestion(questions, chat.agentId) ? 'blocked' : chatDisplay(chat).group;
     const lead = listed.get(leads.get(chat.agentId) ?? '');
     if (own === 'blocked' || !lead || depth > listed.size) return own;
     const theirs = sectionOf(lead, depth + 1);
@@ -245,6 +252,7 @@ function Agents({
                   chat={chat}
                   place={placeOf(chat)}
                   attention={group === 'blocked' ? attentionOf(chat) : undefined}
+                  asked={group === 'blocked' ? askedLine(questions, chat.agentId) : undefined}
                   chain={link}
                 />
               ))}
@@ -258,6 +266,14 @@ function Agents({
       ) : null}
     </>
   );
+}
+
+/** What a Needs input row says under an agent's name: the question it waits on, or what it went on assuming. */
+function askedLine(questions: readonly AgentQuestion[], agentId: string): string | undefined {
+  const question = blockingQuestion(questions, agentId);
+  if (question) return question.text;
+  const assumed = assumedQuestion(questions, agentId);
+  return assumed ? `Assumed ${assumed.assumption ?? ''}` : undefined;
 }
 
 function terminalTitle(session: SessionInfo): string {
@@ -280,12 +296,15 @@ const ChatRow = memo(function ChatRow({
   chat,
   place,
   attention,
+  asked,
   chain,
 }: {
   core: string;
   chat: ChatInfo;
   place?: string;
   attention?: Attention;
+  /** The question it waits on the person to answer, or the assumption it went on with. */
+  asked?: string;
   chain?: TeamLink;
 }) {
   const state = chatState(chat);
@@ -295,16 +314,17 @@ const ChatRow = memo(function ChatRow({
       mark={<AgentIcon provider={chat.provider} size={20} />}
       name={chat.name}
       title={chatTitle(chat)}
-      place={asking && attention ? undefined : place}
+      place={asked || (asking && attention) ? undefined : place}
       detail={
         asking && attention ? (
           <>
             {state} · <Wants attention={attention} />
           </>
         ) : (
-          state
+          (asked ?? state)
         )
       }
+      detailLines={asked ? 2 : 1}
       end={<ChatEnd chat={chat} />}
       chain={chain}
       onPress={() => router.push(`/device/${core}/chat/${chat.agentId}`)}

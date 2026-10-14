@@ -29,7 +29,7 @@ import { askTitle, Composer, RecentSheet } from '@/chat/Composer';
 import { FoldsContext } from '@/chat/folds';
 import { HostContext } from '@/chat/hostFiles';
 import { LiveSheet, LiveStrip } from '@/chat/Live';
-import { AnsweredQuestion, OpenQuestion } from '@/chat/Question';
+import { AnsweredQuestion, AssumedQuestion, OpenQuestion } from '@/chat/Question';
 import { useQuestions } from '@/chat/questions';
 import { hasLiveWork, liveKey, liveWork } from '@/chat/liveWork';
 import { stripMeta, stripOwner } from '@/chat/messageMeta';
@@ -401,6 +401,19 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                               writing={questions.writing && composing?.id === question.id}
                               onChoose={(choice) => void questions.answer(question, { choice }, question.choices[choice]?.label ?? '')}
                               onWrite={() => {
+                                questions.write(question);
+                                input.current?.focus();
+                              }}
+                            />
+                          ))}
+                          {questions.assumed.map((question) => (
+                            <AssumedQuestion
+                              key={question.id}
+                              question={question}
+                              canAnswer={!watchOnly}
+                              busy={questions.busy === question.id}
+                              onFine={() => void questions.answer(question, { fine: true }, null)}
+                              onChange={() => {
                                 questions.write(question);
                                 input.current?.focus();
                               }}

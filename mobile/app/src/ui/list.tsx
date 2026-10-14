@@ -34,6 +34,7 @@ export function Row({
   onPress,
   dim,
   chain,
+  detailLines = 1,
 }: {
   mark?: ReactNode;
   /** The agent's name, set before its title as the Mac's rail does. */
@@ -47,6 +48,7 @@ export function Row({
   dim?: boolean;
   /** Where the row sits on its lead's team line, drawn through the marks. */
   chain?: TeamLink;
+  detailLines?: number;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -87,7 +89,7 @@ export function Row({
             </Text>
           </View>
         ) : detail ? (
-          <Text style={styles.rowDetail} numberOfLines={1}>
+          <Text style={styles.rowDetail} numberOfLines={detailLines}>
             {detail}
           </Text>
         ) : null}
