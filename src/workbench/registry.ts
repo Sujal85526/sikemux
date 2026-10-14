@@ -298,14 +298,14 @@ type BuiltinDefinitionMap = {
 
 /** This keyed shape intentionally makes additions to CorePaneKind a compile-time exhaustiveness error. */
 export const BUILTIN_WORKBENCH_ITEM_MANIFEST = Object.freeze({
-    terminal: builtinDefinition("terminal", "shell", NULL_CODEC),
-    editor: builtinDefinition("editor", "editor", EDITOR_CODEC),
-    git: builtinDefinition("git", "git", NULL_CODEC),
-    diff: builtinDefinition("diff", "diff", NULL_CODEC),
-    search: builtinDefinition("search", "search", NULL_CODEC),
-    agent: builtinDefinition("agent", "agent", NULL_CODEC),
-    desk: builtinDefinition("desk", "desk", DESK_CODEC),
-    shared: builtinDefinition("shared", "shared chat", NULL_CODEC),
+    terminal: builtinDefinition("terminal", "Terminal", NULL_CODEC),
+    editor: builtinDefinition("editor", "Files", EDITOR_CODEC),
+    git: builtinDefinition("git", "Git", NULL_CODEC),
+    diff: builtinDefinition("diff", "Diff", NULL_CODEC),
+    search: builtinDefinition("search", "Search", NULL_CODEC),
+    agent: builtinDefinition("agent", "Agent", NULL_CODEC),
+    desk: builtinDefinition("desk", "Desk", DESK_CODEC),
+    shared: builtinDefinition("shared", "Shared chat", NULL_CODEC),
     board: builtinDefinition("board", "Board", NULL_CODEC),
 }) satisfies BuiltinDefinitionMap;
 

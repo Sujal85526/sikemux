@@ -58,7 +58,7 @@ function deriveRole(w: Window): WindowRole {
     return "named";
 }
 
-export const VERSION = 19;
+export const VERSION = 20;
 const MIN_SUPPORTED_VERSION = 3;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const AGENT_PERMISSION_DEFAULT_MIGRATION_VERSION = 9;
@@ -72,6 +72,7 @@ const DESK_MIGRATION_VERSION = 16;
 const GITHUB_IN_GIT_PANE_MIGRATION_VERSION = 17;
 const CORE_SESSION_MIGRATION_VERSION = 18;
 const SPACE_ICON_MIGRATION_VERSION = 19;
+const PANE_TITLE_MIGRATION_VERSION = 20;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -712,6 +713,31 @@ function swapSpaceEmojiForIcons(decoded: Record<string, unknown>): void {
     }
 }
 
+const PANE_TITLE_RENAMES: Record<string, string> = {
+    shell: "Terminal",
+    editor: "Files",
+    git: "Git",
+    diff: "Diff",
+    search: "Search",
+    agent: "Agent",
+    desk: "Desk",
+    "shared chat": "Shared chat",
+};
+
+function capitalisePaneTitles(decoded: Record<string, unknown>): void {
+    const windowsBySession = isRecord(decoded.windowsBySession) ? decoded.windowsBySession : {};
+    for (const rows of Object.values(windowsBySession)) {
+        for (const row of Array.isArray(rows) ? rows : []) {
+            const pending: unknown[] = isRecord(row) ? [row.root] : [];
+            for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+                if (!isRecord(node)) continue;
+                if (node.type === "pane" && typeof node.title === "string") node.title = PANE_TITLE_RENAMES[node.title] ?? node.title;
+                if (Array.isArray(node.children)) pending.push(...node.children);
+            }
+        }
+    }
+}
+
 function closeGithubSessions(decoded: Record<string, unknown>): void {
     const sessions = Array.isArray(decoded.sessions) ? decoded.sessions : [];
     const closed = new Set(sessions.flatMap((row) => (isRecord(row) && row.kind === "sikemux.github:hub" ? [row.id] : [])));
@@ -940,6 +966,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
     if (decoded.version < GITHUB_IN_GIT_PANE_MIGRATION_VERSION) closeGithubSessions(decoded);
     if (decoded.version < CORE_SESSION_MIGRATION_VERSION) forgetCoreSessions(decoded);
     if (decoded.version < SPACE_ICON_MIGRATION_VERSION) swapSpaceEmojiForIcons(decoded);
+    if (decoded.version < PANE_TITLE_MIGRATION_VERSION) capitalisePaneTitles(decoded);
 
     const sessions: Record<string, Session> = {};
     for (const row of decoded.sessions) {

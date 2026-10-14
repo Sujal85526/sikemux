@@ -73,7 +73,7 @@ export function agentPaneId(win: Window): string | null {
 export function terminalLabel(win: Window | undefined, pane: PaneNode, titles: Readonly<Record<string, string | undefined>>): string {
     const home = win?.role === "term" ? collectPanes(win.root).find((candidate) => candidate.kind === "terminal") : undefined;
     if (win?.customName && home?.id === pane.id) return win.customName;
-    return titles[pane.id] || pane.title || win?.name || "terminal";
+    return titles[pane.id] || pane.title || win?.name || "Terminal";
 }
 
 /** The open project in this folder. */
