@@ -426,20 +426,23 @@ export const AVAILABLE_AGENTS = [
 const hoursAgo = (hours: number) =>
   Math.floor(Date.now() / 1000 - hours * 3600);
 
+/** `said` stands in for what the person and the agent wrote, which the core's search also reads. */
 export const SAVED_SESSIONS: Record<
   string,
-  { id: string; title: string; mtime: number }[]
+  { id: string; title: string; mtime: number; said?: string }[]
 > = {
   claude: [
     {
       id: "s-c1",
       title: "Split the Rundeck matrix into its own pane",
       mtime: hoursAgo(3),
+      said: "Each job's matrix of nodes gets a pane of its own, with the log tail under it.",
     },
     {
       id: "s-c2",
       title: "Why does the shader dim the gutter?",
       mtime: hoursAgo(26),
+      said: "The gutter sits under the vignette, so its alpha is multiplied twice.",
     },
     { id: "s-c3", title: "Release notes for v0.4.1", mtime: hoursAgo(49) },
   ],
@@ -453,6 +456,12 @@ export const SAVED_SESSIONS: Record<
       id: "s-x2",
       title: "Port the git graph lanes to Rust",
       mtime: hoursAgo(30),
+    },
+    {
+      id: "s-x3",
+      title: "Fix the OAuth callback after sign-in",
+      mtime: hoursAgo(73),
+      said: "The callback port was taken by a stale listener, so the redirect never landed.",
     },
   ],
 };

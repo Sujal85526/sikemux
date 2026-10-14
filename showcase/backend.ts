@@ -90,6 +90,49 @@ function recentPage(request: RecentRequest) {
   };
 }
 
+/** The core's session search, by title anywhere and by words that start a word in what was said. */
+function sessionSearch({
+  query,
+  limit = 8,
+}: {
+  query: string;
+  limit?: number;
+}) {
+  const needle = query.trim().toLowerCase();
+  const words = needle
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 1);
+  const startsWord = (text: string, word: string) =>
+    new RegExp(
+      `(^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+      "u",
+    ).test(text);
+  return Object.entries(SAVED_SESSIONS)
+    .flatMap(([cli, rows]) => rows.map((row) => ({ ...row, cli })))
+    .map((row) => {
+      const title = row.title.toLowerCase();
+      const said = (row.said ?? "").toLowerCase();
+      const inTitle = title.includes(needle)
+        ? startsWord(title, needle)
+          ? 2
+          : 1
+        : 0;
+      const inSaid = words.filter((word) => startsWord(said, word)).length;
+      return { row, rank: inTitle * 10 + inSaid };
+    })
+    .filter(({ rank }) => rank > 0)
+    .sort((a, b) => b.rank - a.rank || b.row.mtime - a.row.mtime)
+    .slice(0, limit)
+    .map(({ row }) => ({
+      cli: row.cli,
+      sessionId: row.id,
+      title: row.title,
+      project: SIKEMUX,
+      activeAt: row.mtime * 1000,
+      snippets: row.said ? [row.said] : [],
+    }));
+}
+
 const SIM_DEVICE = {
   udid: "5C1A0E77-8D2F-4B1E-9F63-2A7D41C0B9E8",
   name: "iPhone 18 Pro",
@@ -450,6 +493,8 @@ export class ShowcaseBackend implements IpcTransport {
     const spareNames = ["Lark", "Fern", "Quartz", "Dune", "Pika", "Aster"];
     this.on("agent_name_call", ({ method, params }) => {
       if (method === "agentsInApp") return null;
+      if (method === "agentSessions")
+        return sessionSearch(params as { query: string; limit?: number });
       const { agentId, name } = params as { agentId: string; name?: string };
       if (method === "renameAgent" && name) demoNames.set(agentId, name);
       if (!demoNames.has(agentId))

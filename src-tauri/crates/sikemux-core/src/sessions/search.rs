@@ -90,7 +90,7 @@ pub struct SearchResult {
 pub fn search(request: SearchRequest) -> SearchResult {
     let deadline = Instant::now() + request.budget;
     let terms = Terms::parse(&request.query);
-    if terms.words.is_empty() {
+    if terms.needle.is_empty() {
         return SearchResult::default();
     }
     let limit = request.limit.clamp(1, MAX_LIMIT);
@@ -125,7 +125,11 @@ pub fn search(request: SearchRequest) -> SearchResult {
     let mut strong = 0;
     let mut next = 0;
     let enough = limit + 5;
-    while next < hits.len() && strong < enough && Instant::now() < deadline {
+    while !terms.words.is_empty()
+        && next < hits.len()
+        && strong < enough
+        && Instant::now() < deadline
+    {
         let batch = &hits[next..(next + BATCH).min(hits.len())];
         let found: Vec<Option<Arc<str>>> = batch
             .par_iter()
@@ -140,7 +144,7 @@ pub fn search(request: SearchRequest) -> SearchResult {
         }
         next += batch.len();
     }
-    let cut_short = next < hits.len() && strong < enough;
+    let cut_short = !terms.words.is_empty() && next < hits.len() && strong < enough;
     for (hit, provider) in &hits[next..] {
         if let Some((title_match, _)) = terms.score(hit, provider, None, now_ms) {
             scored.push((title_match, None));
@@ -227,10 +231,12 @@ fn unix_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// The words looked for, lowercased, and the whole query as a phrase.
+/// The words looked for, lowercased, the whole query as a phrase, and the
+/// whole query as typed, lowercased, which a title may hold anywhere.
 struct Terms {
     words: Vec<String>,
     phrase: Option<String>,
+    needle: String,
 }
 
 impl Terms {
@@ -263,12 +269,18 @@ impl Terms {
             .join(" ")
             .to_ascii_lowercase();
         let phrase = (words.len() > 1 && phrase.contains(' ')).then_some(phrase);
-        Terms { words, phrase }
+        let needle = query.trim().to_lowercase();
+        Terms {
+            words,
+            phrase,
+            needle,
+        }
     }
 
     /// The session ranked, and whether every word was found in it. Words in
     /// its title, more of the words, more mentions and a recent last write
-    /// each count for more.
+    /// each count for more. A title holding a word, or the whole query, in
+    /// the middle of a word counts as found there, for half as much.
     fn score(
         &self,
         hit: &Hit,
@@ -278,20 +290,26 @@ impl Terms {
     ) -> Option<(SessionMatch, bool)> {
         let title = hit.found.session.title.to_ascii_lowercase();
         let text = prose.map(str::to_ascii_lowercase).unwrap_or_default();
+        let whole = title_weight(&hit.found.session.title.to_lowercase(), &self.needle);
         let count = self.words.len();
         let mut matched = 0;
-        let mut in_title = 0;
+        let mut in_title = 0.0;
         let mut mentions = 0;
         for word in &self.words {
-            let titled = mentions_of(&title, word, 1) > 0;
+            let titled = title_weight(&title, word);
             let said = mentions_of(&text, word, 10);
-            in_title += usize::from(titled);
-            matched += usize::from(titled || said > 0);
+            in_title += titled;
+            matched += usize::from(titled > 0.0 || said > 0);
             mentions += said;
+        }
+        let count = count.max(1);
+        if whole > 0.0 {
+            matched = count;
         }
         if matched == 0 || (count >= 3 && matched * 2 < count) {
             return None;
         }
+        let in_title = whole.max(in_title / count as f32);
         let coverage = matched as f32 / count as f32;
         let phrase = self
             .phrase
@@ -299,7 +317,7 @@ impl Terms {
             .is_some_and(|phrase| title.contains(phrase) || text.contains(phrase));
         let age_days = now_ms.saturating_sub(hit.at_ms) as f32 / 86_400_000.0;
         let score = 10.0 * coverage * coverage
-            + 4.0 * in_title as f32 / count as f32
+            + 4.0 * in_title
             + if phrase { 3.0 } else { 0.0 }
             + 1.5 * (1.0 + mentions as f32).ln() / (1.0 + 10.0 * count as f32).ln()
             + 3.0 / (1.0 + age_days / 14.0);
@@ -375,6 +393,18 @@ fn floor_boundary(text: &str, mut index: usize) -> usize {
         index -= 1;
     }
     index
+}
+
+/// How much `title` holding `needle`, both lowercased, counts: fully at the
+/// start of a word, half in the middle of one, nothing when it is not there.
+fn title_weight(title: &str, needle: &str) -> f32 {
+    if needle.is_empty() || !title.contains(needle) {
+        0.0
+    } else if first_mention(title, needle).is_some() {
+        1.0
+    } else {
+        0.5
+    }
 }
 
 /// Where `word` first starts a word in `text`, both lowercased.
