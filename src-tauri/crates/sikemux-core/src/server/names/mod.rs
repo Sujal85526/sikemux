@@ -266,6 +266,19 @@ impl Names {
         self.lock().leads(lead, agent_id)
     }
 
+    /// `lead` and every named agent it started, or that one of those started.
+    pub(crate) fn team(&self, lead: &str) -> Vec<String> {
+        let book = self.lock();
+        let mut team = vec![lead.to_owned()];
+        team.extend(
+            book.agents
+                .iter()
+                .filter(|entry| entry.agent_id != lead && book.leads(lead, &entry.agent_id))
+                .map(|entry| entry.agent_id.clone()),
+        );
+        team
+    }
+
     /// Takes the app's word for which agents it holds, and lets go of the
     /// names of agents closed since. `running` holds the agents running here.
     pub(crate) fn set_in_app(&self, agent_ids: HashSet<String>, running: HashSet<String>) {
