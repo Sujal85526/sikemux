@@ -46,6 +46,71 @@ type Listener = {
 
 const projectPath = (id: string) => PROJECTS.find((project) => project.id === id)?.path ?? '/';
 
+/** The host's inbox as its core would rank the demo world. */
+function inbox() {
+  const by = (chat: (typeof CHATS)[number]) => ({
+    agentId: chat.agentId,
+    name: chat.name,
+    cli: chat.provider,
+    project: chat.project,
+    title: chat.title,
+    feed: chat.agentId,
+    recordings: [],
+  });
+  const chat = (agentId: string) => CHATS.find((known) => known.agentId === agentId) ?? CHATS[0];
+  const needs = [
+    ...CHATS.filter((known) => known.asking).map((known) => ({
+      ...by(known),
+      id: `permission:${known.agentId}`,
+      tier: 'needs',
+      kind: 'permission',
+      what: 'Needs your permission',
+      detail: known.asking?.command,
+      at: Date.now() - 90_000,
+      requestId: `ask-${known.agentId}`,
+    })),
+    ...QUESTIONS.map((question) => ({
+      ...by(chat(question.agentId)),
+      id: `question:${question.id}`,
+      tier: 'needs',
+      kind: question.blocked ? 'question' : 'assumption',
+      what: question.blocked ? 'Asks you' : `Went on assuming ${question.assumption}`,
+      detail: question.text,
+      at: question.at,
+      questionId: question.id,
+    })),
+  ];
+  const listed = new Set(needs.map((item) => item.agentId));
+  const working = CHATS.filter((known) => known.running && !listed.has(known.agentId));
+  const finished = CHATS.filter((known) => known.handoff).map((known) => ({
+    ...by(known),
+    id: `agent:${known.agentId}`,
+    tier: 'review',
+    kind: 'changes',
+    what: 'Finished, with changes to review',
+    at: Date.now() - 1_800_000,
+    handoff: { answer: known.handoff?.answer, files: known.handoff?.files, edited: known.handoff?.files.length },
+    recordings: known.handoff?.recording
+      ? [{ path: '/Users/edon/Movies/Sikemux/refunds.mov', seconds: known.handoff.recording, at: Date.now() - 1_900_000 }]
+      : [],
+  }));
+  return {
+    items: [
+      ...needs,
+      ...finished,
+      ...working.map((known) => ({
+        ...by(known),
+        id: `agent:${known.agentId}`,
+        tier: 'progress',
+        kind: 'working',
+        what: 'Working',
+        at: Date.now() - 300_000,
+      })),
+    ],
+    working: working.length,
+  };
+}
+
 function view() {
   return {
     workspace: {
@@ -89,6 +154,7 @@ function view() {
               cwd: projectPath(chat.project),
               request,
               at: Date.now() - 90_000,
+              choices: { allowOnce: 'allow', reject: 'reject' },
             },
           ]
         : [];
@@ -101,6 +167,7 @@ function view() {
       cwd: projectPath(chat.project),
       activeAt: Date.now() - chat.hours * 3_600_000,
     })),
+    inbox: inbox(),
   };
 }
 
@@ -168,11 +235,8 @@ class Connection {
       const board = BOARDS.find((known) => known.project === project);
       return JSON.stringify(board ?? { ...BOARDS[0], project, cards: [] });
     }
-    if (method === 'agentNames')
-      return JSON.stringify(
-        CHATS.map((chat) => ({ agentId: chat.agentId, name: chat.name, project: projectPath(chat.project), parent: chat.lead ?? null })),
-      );
     if (method === 'questions') return JSON.stringify(QUESTIONS);
+    if (method === 'digest') return JSON.stringify({ away: false, finished: [], failed: [], waiting: [] });
     throw new Error(`the showcase host does not know ${method}`);
   }
   async callToFile(method: string): Promise<string> {

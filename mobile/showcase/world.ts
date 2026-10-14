@@ -82,8 +82,6 @@ export type DemoChat = {
   agentId: string;
   /** What the host's core named the agent. */
   name: string;
-  /** The agent that started this one. */
-  lead?: string;
   provider: string;
   title: string;
   project: string;
@@ -93,6 +91,8 @@ export type DemoChat = {
   history: Update[];
   /** A permission the agent is waiting on, shown on the phone as a card to answer. */
   asking?: { title: string; command: string };
+  /** What it left when its last turn ended. */
+  handoff?: { answer: string; files: string[]; recording?: number };
 };
 
 export const CHATS: DemoChat[] = [
@@ -139,7 +139,6 @@ export const CHATS: DemoChat[] = [
   {
     agentId: 'chat-login-check',
     name: 'Wren',
-    lead: 'chat-login',
     provider: 'claude',
     title: 'Check the login form at every phone size',
     project: 'p-shop',
@@ -178,6 +177,11 @@ export const CHATS: DemoChat[] = [
     asleep: true,
     permissionMode: 'default',
     history: [user('Add a refunds endpoint with tests.'), say('Added `POST /refunds` with validation and six tests. All of them pass.')],
+    handoff: {
+      answer: 'Added `POST /refunds` with validation and six tests. All of them pass.',
+      files: ['src/refunds/route.ts', 'src/refunds/validate.ts', 'test/refunds.test.ts'],
+      recording: 14,
+    },
   },
 ];
 

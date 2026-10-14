@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import type { TeamLink } from '@mac/agents/teams';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Icon } from './Icon';
@@ -33,7 +32,6 @@ export function Row({
   end,
   onPress,
   dim,
-  chain,
   detailLines = 1,
   under,
 }: {
@@ -47,8 +45,6 @@ export function Row({
   end?: ReactNode;
   onPress?: () => void;
   dim?: boolean;
-  /** Where the row sits on its lead's team line, drawn through the marks. */
-  chain?: TeamLink;
   detailLines?: number;
   /** One more line below the detail. */
   under?: ReactNode;
@@ -60,16 +56,6 @@ export function Row({
       onPress={onPress}
       accessibilityRole={onPress ? 'button' : undefined}
       style={({ pressed }) => [styles.row, pressed && onPress && styles.rowPressed]}>
-      {chain && chain !== 'head' ? (
-        <View style={[styles.spine, styles.spineAbove]}>
-          <View style={[styles.spineLine, { marginBottom: SPINE_CLEAR }]} />
-        </View>
-      ) : null}
-      {chain && chain !== 'last' ? (
-        <View style={[styles.spine, styles.spineBelow]}>
-          <View style={[styles.spineLine, { marginTop: SPINE_CLEAR }]} />
-        </View>
-      ) : null}
       {mark ? <View style={styles.mark}>{mark}</View> : null}
       <View style={styles.rowBody}>
         <Text style={[styles.rowTitle, { color: dim ? colors.tertiary : colors.ink }]} numberOfLines={1}>
@@ -110,8 +96,6 @@ export function Row({
 const ROW_INSET = 8;
 const MARK = 20;
 const ROW_GAP = 2;
-/** The team line stops this far from the middle of a mark: half the mark and a little air. */
-const SPINE_CLEAR = MARK / 2 + 3;
 
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
@@ -132,10 +116,6 @@ const makeStyles = (colors: Palette) => {
     },
     rowPressed: { backgroundColor: colors.active },
     mark: { width: MARK, height: MARK, alignItems: 'center', justifyContent: 'center' },
-    spine: { position: 'absolute', left: ROW_INSET + MARK / 2 - 0.5, width: 1 },
-    spineAbove: { top: -ROW_GAP, bottom: '50%' },
-    spineBelow: { top: '50%', bottom: 0 },
-    spineLine: { flex: 1, backgroundColor: colors.treeSpine },
     rowBody: { flex: 1, minWidth: 0 },
     rowTitle: { ...type.row, fontSize: 14.5 },
     rowDot: { color: colors.inkFaint },

@@ -12,6 +12,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { haptics } from './haptics';
 import { DrawnIcon, Icon } from './Icon';
 import { fonts, keyboardFor, type Palette, radius, translucent, useColors, useStyles } from './theme';
 
@@ -105,6 +106,27 @@ export function PasswordField(props: Omit<TextInputProps, 'secureTextEntry'>) {
   );
 }
 
+/** A small rounded control that sits in a row of others, a little apart. */
+export function Chip({ title, primary, busy, onPress }: { title: string; primary?: boolean; busy?: boolean; onPress: () => void }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <Pressable
+      disabled={busy}
+      onPress={() => {
+        haptics.select();
+        onPress();
+      }}
+      hitSlop={4}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: busy, busy }}
+      style={({ pressed }) => [styles.chip, primary && styles.chipPrimary, (pressed || busy) && { opacity: 0.6 }]}>
+      <Text style={[styles.chipText, primary && styles.chipTextPrimary]} numberOfLines={1}>
+        {title}
+      </Text>
+    </Pressable>
+  );
+}
+
 /** The rail's scope track: two or three options, the chosen one lifted. */
 export function Track<T extends string>({
   options,
@@ -160,6 +182,19 @@ const buttonInk = (colors: Palette): Record<ButtonKind, TextStyle> => ({
 
 const makeStyles = (colors: Palette) => {
   return StyleSheet.create({
+    chip: {
+      minHeight: 32,
+      maxWidth: '100%',
+      justifyContent: 'center',
+      paddingHorizontal: 12,
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+    },
+    chipPrimary: { backgroundColor: colors.ink, borderColor: colors.ink },
+    chipText: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.ink },
+    chipTextPrimary: { color: colors.ground },
     iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
     button: {
       minHeight: 50,

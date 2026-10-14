@@ -4,30 +4,26 @@ import { router, useLocalSearchParams } from 'expo-router';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { assumedQuestion, blockingQuestion, type AgentQuestion } from '@mac/agents/agentQuestions';
 import { agentLabel } from '@mac/agents/catalog';
-import { inTeams, type TeamLink } from '@mac/agents/teams';
 import { formatAge } from '@mac/lib/format';
-import { AGENT_GROUPS, AGENT_LABELS, type AgentDisplay, type AgentGroup } from '@mac/state/agentStatus';
-import type { Attention, ChatInfo, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
+import { AGENT_LABELS } from '@mac/state/agentStatus';
+import type { ChatInfo, InboxItem, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
 import { problem as problemOf, reloadDevices, retry, useDevices, useHostStatus, useLive } from '@/devices/hub';
 import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
 import { Board } from '@/devices/Board';
 import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
-import { asking as askingOf } from '@/devices/asking';
-import { useLeads } from '@/devices/leads';
-import { useHostQuestions } from '@/devices/questions';
+import { Inbox } from '@/devices/Inbox';
+import { useDigest } from '@/devices/digest';
 import { summary } from '@/devices/status';
-import { chatDisplay, chatState, chatTitle, folder } from '@/devices/words';
-import { Wants } from '@/screens/Wants';
+import { chatDisplay, chatState, chatTitle, folder, inProject, itemIn } from '@/devices/words';
 import { haptics } from '@/ui/haptics';
 import { useMinute, useScrollPause } from '@/ui/motion';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { Dot, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
+import { NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals' | 'board';
@@ -37,12 +33,9 @@ const NEW_CHAT_HEIGHT = 52;
 /** Recent chats shown before Show more. */
 const RECENT_SHOWN = 10;
 
-function projectName(snapshot: Snapshot, cwd: string): string {
-  return snapshot.workspace.projects.find((project) => project.path === cwd)?.name ?? folder(cwd);
-}
-
-function inProject(project: ProjectInfo, cwd: string): boolean {
-  return cwd === project.path || cwd.startsWith(`${project.path}/`);
+/** The name of the project with this id or folder. */
+function projectName(snapshot: Snapshot, where: string): string {
+  return snapshot.workspace.projects.find((project) => project.id === where || project.path === where)?.name ?? folder(where);
 }
 
 /** What runs in a project, as its row in the project sheet shows it. */
@@ -52,7 +45,7 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
   const type = useType();
   const chats = snapshot.chats.filter((chat) => inProject(project, chat.cwd));
   const terminals = snapshot.sessions.filter((session) => session.project === project.id && session.running).length;
-  const waiting = chats.some((chat) => chatDisplay(chat).group === 'blocked');
+  const waiting = snapshot.inbox.items.some((item) => item.tier === 'needs' && itemIn(item, project));
   if (!chats.length && !terminals) return null;
   return (
     <View style={styles.tail}>
@@ -72,25 +65,6 @@ function ProjectTail({ snapshot, project }: { snapshot: Snapshot; project: Proje
         </View>
       )}
     </View>
-  );
-}
-
-function ChatStatus({ display }: { display: AgentDisplay }) {
-  const colors = useColors();
-  if (display.group === 'blocked') return <NeedsYou />;
-  if (display.group === 'working') return <Working />;
-  if (display.group === 'done') return <Dot color={colors.accent} />;
-  return null;
-}
-
-function ChatEnd({ chat }: { chat: ChatInfo }) {
-  const display = chatDisplay(chat);
-  return (
-    <>
-      {display.subagents ? <SubagentCount count={display.subagents} /> : null}
-      {display.tasks ? <ShellCount count={display.tasks} /> : null}
-      <ChatStatus display={display} />
-    </>
   );
 }
 
@@ -196,6 +170,7 @@ function Agents({
   provider,
   full,
   hostName,
+  onTab,
 }: {
   core: string;
   snapshot: Snapshot;
@@ -203,89 +178,53 @@ function Agents({
   provider: string;
   full: boolean;
   hostName: string;
+  onTab: (tab: Tab) => void;
 }) {
   const styles = useStyles(makeStyles);
   const live = useLive(core);
+  const minute = useMinute();
   const connection = live.status === 'open' ? live.connection : undefined;
-  const leads = useLeads(
-    connection,
-    snapshot.chats
-      .map((chat) => chat.agentId)
-      .sort()
-      .join(' '),
-  );
-  const questions = useHostQuestions(
-    connection,
-    snapshot.chats.map((chat) => `${chat.agentId}:${chat.group}:${chat.activeAt}:${chat.unread}`).join(' '),
-  );
+  const { digest, dismiss } = useDigest(core, connection);
+  const items = snapshot.inbox.items.filter((item) => (!scope || itemIn(item, scope)) && (provider === 'all' || item.cli === provider));
+  const listed = new Set(snapshot.inbox.items.map((item) => item.agentId));
   const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
-  const chats = scoped.filter((chat) => provider === 'all' || chat.provider === provider);
-  const placeOf = (chat: ChatInfo) => (scope ? undefined : projectName(snapshot, chat.cwd));
-  const attentionOf = (chat: ChatInfo) => snapshot.attentions.find((known) => known.agentId === chat.agentId && askingOf(known));
-  const listed = new Map(chats.map((chat) => [chat.agentId, chat]));
-  const headOf = (chat: ChatInfo): ChatInfo => {
-    let head = chat;
-    for (let steps = 0; steps < listed.size; steps++) {
-      const lead = listed.get(leads.get(head.agentId) ?? '');
-      if (!lead) break;
-      head = lead;
-    }
-    return head;
-  };
-  // A team sits in its first lead's group, so it stays together; one of its agents waiting on the person shows in
-  // Needs input on its own row as well.
-  const sectionOf = (chat: ChatInfo): AgentGroup => chatDisplay(headOf(chat)).group;
-  const groupOf = (group: AgentGroup): { chat: ChatInfo; link?: TeamLink }[] => {
-    const rows = chats.filter((chat) => sectionOf(chat) === group);
-    if (group === 'done' || group === 'idle') rows.sort((x, y) => (y.activeAt ?? 0) - (x.activeAt ?? 0));
-    const teams = inTeams(rows.map((chat) => ({ id: chat.agentId, lead: leads.get(chat.agentId), chat }))).map(
-      ({ agent: { chat }, link }) => ({ chat, link }),
-    );
-    if (group !== 'blocked') return teams;
-    const elsewhere = chats.filter((chat) => sectionOf(chat) !== 'blocked');
-    const waiting = elsewhere.filter((chat) => chatDisplay(chat).group === 'blocked');
-    const assuming = elsewhere.filter((chat) => !waiting.includes(chat) && assumedQuestion(questions, chat.agentId));
-    return [...teams, ...waiting.map((chat) => ({ chat })), ...assuming.map((chat) => ({ chat }))];
+  const idle = scoped.filter((chat) => !listed.has(chat.agentId) && (provider === 'all' || chat.provider === provider));
+  const placeOf = (item: InboxItem) => {
+    const where = item.card?.project ?? item.project;
+    return scope || !where ? undefined : projectName(snapshot, where);
   };
 
   return (
     <>
-      {AGENT_GROUPS.map((group) => {
-        const rows = groupOf(group);
-        if (!rows.length) return null;
-        return (
-          <View key={group}>
-            <SectionLabel>{AGENT_LABELS[group]}</SectionLabel>
-            <Rows>
-              {rows.map(({ chat, link }) => (
-                <ChatRow
-                  key={chat.agentId}
-                  core={core}
-                  chat={chat}
-                  place={placeOf(chat)}
-                  attention={group === 'blocked' ? attentionOf(chat) : undefined}
-                  asked={group === 'blocked' ? askedLine(questions, chat.agentId) : undefined}
-                  chain={link}
-                />
-              ))}
-            </Rows>
-          </View>
-        );
-      })}
+      <Inbox
+        core={core}
+        connection={connection}
+        items={items}
+        working={snapshot.inbox.working}
+        attentions={snapshot.attentions}
+        full={full}
+        placeOf={placeOf}
+        digest={digest}
+        minute={minute}
+        onDismissDigest={dismiss}
+        onTab={onTab}
+      />
+      {idle.length ? (
+        <>
+          <SectionLabel>{AGENT_LABELS.idle}</SectionLabel>
+          <Rows>
+            {idle.map((chat) => (
+              <ChatRow key={chat.agentId} core={core} chat={chat} place={scope ? undefined : projectName(snapshot, chat.cwd)} />
+            ))}
+          </Rows>
+        </>
+      ) : null}
       <Recent core={core} snapshot={snapshot} scope={scope} provider={provider} full={full} hostName={hostName} />
-      {!scoped.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
+      {!items.length && !scoped.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
         <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text>
       ) : null}
     </>
   );
-}
-
-/** What a Needs input row says under an agent's name: the question it waits on, or what it went on assuming. */
-function askedLine(questions: readonly AgentQuestion[], agentId: string): string | undefined {
-  const question = blockingQuestion(questions, agentId);
-  if (question) return question.text;
-  const assumed = assumedQuestion(questions, agentId);
-  return assumed ? `Assumed ${assumed.assumption ?? ''}` : undefined;
 }
 
 function terminalTitle(session: SessionInfo): string {
@@ -303,42 +242,21 @@ function terminalDetail(session: SessionInfo): string {
 
 /* A host sends its whole view several times a second while an agent works; each row redraws only when its own
    item changed, which the hub keeps as the same object otherwise. */
-const ChatRow = memo(function ChatRow({
-  core,
-  chat,
-  place,
-  attention,
-  asked,
-  chain,
-}: {
-  core: string;
-  chat: ChatInfo;
-  place?: string;
-  attention?: Attention;
-  /** The question it waits on the person to answer, or the assumption it went on with. */
-  asked?: string;
-  chain?: TeamLink;
-}) {
-  const state = chatState(chat);
-  const asking = chatDisplay(chat).group === 'blocked';
+const ChatRow = memo(function ChatRow({ core, chat, place }: { core: string; chat: ChatInfo; place?: string }) {
+  const display = chatDisplay(chat);
   return (
     <Row
       mark={<AgentIcon provider={chat.provider} size={20} />}
       name={chat.name}
       title={chatTitle(chat)}
-      place={asked || (asking && attention) ? undefined : place}
-      detail={
-        asking && attention ? (
-          <>
-            {state} · <Wants attention={attention} />
-          </>
-        ) : (
-          (asked ?? state)
-        )
+      place={place}
+      detail={chatState(chat)}
+      end={
+        <>
+          {display.subagents ? <SubagentCount count={display.subagents} /> : null}
+          {display.tasks ? <ShellCount count={display.tasks} /> : null}
+        </>
       }
-      detailLines={asked ? 2 : 1}
-      end={<ChatEnd chat={chat} />}
-      chain={chain}
       onPress={() => router.push(`/device/${core}/chat/${chat.agentId}`)}
     />
   );
@@ -547,8 +465,7 @@ export default function Device() {
   const starts = device?.access === 'full' && status.online && tab === 'agents';
   const bottom = useBottomGap();
   const scope = snapshot?.workspace.projects.find((project) => project.id === device?.project);
-  const asking =
-    snapshot?.chats.filter((chat) => chatDisplay(chat).group === 'blocked' && (!scope || inProject(scope, chat.cwd))).length ?? 0;
+  const asking = snapshot?.inbox.items.filter((item) => item.tier === 'needs' && (!scope || itemIn(item, scope))).length ?? 0;
   const [filter, setFilter] = useState('all');
   const providers = [
     ...new Set([
@@ -657,6 +574,7 @@ export default function Device() {
                         provider={provider}
                         full={device?.access === 'full'}
                         hostName={hostName}
+                        onTab={switchTo}
                       />
                     ) : tab === 'terminals' ? (
                       <Terminals snapshot={snapshot} scope={scope} />

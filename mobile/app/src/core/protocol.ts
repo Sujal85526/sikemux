@@ -99,6 +99,16 @@ export type ChatInfo = {
   group?: AgentGroup;
 };
 
+/** The options a permission request comes down to, and what the agent wants to do. */
+export type PermissionChoices = {
+  allowOnce?: string;
+  allowAlways?: string;
+  reject?: string;
+  /** The shell command it wants to run, when it is one. */
+  command?: string;
+  title?: string;
+};
+
 /** An agent waiting on a person to answer a permission request. */
 export type Attention = {
   id: string;
@@ -110,6 +120,7 @@ export type Attention = {
   request?: Record<string, unknown>;
   /** Milliseconds since the Unix epoch. */
   at: number;
+  choices: PermissionChoices;
 };
 
 /** A saved chat the host's app lists as recent, which `resumeChat` takes up again. */
@@ -124,6 +135,52 @@ export type RecentInfo = {
   activeAt: number;
 };
 
+/** Waits on the person, then changes to review, then finished work, then work under way. */
+export type InboxTier = 'needs' | 'review' | 'finished' | 'progress';
+
+export type InboxKind =
+  'permission' | 'question' | 'input' | 'held' | 'assumption' | 'pullRequest' | 'changes' | 'failed' | 'finished' | 'working';
+
+/** A browser recording an agent made, kept on the host. */
+export type Recording = { path: string; seconds: number; at: number; feed?: string; turn?: number };
+
+/** What an agent left when its turn ended. */
+export type Handoff = { answer?: string; result?: string; files: string[]; edited: number };
+
+/** One thing in the host's inbox: who, what they need or did, and where to open it. `what` and `detail` are ready to show. */
+export type InboxItem = {
+  id: string;
+  tier: InboxTier;
+  kind: InboxKind;
+  agentId?: string;
+  name?: string;
+  cli?: string;
+  /** The project's id, or the folder the agent works in. */
+  project?: string;
+  title?: string;
+  what: string;
+  detail?: string;
+  at: number;
+  /** The agent's terminal; none for a chat. */
+  session?: number;
+  feed?: string;
+  turn?: number;
+  card?: { project: string; id: number; title: string };
+  /** Answer with `answerPermission`. */
+  requestId?: string;
+  /** Answer with the `answerQuestion` call. */
+  questionId?: string;
+  url?: string;
+  handoff?: Handoff;
+  recordings: Recording[];
+};
+
+/** The host's inbox, ranked by the core. */
+export type Inbox = { items: InboxItem[]; working: number };
+
+/** What the `digest` call says happened since the person left. */
+export type Digest = { since?: number; away: boolean; finished: InboxItem[]; failed: InboxItem[]; waiting: InboxItem[] };
+
 /** Everything the phone shows of one host, as it last sent it. */
 export type Snapshot = {
   workspace: Workspace;
@@ -132,6 +189,7 @@ export type Snapshot = {
   attentions: Attention[];
   /** Newest first. */
   recent: RecentInfo[];
+  inbox: Inbox;
 };
 
 /** Kept with the paired host, so it is a name the core sends as is. */
@@ -178,9 +236,16 @@ export function keepUnchanged(previous: Snapshot | undefined, next: Snapshot): S
     chats: keepItems(previous.chats, next.chats, (chat) => chat.agentId),
     attentions: keepItems(previous.attentions, next.attentions, (attention) => attention.id),
     recent: keepItems(previous.recent, next.recent, (chat) => chat.id),
+    inbox: keepInbox(previous.inbox, next.inbox),
   };
 }
+
+function keepInbox(previous: Inbox, next: Inbox): Inbox {
+  const items = keepItems(previous.items, next.items, (item) => item.id);
+  return items === previous.items && previous.working === next.working ? previous : { items, working: next.working };
+}
 export const readHost = (json: string) => readCore<HostInfo>(json);
+export const readDigest = (json: string) => readCore<Digest>(json);
 
 /** A chat event as the Mac app's chat code reads it. */
 export type CoreChatEvent = { kind: string; payload: Record<string, unknown> };

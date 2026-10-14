@@ -1,6 +1,6 @@
 import { agentLabel } from '@mac/agents/catalog';
 import { agentDisplay, type AgentDisplay } from '@mac/state/agentStatus';
-import type { ChatInfo } from '@/core/protocol';
+import type { ChatInfo, InboxItem, ProjectInfo } from '@/core/protocol';
 
 export function folder(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path;
@@ -29,4 +29,14 @@ export function chatState(chat: ChatInfo): string {
   if (chat.state === 'stopped') return 'Stopped';
   if (chat.state === 'starting') return 'Starting…';
   return display.label;
+}
+
+export function inProject(project: ProjectInfo, path: string): boolean {
+  return path === project.path || path.startsWith(`${project.path}/`);
+}
+
+/** The item's card is on `project`'s board, or its agent works there. */
+export function itemIn(item: InboxItem, project: ProjectInfo): boolean {
+  const where = item.card?.project ?? item.project;
+  return where !== undefined && (where === project.id || inProject(project, where));
 }
