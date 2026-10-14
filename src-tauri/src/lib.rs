@@ -482,6 +482,7 @@ pub fn run() {
             files::list_project_files_snapshot,
             settings::scan_project_roots,
             model_providers::model_providers,
+            model_providers::model_provider_models,
             model_providers::model_provider_connect,
             model_providers::model_provider_disconnect,
             skills::skills_overview,
