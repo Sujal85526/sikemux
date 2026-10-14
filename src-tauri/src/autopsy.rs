@@ -509,8 +509,8 @@ pub fn web_content_pid() -> Option<i32> {
 mod macos {
     use std::ffi::c_void;
 
-    use objc2::{msg_send, sel};
     use objc2::rc::Retained;
+    use objc2::{msg_send, sel};
     use objc2_web_kit::WKWebView;
 
     /// WebKit runs the page in a separate WebContent process and only exposes
