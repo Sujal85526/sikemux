@@ -50,7 +50,7 @@ export function JiraBoard({
     const [moves, setMoves] = useState<Record<string, number>>({});
     const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
     const drag = useCardDrag((key, column) => {
-        const issue = whole.data?.columns.flatMap((each) => each.issues).find((each) => each.key === key);
+        const issue = columns.flatMap((each) => each.issues).find((each) => each.key === key);
         if (issue) void move(issue, Number(column));
     });
 
