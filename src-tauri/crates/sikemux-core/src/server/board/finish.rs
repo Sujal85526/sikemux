@@ -1,13 +1,15 @@
 //! How a card Auto runs lands: its work is committed and pushed, a pull
 //! request opened, and once CI, or the project's check command when no CI
 //! runs, passes, merged. A failure gets one rebase and one fix by its agent;
-//! anything more goes back to the person.
+//! anything more goes back to the person. While it waits for review, its
+//! agent is handed reviewers' comments and its replies are posted for it.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::auto::{Finish, Run, Settings, Stage};
-use super::codehost::{self, Checks};
+use super::codehost::{self, Checks, Feedback};
+use super::review::{self, MAX_ROUNDS};
 use super::{change_card, git, send_notices, By, Card, Changes, Status};
 use crate::server::connection::blocking;
 use crate::server::remote::unix_ms;
@@ -18,6 +20,10 @@ use crate::server::{messages, Core};
 const CI_START_WAIT_MS: u64 = 3 * 60 * 1000;
 const CHECKS_EVERY_MS: u64 = 20_000;
 const REVIEW_EVERY_MS: u64 = 60_000;
+/// How many times the wait between looks at a pull request doubles while
+/// nothing on it changes.
+const MAX_QUIET_DOUBLINGS: u64 = 3;
+const QUIET: &str = "quiet";
 /// How long a run's agent may be missing before Auto takes it that the agent
 /// is gone, such as after Sikemux's background process restarted without it.
 const GONE_AFTER_MS: u64 = 60_000;
@@ -162,6 +168,14 @@ impl Step {
         &self.run.agent
     }
 
+    fn pull_url(&self) -> String {
+        self.run
+            .pull
+            .as_ref()
+            .map(|pull| pull.url.clone())
+            .unwrap_or_default()
+    }
+
     fn name(&self, core: &Core) -> String {
         core.names
             .name(self.agent())
@@ -253,6 +267,7 @@ pub(super) fn retry(core: &Arc<Core>, project: &str, id: u64) -> Result<(), Stri
         if ships {
             run.rebased = false;
             run.fixed = false;
+            run.review.rounds = 0;
         } else {
             card.auto = None;
         }
@@ -372,7 +387,40 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
         .await
         .map_err(|error| format!("the pull request did not open: {error}"))?,
     };
-    let stop = if step.settings.finish == Finish::Pr {
+    let asked = &step.run.review.asked;
+    let answered = if asked.is_empty() {
+        None
+    } else {
+        let said = core
+            .chats
+            .get(step.agent())
+            .and_then(|chat| chat.feed.last_answer());
+        let answers = review::answers(asked, said.as_deref(), &step.name(core), &head);
+        codehost::answer(&pull, &answers.replies, &answers.reviewers)
+            .await
+            .map_err(|error| {
+                format!(
+                    "It pushed its answers to the review, but its replies did not post: {error}"
+                )
+            })?;
+        Some(answers)
+    };
+    let stuck = answered
+        .as_ref()
+        .map(|answers| answers.stuck.join("\n"))
+        .filter(|stuck| !stuck.is_empty());
+    let stop = if let Some(stuck) = &stuck {
+        Some(format!(
+            "{} could not settle these review comments:\n{stuck}",
+            step.name(core)
+        ))
+    } else if let (Finish::Pr, Some(answers)) = (step.settings.finish, &answered) {
+        Some(format!(
+            "It answered {} review comment{}, and its pull request waits for review again",
+            answers.replies.len(),
+            if answers.replies.len() == 1 { "" } else { "s" }
+        ))
+    } else if step.settings.finish == Finish::Pr {
         Some("Its pull request waits for you to review and merge it".to_owned())
     } else if core.harness.questions.has_open(step.agent()) {
         Some(format!(
@@ -387,9 +435,14 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
         run.pull = Some(pull);
         run.head = Some(head);
         run.checks_since = Some(now);
+        run.review.asked.clear();
         match stop {
             Some(why) => {
-                run.stage = Stage::Review;
+                run.stage = if stuck.is_some() {
+                    Stage::Held
+                } else {
+                    Stage::Review
+                };
                 run.note = Some(why);
             }
             None => {
@@ -419,7 +472,10 @@ pub(super) fn tick(core: &Arc<Core>) {
                 }
                 let every = match run.stage {
                     Stage::Checking => CHECKS_EVERY_MS,
-                    Stage::Review => REVIEW_EVERY_MS,
+                    Stage::Review => {
+                        let quiet = state.polled.get(&(project.clone(), card.id, QUIET));
+                        REVIEW_EVERY_MS << quiet.copied().unwrap_or(0).min(MAX_QUIET_DOUBLINGS)
+                    }
                     Stage::Shipping | Stage::Merging | Stage::Starting => 0,
                     Stage::Working | Stage::Fixing => {
                         let key = (project.clone(), card.id, "gone");
@@ -549,32 +605,40 @@ async fn failed(core: &Arc<Core>, step: &Step, what: &str) {
         );
         return;
     }
-    let url = step
-        .run
-        .pull
-        .as_ref()
-        .map(|pull| pull.url.clone())
-        .unwrap_or_default();
+    let url = step.pull_url();
     let text = format!(
         "The checks on your pull request {url} failed:\n\n{}\n\nFix them on {} and commit. When your turn ends, Sikemux pushes and checks again. This is the one fix Auto asks for: if they fail again, the card goes back to the person.",
         git::tail(what),
         step.run.branch
     );
-    ask_fix(core, step, text, "Its checks failed, so it is fixing them").await;
+    ask(
+        core,
+        step,
+        text,
+        "Its checks failed, so it is fixing them",
+        |run| {
+            run.fixed = true;
+        },
+    )
+    .await;
 }
 
-async fn ask_fix(core: &Arc<Core>, step: &Step, text: String, note: &str) {
+/// Sends the agent back to work on its card with `text`.
+async fn ask(
+    core: &Arc<Core>,
+    step: &Step,
+    text: String,
+    note: &str,
+    change: impl FnOnce(&mut Run),
+) {
     let name = step.name(core);
     change_run(core, &step.project, step.id, step.agent(), |_, run| {
-        run.fixed = true;
+        change(run);
         run.stage = Stage::Fixing;
         run.note = Some(note.to_owned());
     });
     if let Err(error) = messages::from_auto(core, step.agent().to_owned(), text).await {
-        step.hold(
-            core,
-            format!("{name} could not be asked to fix it: {error}"),
-        );
+        step.hold(core, format!("{name} could not be reached: {error}"));
     }
 }
 
@@ -584,7 +648,10 @@ async fn merge(core: &Arc<Core>, step: &Step, pull: &super::auto::Pull, head: &s
         Ok(()) => return merged(core, step).await,
         Err(error) => error,
     };
-    if matches!(codehost::state(pull).await.as_deref(), Ok("merged")) {
+    if codehost::look(pull)
+        .await
+        .is_ok_and(|looked| looked.state == "merged")
+    {
         return merged(core, step).await;
     }
     if step.run.rebased {
@@ -620,11 +687,12 @@ async fn merge(core: &Arc<Core>, step: &Step, pull: &super::auto::Pull, head: &s
                 "Your pull request did not merge ({error}), and {} does not rebase cleanly onto origin/{}. Rebase it onto origin/{}, resolve the conflicts, run the checks and commit. When your turn ends, Sikemux pushes and checks again. This is the one fix Auto asks for.",
                 step.run.branch, step.run.base, step.run.base
             );
-            ask_fix(
+            ask(
                 core,
                 step,
                 text,
                 "It conflicts with the latest base, so it is rebasing",
+                |run| run.fixed = true,
             )
             .await;
         }
@@ -645,12 +713,7 @@ async fn merge(core: &Arc<Core>, step: &Step, pull: &super::auto::Pull, head: &s
 /// Its pull request merged: the card is done, its agent stops and its
 /// worktree goes.
 async fn merged(core: &Arc<Core>, step: &Step) {
-    let url = step
-        .run
-        .pull
-        .as_ref()
-        .map(|pull| pull.url.clone())
-        .unwrap_or_default();
+    let url = step.pull_url();
     let kept = change_run(core, &step.project, step.id, step.agent(), |_, run| {
         run.stage = Stage::Merged;
         run.note = Some("Merged".to_owned());
@@ -693,19 +756,70 @@ async fn merged(core: &Arc<Core>, step: &Step) {
 }
 
 /// A pull request left for the person: merged by them closes the card,
-/// closed without merging hands it back.
+/// closed without merging hands it back, and new review comments go to its
+/// agent.
 async fn reviewing(core: &Arc<Core>, step: Step) {
     let Some(pull) = step.run.pull.clone() else {
         return;
     };
-    match codehost::state(&pull).await.as_deref() {
-        Ok("merged") => merged(core, &step).await,
-        Ok("closed" | "declined" | "superseded") => {
-            step.hold(
+    let Ok(looked) = codehost::look(&pull).await else {
+        return;
+    };
+    match looked.state.as_str() {
+        "merged" => return merged(core, &step).await,
+        "closed" | "declined" | "superseded" => {
+            return step.hold(
                 core,
                 "Its pull request was closed without merging".to_owned(),
             );
         }
         _ => {}
     }
+    let mut seen = step.run.review.clone();
+    if !seen.moved(&looked.mark) {
+        return quiet(core, &step, true);
+    }
+    let Ok(found) = codehost::feedback(&pull, seen.since()).await else {
+        return;
+    };
+    let new = seen.take(looked.mark, found);
+    quiet(core, &step, new.is_empty());
+    if new.is_empty() {
+        change_run(core, &step.project, step.id, step.agent(), |_, run| {
+            run.review = seen;
+        });
+    } else if seen.rounds >= MAX_ROUNDS {
+        step.hold(
+            core,
+            format!(
+                "Reviewers left more comments after {} answered {MAX_ROUNDS} rounds of them; read them on {}, then Ship it again for more rounds",
+                step.name(core),
+                pull.url
+            ),
+        );
+    } else {
+        hand_review(core, &step, seen, new).await;
+    }
+}
+
+/// Counts the looks in a row at the card's pull request that found nothing new.
+fn quiet(core: &Core, step: &Step, nothing_new: bool) {
+    let mut state = core.boards.lock();
+    let key = (step.project.clone(), step.id, QUIET);
+    if nothing_new {
+        *state.polled.entry(key).or_insert(0) += 1;
+    } else {
+        state.polled.remove(&key);
+    }
+}
+
+async fn hand_review(core: &Arc<Core>, step: &Step, mut seen: review::Review, new: Vec<Feedback>) {
+    let text = review::task(&new, &step.pull_url(), &step.run.branch, seen.rounds + 1);
+    let note = format!(
+        "Answering {} review comment{}",
+        new.len(),
+        if new.len() == 1 { "" } else { "s" }
+    );
+    seen.hand(new);
+    ask(core, step, text, &note, |run| run.review = seen).await;
 }

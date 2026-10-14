@@ -26,6 +26,7 @@ mod auto;
 mod codehost;
 mod finish;
 mod git;
+mod review;
 mod tickets;
 
 pub(crate) use auto::Settings;

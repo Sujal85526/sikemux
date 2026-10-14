@@ -9,6 +9,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use super::review::Review;
 use super::{finish, git, Board, Card, Status};
 use crate::protocol::Event;
 use crate::server::connection::blocking;
@@ -235,6 +236,8 @@ pub(super) struct Run {
     /// The agent was asked once already to fix what failed.
     #[serde(default)]
     pub fixed: bool,
+    #[serde(default)]
+    pub review: Review,
 }
 
 impl Run {
@@ -253,6 +256,7 @@ impl Run {
             checks_since: None,
             rebased: false,
             fixed: false,
+            review: Review::default(),
         }
     }
 

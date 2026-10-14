@@ -1,6 +1,8 @@
 //! Pull requests and their checks on the project's code host, through the
-//! GitHub and Bitbucket plugins and the person's own sign-in to them.
+//! GitHub and Bitbucket plugins and the person's own sign-in to them, and
+//! what reviewers say on them.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::auto::Pull;
@@ -182,8 +184,15 @@ pub(super) async fn checks(pull: &Pull, branch: &str, sha: &str) -> Result<Check
     })
 }
 
-/// Whether the pull request is `open`, `merged` or `closed`.
-pub(super) async fn state(pull: &Pull) -> Result<String, String> {
+/// Where a pull request stands.
+pub(super) struct Looked {
+    /// `open`, `merged` or `closed`.
+    pub state: String,
+    /// Moves whenever anything on the pull request does, such as a comment.
+    pub mark: String,
+}
+
+pub(super) async fn look(pull: &Pull) -> Result<Looked, String> {
     let repo = pull.repo();
     let found = plugins::call(
         repo.host,
@@ -191,7 +200,64 @@ pub(super) async fn state(pull: &Pull) -> Result<String, String> {
         repo.params(json!({ "number": pull.number })),
     )
     .await?;
-    Ok(text(&found, "state").unwrap_or_else(|| "open".to_owned()))
+    Ok(Looked {
+        state: text(&found, "state").unwrap_or_else(|| "open".to_owned()),
+        mark: format!("{} {}", found["updatedAt"], found["comments"]),
+    })
+}
+
+/// A comment or review left on a pull request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Feedback {
+    pub id: String,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub bot: bool,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub line: Option<u64>,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub at: String,
+}
+
+/// The comments and reviews on the pull request that changed at or after `since`.
+pub(super) async fn feedback(pull: &Pull, since: Option<&str>) -> Result<Vec<Feedback>, String> {
+    let repo = pull.repo();
+    let found = plugins::call(
+        repo.host,
+        "reviewFeedback",
+        repo.params(json!({ "number": pull.number, "since": since })),
+    )
+    .await?;
+    serde_json::from_value(found).map_err(|error| error.to_string())
+}
+
+/// Answers each comment in its own thread with `(comment id, text, what it
+/// said)`, then asks `reviewers` to look again where the host can.
+pub(super) async fn answer(
+    pull: &Pull,
+    replies: &[(String, String, String)],
+    reviewers: &[String],
+) -> Result<(), String> {
+    let repo = pull.repo();
+    let replies: Vec<Value> = replies
+        .iter()
+        .map(|(to, body, quote)| json!({ "to": to, "body": body, "quote": quote }))
+        .collect();
+    plugins::call(
+        repo.host,
+        "answerReview",
+        repo.params(json!({ "number": pull.number, "replies": replies, "reviewers": reviewers })),
+    )
+    .await
+    .map(drop)
 }
 
 /// Closes the pull request without merging it.
