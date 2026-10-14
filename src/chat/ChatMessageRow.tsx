@@ -265,8 +265,6 @@ function SentTime({ at, took }: { at: number; took: number | null }) {
     );
 }
 
-/* Another agent's message reads as prose under a line naming who sent it, so
-   it is never mistaken for something the person typed. */
 function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[]; at: number | null }) {
     return (
         <article className="chat-message agent-letter">

@@ -69,8 +69,6 @@
     font-size: calc(13.5px * var(--chat-text-em, 1));
 }
 
-/* Another agent's message: a centred line naming the sender, then its text
-   as prose rather than in the person's bubble. */
 .chat-message.agent-letter {
     padding-top: 17px;
     padding-bottom: 10px;
