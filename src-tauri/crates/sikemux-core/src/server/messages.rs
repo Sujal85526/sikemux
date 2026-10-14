@@ -300,6 +300,22 @@ pub(crate) struct Listed {
     pub reach: Reach,
 }
 
+impl Listed {
+    /// Its status, with an agent at rest that has a task or messages waiting
+    /// for it counted as about to start its next turn.
+    pub(crate) fn standing(&self, core: &Core) -> AgentStatus {
+        let resting = matches!(
+            self.status,
+            AgentStatus::Idle | AgentStatus::Done | AgentStatus::Asleep
+        );
+        if resting && core.harness.mailbox.has_waiting(&self.agent_id) {
+            AgentStatus::Starting
+        } else {
+            self.status
+        }
+    }
+}
+
 /// Every agent the core runs or the app holds, in the order the device view
 /// puts them. Reads the disk to place agents in projects.
 pub(crate) fn listed(core: &Core) -> Vec<Listed> {
@@ -426,7 +442,7 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                     "agentId": agent.agent_id,
                     "cli": agent.cli,
                     "title": agent.title,
-                    "status": status_word(agent.status),
+                    "status": status_word(agent.standing(&core)),
                     "lastActive": since(agent.active_at, now),
                     "canMessage": agent.reach != Reach::Stopped && agent.agent_id != caller,
                 });

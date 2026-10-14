@@ -864,8 +864,9 @@ says:
 
 Each event names the agent and `what` happened. Pass back the `cursor` it
 gives you, so nothing that happens between two waits is missed; without one, an
-agent already where `until` says answers at once. A timeout is normal: wait
-again, or carry on.
+agent already where `until` says answers at once. An agent whose task or
+messages still wait for it counts as starting, not idle, until it takes them. A
+timeout is normal: wait again, or carry on.
 
 Wait only when you cannot go on without the result, such as when you need two
 agents' work before you can merge it. An agent you started reports to you by

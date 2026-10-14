@@ -602,7 +602,7 @@ pub(crate) async fn read(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         fields.insert("cli".into(), target.cli.clone().into());
         fields.insert(
             "status".into(),
-            messages::status_word(target.status).into(),
+            messages::status_word(target.standing(&core)).into(),
         );
         Ok(answer)
     })
@@ -651,8 +651,8 @@ fn waited(
     for agent in wanted {
         let waited = match messages::resolve(&agents, agent, &project, caller) {
             Ok(target) => Waited {
+                status: Some(target.standing(core)),
                 name: target.name.unwrap_or_else(|| target.agent_id.clone()),
-                status: Some(target.status),
                 project: target.project,
                 agent_id: target.agent_id,
             },
