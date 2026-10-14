@@ -37,8 +37,8 @@
     background: rgba(124, 197, 255, 0.08);
 }
 .gg-agents {
-    flex: none;
-    max-width: 30%;
+    flex: 0 1000 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--text-tertiary);
@@ -52,7 +52,7 @@
     font-variant-numeric: tabular-nums;
 }
 .gg-subj {
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
