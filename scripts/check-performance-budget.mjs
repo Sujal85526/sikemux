@@ -182,13 +182,14 @@ const budgets = [
     // Main reached the edge of this budget; Escape keeping a draft tipped it over.
     // Sharing a chat and Muse Code added a little more.
     // The Skills section in Settings and its toast added a little more.
+    // Agents messaging, asking and spawning each other, with the board and Auto, added more.
     label:
       "default-path JavaScript except the highlighter and its grammar chunks",
     pattern: new RegExp(
       `^(?!(?:highlighter|paper-shaders|xterm-webgl|${diffLanguageChunkNames.join("|")})-).*\\.js$`,
     ),
-    raw: 3_750_000,
-    gzip: 1_220_000,
+    raw: 3_820_000,
+    gzip: 1_250_000,
   },
   {
     label: "opt-in shader renderer",
