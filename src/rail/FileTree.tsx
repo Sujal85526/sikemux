@@ -2,7 +2,7 @@ import { renameEditorPath } from "../state/editorPaths";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
 import { fsapi, type DirEntry } from "../api/fs";
 import { type GitFile } from "../api/git";
 import { subscribe } from "../state/bus";
@@ -558,25 +558,22 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
             { label: "Copy Path", run: () => void copyToClipboard(entry.path, "path") },
             { label: "Copy Relative Path", run: () => void copyToClipboard(relativePath(entry.path), "relative path") },
         ];
-        if (entry.is_dir) {
-            return [
-                { label: "New File", run: () => startNew("file", entry.path) },
-                { label: "New Folder", run: () => startNew("folder", entry.path) },
-                { sep: true },
-                { label: "Rename…", run: () => startRename(entry) },
-                { label: "Delete", danger: true, run: () => void deleteEntry(entry) },
-                { sep: true },
-                ...tail,
-            ];
-        }
+        const head: CtxItem[] = entry.is_dir
+            ? [
+                  { label: "New File", run: () => startNew("file", entry.path) },
+                  { label: "New Folder", run: () => startNew("folder", entry.path) },
+              ]
+            : [
+                  {
+                      label: "Open",
+                      run: () => {
+                          setSelectedDir(null);
+                          onKeepFile(entry);
+                      },
+                  },
+              ];
         return [
-            {
-                label: "Open",
-                run: () => {
-                    setSelectedDir(null);
-                    onKeepFile(entry);
-                },
-            },
+            ...head,
             { sep: true },
             { label: "Rename…", run: () => startRename(entry) },
             { label: "Delete", danger: true, run: () => void deleteEntry(entry) },
@@ -605,9 +602,10 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
     const renderRow = (row: VisibleTreeRow): ReactNode => {
         if (row.kind === "new") {
             return (
-                <NewEntryRow
+                <EntryInputRow
                     depth={row.depth}
                     kind={row.request.kind}
+                    renaming={false}
                     value={newName}
                     inputRef={newInputRef}
                     onChange={setNewName}
@@ -618,11 +616,27 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
         }
         const e = row.entry;
         const pad = 4 + row.depth * 13;
+        const clicked = () => {
+            const suppressed = suppressClickRef.current;
+            suppressClickRef.current = false;
+            return !suppressed;
+        };
+        const shared = {
+            onPointerDown: (ev: ReactPointerEvent<HTMLButtonElement>) => onRowPointerDown(ev, e.path),
+            onDragStart: (ev: React.DragEvent) => ev.preventDefault(),
+            onContextMenu: (ev: ReactMouseEvent) => openMenu(ev, e),
+            role: "treeitem",
+            "aria-level": row.depth + 1,
+            tabIndex: focusPath === e.path ? 0 : -1,
+            onFocus: () => setFocusedPath(e.path),
+            onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => onEntryKey(event, e),
+        };
         if (renaming === e.path) {
             return (
-                <RenameRow
+                <EntryInputRow
                     depth={row.depth + (e.is_dir ? 0 : 1)}
                     kind={e.is_dir ? "folder" : "file"}
+                    renaming
                     value={renameName}
                     inputRef={renameInputRef}
                     onChange={setRenameName}
@@ -642,23 +656,12 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                     }}
                     className={`tree-row is-folder${e.ignored ? " ignored" : ""}${folderGit ? ` git-${folderGit.cls}` : ""}${selectedDir === e.path ? " selected" : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                     style={{ paddingLeft: pad }}
-                    onPointerDown={(ev) => onRowPointerDown(ev, e.path)}
-                    onDragStart={(ev) => ev.preventDefault()}
+                    {...shared}
                     onClick={() => {
-                        if (suppressClickRef.current) {
-                            suppressClickRef.current = false;
-                            return;
-                        }
-                        void toggleDir(e);
+                        if (clicked()) void toggleDir(e);
                     }}
-                    onContextMenu={(ev) => openMenu(ev, e)}
-                    role="treeitem"
                     aria-expanded={open}
-                    aria-level={row.depth + 1}
                     aria-selected={selectedDir === e.path}
-                    tabIndex={focusPath === e.path ? 0 : -1}
-                    onFocus={() => setFocusedPath(e.path)}
-                    onKeyDown={(event) => onEntryKey(event, e)}
                     data-folder-path={e.path}>
                     <span className={`tree-chev${open ? " open" : ""}`}>
                         <IconChevron size={11} />
@@ -682,24 +685,14 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
                 ref={(el) => attachRowButton(e.path, el)}
                 className={`tree-row file${e.ignored ? " ignored" : ""}${activePath === e.path ? " active" : ""}${gd ? ` git-${gd.cls}` : ""}${dragOver === e.path ? " drag-over" : ""}${draggingPath === e.path ? " dragging" : ""}`}
                 style={{ paddingLeft: pad + 13 }}
-                onPointerDown={(ev) => onRowPointerDown(ev, e.path)}
-                onDragStart={(ev) => ev.preventDefault()}
+                {...shared}
                 onClick={() => {
-                    if (suppressClickRef.current) {
-                        suppressClickRef.current = false;
-                        return;
-                    }
+                    if (!clicked()) return;
                     setSelectedDir(null);
                     onOpenFile(e);
                 }}
                 onDoubleClick={() => onKeepFile(e)}
-                onContextMenu={(ev) => openMenu(ev, e)}
-                role="treeitem"
-                aria-level={row.depth + 1}
                 aria-selected={activePath === e.path}
-                tabIndex={focusPath === e.path ? 0 : -1}
-                onFocus={() => setFocusedPath(e.path)}
-                onKeyDown={(event) => onEntryKey(event, e)}
                 data-file-path={e.path}
                 data-drop-dir={dirname(e.path)}>
                 <span className="tree-file">
@@ -882,6 +875,21 @@ export const FileTree = memo(function FileTree({ cwd, activePath, onOpenFile, on
     );
 });
 
+/** Where a floating surface opened at `x`, `y` sits, kept inside the window. */
+export function useFloatingPosition(ref: RefObject<HTMLElement | null>, x: number, y: number, alignRight = false, above = false) {
+    const [pos, setPos] = useState({ left: x, top: y });
+    useLayoutEffect(() => {
+        const r = ref.current?.getBoundingClientRect();
+        if (!r) return;
+        const pad = 6;
+        setPos({
+            left: Math.max(pad, Math.min(alignRight ? x - r.width : x, window.innerWidth - r.width - pad)),
+            top: Math.max(pad, Math.min(above ? y - r.height : y, window.innerHeight - r.height - pad)),
+        });
+    }, [ref, x, y, alignRight, above]);
+    return pos;
+}
+
 export function TreeContextMenu({
     x,
     y,
@@ -905,19 +913,7 @@ export function TreeContextMenu({
     above?: boolean;
 }) {
     const ref = useRef<HTMLDivElement>(null);
-    const [pos, setPos] = useState({ left: x, top: y });
-
-    useLayoutEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        const pad = 6;
-        let left = alignRight ? x - r.width : x;
-        let top = above ? Math.max(pad, y - r.height) : y;
-        if (left + r.width > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - r.width - pad);
-        if (top + r.height > window.innerHeight - pad) top = Math.max(pad, window.innerHeight - r.height - pad);
-        setPos({ left, top });
-    }, [x, y, alignRight, above]);
+    const pos = useFloatingPosition(ref, x, y, alignRight, above);
 
     /* A click on the page lands in the page, never on the scrim, but it takes the
        window's focus with it, so losing focus closes the menu as a click away would. */
@@ -949,21 +945,15 @@ export function TreeContextMenu({
                 aria-label="Actions"
                 onKeyDown={(event) => {
                     const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+                    const count = buttons.length;
                     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-                    let next = index;
-                    if (event.key === "ArrowDown") next = (index + 1) % buttons.length;
-                    else if (event.key === "ArrowUp") next = (index - 1 + buttons.length) % buttons.length;
-                    else if (event.key === "Home") next = 0;
-                    else if (event.key === "End") next = buttons.length - 1;
-                    else if (event.key === "Escape" || event.key === "Tab") {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onClose();
-                        return;
-                    } else return;
+                    const next = ({ ArrowDown: index + 1, ArrowUp: index - 1 + count, Home: 0, End: count - 1 } as Record<string, number>)[event.key];
+                    const closing = event.key === "Escape" || event.key === "Tab";
+                    if (next === undefined && !closing) return;
                     event.preventDefault();
                     event.stopPropagation();
-                    buttons[next]?.focus();
+                    if (closing) onClose();
+                    else buttons[next % count]?.focus();
                 }}
                 className={`tree-ctx-menu${className ? ` ${className}` : ""}`}
                 style={{ left: pos.left, top: pos.top, ...(width ? { width, minWidth: width, maxWidth: width } : {}) }}
@@ -1010,9 +1000,11 @@ export function TreeContextMenu({
     );
 }
 
-function NewEntryRow({
+/** The name field a new entry, or one being renamed, shows in place of its row. */
+function EntryInputRow({
     depth,
     kind,
+    renaming,
     value,
     onChange,
     onSubmit,
@@ -1021,73 +1013,28 @@ function NewEntryRow({
 }: {
     depth: number;
     kind: "file" | "folder";
+    renaming: boolean;
     value: string;
     onChange: (v: string) => void;
     onSubmit: () => void;
     onCancel: () => void;
     inputRef: React.RefObject<HTMLInputElement | null>;
 }) {
-    const pad = 4 + depth * 13;
+    const folder = kind === "folder";
     return (
-        <div className="tree-row tree-new" style={{ paddingLeft: pad + 13 }}>
-            <span className="tree-file">{kind === "folder" ? <IconFolder size={17} /> : <FileIcon name="" size={16} />}</span>
-            <input
-                ref={inputRef}
-                className="tree-new-input"
-                placeholder={kind === "folder" ? "folder name…" : "filename…"}
-                value={value}
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-                onChange={(e) => onChange(e.target.value)}
-                onBlur={onCancel}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter") onSubmit();
-                    else if (e.key === "Escape") onCancel();
-                    e.stopPropagation();
-                }}
-            />
-        </div>
-    );
-}
-
-function RenameRow({
-    depth,
-    kind,
-    value,
-    onChange,
-    onSubmit,
-    onCancel,
-    inputRef,
-}: {
-    depth: number;
-    kind: "file" | "folder";
-    value: string;
-    onChange: (v: string) => void;
-    onSubmit: () => void;
-    onCancel: () => void;
-    inputRef: React.RefObject<HTMLInputElement | null>;
-}) {
-    const pad = 4 + depth * 13;
-    return (
-        <div className="tree-row tree-new" style={{ paddingLeft: pad }}>
-            {kind === "folder" ? (
-                <>
-                    <span className="tree-chev" style={{ visibility: "hidden" }}>
-                        <IconChevron size={11} />
-                    </span>
-                    <span className="tree-folder">
-                        <IconFolder size={17} />
-                    </span>
-                </>
-            ) : (
-                <span className="tree-file">
-                    <FileIcon name={value} size={16} />
+        <div className="tree-row tree-new" style={{ paddingLeft: 4 + depth * 13 + (renaming ? 0 : 13) }}>
+            {renaming && folder && (
+                <span className="tree-chev" style={{ visibility: "hidden" }}>
+                    <IconChevron size={11} />
                 </span>
             )}
+            <span className={renaming && folder ? "tree-folder" : "tree-file"}>
+                {folder ? <IconFolder size={17} /> : <FileIcon name={renaming ? value : ""} size={16} />}
+            </span>
             <input
                 ref={inputRef}
                 className="tree-new-input"
+                placeholder={renaming ? undefined : folder ? "folder name…" : "filename…"}
                 value={value}
                 spellCheck={false}
                 autoCapitalize="off"

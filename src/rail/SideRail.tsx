@@ -88,7 +88,7 @@ function cloneProjectRow(source: HTMLElement): HTMLElement {
 }
 
 function projectElement(id: string): HTMLElement | null {
-    return Array.from(document.querySelectorAll<HTMLElement>("[data-project-id]")).find((element) => element.dataset.projectId === id) ?? null;
+    return document.querySelector<HTMLElement>(`[data-project-id="${CSS.escape(id)}"]`);
 }
 
 function projectRects(): Map<string, DOMRect> {

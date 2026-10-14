@@ -38,7 +38,7 @@ import {
     IconTrash,
     IconUser,
 } from "../ui/Icons";
-import { TreeContextMenu, type CtxItem } from "./FileTree";
+import { TreeContextMenu, useFloatingPosition, type CtxItem } from "./FileTree";
 
 const GLYPHS: Record<SpaceIcon, ComponentType<{ size?: number }>> = {
     folder: IconFolder,
@@ -261,18 +261,7 @@ function Popover({
     children: ReactNode;
 }) {
     const ref = useRef<HTMLDivElement>(null);
-    const [pos, setPos] = useState({ left: at.x, top: at.y });
-
-    useLayoutEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        const pad = 6;
-        setPos({
-            left: Math.max(pad, Math.min(at.x, window.innerWidth - rect.width - pad)),
-            top: Math.max(pad, Math.min(at.y, window.innerHeight - rect.height - pad)),
-        });
-    }, [at.x, at.y]);
+    const pos = useFloatingPosition(ref, at.x, at.y);
 
     useEffect(() => {
         const onKey = (event: KeyboardEvent) => {
