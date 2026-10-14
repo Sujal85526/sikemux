@@ -11,8 +11,7 @@ use serde_json::Value;
 
 use crate::error::{RundeckError, RundeckResult};
 
-use crate::client::{get_json, limited, post_empty_json, post_json, seg};
-use crate::config;
+use crate::client::{get_json, limited, post_empty_json, post_json, seg, Session};
 
 #[derive(Serialize, Clone, Deserialize)]
 pub struct Execution {
@@ -110,6 +109,7 @@ struct ExecutionList {
 }
 
 async fn job_executions(
+    session: &Session,
     job_id: &str,
     max: u32,
     status: Option<&str>,
@@ -119,18 +119,22 @@ async fn job_executions(
         query.push(("status", status.to_string()));
     }
     let path = format!("/job/{}/executions", seg(job_id)?);
-    let list: ExecutionList = get_json(&path, &query).await?;
+    let list: ExecutionList = get_json(session, &path, &query).await?;
     Ok(list.executions)
 }
 
-pub async fn newest_succeeded(job_id: &str) -> RundeckResult<Option<Execution>> {
-    Ok(job_executions(job_id, 1, Some("succeeded"))
+pub async fn newest_succeeded(
+    session: &Session,
+    job_id: &str,
+) -> RundeckResult<Option<Execution>> {
+    Ok(job_executions(session, job_id, 1, Some("succeeded"))
         .await?
         .into_iter()
         .next())
 }
 
 pub async fn executions(
+    session: &Session,
     job_id: String,
     project: String,
     max: Option<u32>,
@@ -138,16 +142,16 @@ pub async fn executions(
 ) -> RundeckResult<Vec<Execution>> {
     let limit = max.unwrap_or(25);
     let succeeded_only = only_succeeded.unwrap_or(false);
-    let history = job_executions(&job_id, limit, succeeded_only.then_some("succeeded")).await?;
+    let history = job_executions(session, &job_id, limit, succeeded_only.then_some("succeeded")).await?;
 
     let running = if succeeded_only {
         Vec::new()
     } else {
         let running_query = [("jobIdFilter", job_id.clone())];
         let running_path = format!("/project/{}/executions/running", seg(&project)?);
-        match get_json::<ExecutionList>(&running_path, &running_query).await {
+        match get_json::<ExecutionList>(session, &running_path, &running_query).await {
             Ok(response) => response.executions,
-            Err(_) => job_executions(&job_id, limit, Some("running"))
+            Err(_) => job_executions(session, &job_id, limit, Some("running"))
                 .await
                 .unwrap_or_default(),
         }
@@ -158,7 +162,7 @@ pub async fn executions(
         if !status_is_running(&execution.status) {
             return None;
         }
-        get_json::<WorkflowState>(&format!("/execution/{}/state", execution.id), &[])
+        get_json::<WorkflowState>(session, &format!("/execution/{}/state", execution.id), &[])
             .await
             .ok()
     }))
@@ -207,8 +211,8 @@ fn execution_started_at(execution: &Execution) -> Option<i64> {
         .and_then(|started| started.unixtime)
 }
 
-pub async fn execution(execution_id: u64) -> RundeckResult<Execution> {
-    get_json(&format!("/execution/{execution_id}"), &[]).await
+pub async fn execution(session: &Session, execution_id: u64) -> RundeckResult<Execution> {
+    get_json(session, &format!("/execution/{execution_id}"), &[]).await
 }
 
 // ---- summaries for the matrix and the plan ---------------------------------
@@ -277,16 +281,17 @@ fn is_succeeded(execution: &Execution) -> bool {
 
 /// The job's newest execution and its newest successful one.
 pub async fn latest_and_deployed(
+    session: &Session,
     job_id: &str,
     branch_options: &[String],
 ) -> RundeckResult<(Option<ExecSummary>, Option<ExecSummary>)> {
-    let latest = limited(job_executions(job_id, 1, None))
+    let latest = limited(job_executions(session, job_id, 1, None))
         .await?
         .into_iter()
         .next();
     let deployed = match &latest {
         Some(execution) if is_succeeded(execution) => latest.clone(),
-        _ => limited(newest_succeeded(job_id)).await?,
+        _ => limited(newest_succeeded(session, job_id)).await?,
     };
     Ok((
         latest.map(|execution| summarize(execution, branch_options)),
@@ -345,10 +350,14 @@ fn recovered_execution(
         .max_by_key(|execution| (execution_started_at(execution), execution.id))
 }
 
-pub async fn run(job_id: String, request: RunRequest) -> RundeckResult<RunResult> {
+pub async fn run(
+    session: &Session,
+    job_id: String,
+    request: RunRequest,
+) -> RundeckResult<RunResult> {
     let path = format!("/job/{}/run", seg(&job_id)?);
     let requested_at_ms = now_ms();
-    let error = match post_json::<_, Execution>(&path, &request).await {
+    let error = match post_json::<_, Execution>(session, &path, &request).await {
         Ok(execution) => {
             return Ok(RunResult {
                 id: execution.id,
@@ -360,10 +369,11 @@ pub async fn run(job_id: String, request: RunRequest) -> RundeckResult<RunResult
         Err(error @ RundeckError::Transport(_)) => error,
         Err(error) => return Err(error),
     };
-    let user = config::refresh_from_disk().await.unwrap_or_default().user;
-    let recent = job_executions(&job_id, 5, None).await.unwrap_or_default();
-    match recovered_execution(recent, &user, requested_at_ms) {
-        Some(execution) if !user.is_empty() => Ok(RunResult {
+    let recent = job_executions(session, &job_id, 5, None)
+        .await
+        .unwrap_or_default();
+    match recovered_execution(recent, &session.user, requested_at_ms) {
+        Some(execution) if !session.user.is_empty() => Ok(RunResult {
             id: execution.id,
             permalink: execution.permalink,
             status: execution.status,
@@ -394,8 +404,8 @@ pub struct AbortedExecution {
     pub status: Option<String>,
 }
 
-pub async fn abort(execution_id: u64) -> RundeckResult<AbortResult> {
-    post_empty_json(&format!("/execution/{execution_id}/abort")).await
+pub async fn abort(session: &Session, execution_id: u64) -> RundeckResult<AbortResult> {
+    post_empty_json(session, &format!("/execution/{execution_id}/abort")).await
 }
 
 // ---- Step / workflow state (used by watch.rs and also by single fetch UI) --
@@ -433,8 +443,11 @@ pub struct WorkflowState {
     pub completed: Option<bool>,
 }
 
-pub async fn execution_state(execution_id: u64) -> RundeckResult<WorkflowState> {
-    get_json(&format!("/execution/{execution_id}/state"), &[]).await
+pub async fn execution_state(
+    session: &Session,
+    execution_id: u64,
+) -> RundeckResult<WorkflowState> {
+    get_json(session, &format!("/execution/{execution_id}/state"), &[]).await
 }
 
 #[cfg(test)]

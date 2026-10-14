@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { closeCorePalettes, onPaneClosed, openSurface } from "../../plugin-api/host";
 import { definePluginSettings } from "../../plugin-api/settings";
 import { RUNDECK_DEPLOY, RUNDECK_PLUGIN_ID } from "./kinds";
-import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS, basenameOf } from "./shape";
+import { DEFAULT_PROD_ENVS, basenameOf } from "./shape";
 
 /** A Rundeck job as the views address it, plus the local checkout linked to it, if any. */
 export interface JobRef {
@@ -32,7 +32,6 @@ export interface RundeckSettings {
     activeProject: string;
     activeGroup: string | null;
     prodEnvs: string[];
-    branchOptions: string[];
     /** The job picked for each local project folder. */
     deployTargets: Record<string, DeployTarget>;
     treeHidden: boolean;
@@ -59,7 +58,6 @@ function decodeSettings(saved: unknown): RundeckSettings {
         activeProject: typeof raw.activeProject === "string" ? raw.activeProject : "",
         activeGroup: typeof raw.activeGroup === "string" && raw.activeGroup ? raw.activeGroup : null,
         prodEnvs: stringList(raw.prodEnvs, DEFAULT_PROD_ENVS),
-        branchOptions: stringList(raw.branchOptions, DEFAULT_BRANCH_OPTIONS),
         deployTargets,
         treeHidden: raw.treeHidden === true,
         notifyWhenDone: raw.notifyWhenDone !== false,

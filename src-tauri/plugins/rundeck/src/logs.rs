@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use sikemux_plugin_api::{reply, PluginResult, StreamSink};
 use tokio::time::sleep;
 
-use crate::client::get_json;
+use crate::client::{get_json, Session};
 use crate::error::RundeckResult;
 
 #[derive(Serialize, Clone, Deserialize)]
@@ -108,6 +108,7 @@ fn next_delay(chunk: &LogChunk, back_to_back_reads: u32) -> Option<Duration> {
 /// Tail log output. Resumes at `offset` when given; otherwise `backlog`
 /// replays the last N lines, and 0 or None reads from the beginning.
 pub async fn logs(
+    session: Session,
     execution_id: u64,
     resume_offset: Option<String>,
     backlog: Option<u32>,
@@ -137,7 +138,7 @@ pub async fn logs(
         first_pass = false;
 
         let res: RundeckResult<LogChunk> =
-            get_json(&format!("/execution/{execution_id}/output"), &query).await;
+            get_json(&session, &format!("/execution/{execution_id}/output"), &query).await;
 
         let sleep_dur = match res {
             Ok(chunk) => {

@@ -15,7 +15,7 @@ import {
     Tooltip,
 } from "../../../plugin-api/ui";
 import { failureMessage, type MatrixCell, type RundeckExecution } from "../api";
-import { rndExecutionsR, rndJobDetailR, rndJobsR, rndMatrixR } from "../resources";
+import { rndExecutionsR, rndJobDetailR, rndJobsR, rndMatrixR, useBranchOptions } from "../resources";
 import * as cmd from "../state";
 import type { JobRef, RundeckLevel } from "../state";
 import { branchOf, branchOptionName, childSegment, duration, groupSegments, inGroup, isLiveStatus, isProdTarget } from "../shape";
@@ -43,7 +43,6 @@ interface Section {
 export function RundeckJobs({ paneId, active, level }: Props) {
     const settingsProject = cmd.rundeckSettings.useSelect((s) => s.activeProject);
     const settingsGroup = cmd.rundeckSettings.useSelect((s) => s.activeGroup);
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
     const project = level.kind === "service" ? level.project : settingsProject;
     const group = level.kind === "service" ? level.group : settingsGroup;
     const picked = cmd.useRundeck((s) => s.selectedJob[paneId]);
@@ -52,7 +51,7 @@ export function RundeckJobs({ paneId, active, level }: Props) {
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
     const [query, setQuery] = useState("");
 
-    const res = useResourceEnabled(active && !!project, rndMatrixR, project, branchOptions);
+    const res = useResourceEnabled(active && !!project, rndMatrixR, project);
     const data = res.data;
     const cells = useMemo(
         () => (data?.cells ?? []).filter((c) => inGroup(c.group, group)).sort((a, b) => a.name.localeCompare(b.name)),
@@ -532,7 +531,7 @@ const RECENT = 8;
 const SPARK = 10;
 
 function JobInspector({ paneId, active, cell, job, now }: { paneId: string; active: boolean; cell: MatrixCell; job: JobRef; now: number }) {
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const branchOptions = useBranchOptions();
     const isProd = cmd.rundeckSettings.useSelect((s) => isProdTarget(job.project, job.group, s.prodEnvs));
     const detail = useResourceEnabled(active, rndJobDetailR, job.jobId);
     const jobs = useResourceEnabled(active, rndJobsR, job.project);

@@ -35,7 +35,6 @@ function matchJobs(jobs: RundeckJob[], folder: string): RundeckJob[] {
  */
 export function RundeckTopBarItem({ projectCwd, stripHovered }: PluginTopBarProps) {
     const folder = projectCwd ? basenameOf(projectCwd) : null;
-    const branchOptions = rundeckSettings.useSelect((s) => s.branchOptions);
     const prodEnvs = rundeckSettings.useSelect((s) => s.prodEnvs);
     const picked = rundeckSettings.useSelect((s) => (projectCwd ? s.deployTargets[projectCwd] : undefined));
     const deployWanted = stripHovered || peekResource(rndJobIndexR) !== undefined || peekResource(rndProjectsR) !== undefined;
@@ -51,7 +50,7 @@ export function RundeckTopBarItem({ projectCwd, stripHovered }: PluginTopBarProp
                 : [],
         [index.data, folder],
     );
-    const cells = useResourceEnabled(matches.length > 0, rndJobCellsR, matches, branchOptions);
+    const cells = useResourceEnabled(matches.length > 0, rndJobCellsR, matches);
 
     const active =
         matches.find((job) => picked && job.project === picked.project && job.id === picked.jobId) ??

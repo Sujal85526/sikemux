@@ -13,6 +13,7 @@ use serde::Serialize;
 
 use crate::error::RundeckResult;
 
+use crate::client::Session;
 use crate::executions::{deployed_branch, newest_succeeded};
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
@@ -82,11 +83,11 @@ fn relation_without_repo(deployed: Option<&str>, target: &str) -> BranchRelation
 }
 
 /// Compute a read-only deploy plan. An empty `repo_path` skips the git side.
-pub async fn plan(request: PlanRequest) -> RundeckResult<PlanResult> {
+pub async fn plan(session: &Session, request: PlanRequest) -> RundeckResult<PlanResult> {
     let target_branch = request.target_branch.trim().to_string();
 
     // The git-side analysis is still useful when the deploy history is not.
-    let deployed_branch = newest_succeeded(&request.job_id)
+    let deployed_branch = newest_succeeded(session, &request.job_id)
         .await
         .ok()
         .flatten()

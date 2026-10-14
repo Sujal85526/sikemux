@@ -17,9 +17,8 @@ export function RundeckProjectTree({ paneId, active }: { paneId: string; active:
     const onJob = top && top.kind !== "matrix";
     const activeProject = onJob ? top.project : settingsProject;
     const activeGroup = onJob ? top.group : settingsGroup;
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
     const openState = cmd.useRundeck((s) => s.treeOpen[paneId]);
-    const matrix = useResourceEnabled(active && !!activeProject, rndMatrixR, activeProject, branchOptions);
+    const matrix = useResourceEnabled(active && !!activeProject, rndMatrixR, activeProject);
 
     const jobsByProject = useMemo(() => {
         const map = new Map<string, { jobs: RundeckJob[]; error: string | null }>();

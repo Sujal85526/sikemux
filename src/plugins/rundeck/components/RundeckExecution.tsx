@@ -5,7 +5,7 @@ import { IconCheck, IconClock, IconClose, IconExternal, IconFetch, IconGit, Icon
 import { failureMessage, rundeckApi, type RundeckStep } from "../api";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
-import { rndJobDetailR } from "../resources";
+import { rndJobDetailR, useBranchOptions } from "../resources";
 import { useWatchingRun, watchRun } from "../runWatch";
 import { branchOf, displayStatus, duration, formatTime, isLiveStatus } from "../shape";
 import { executionProgress } from "./executionProgress";
@@ -35,7 +35,7 @@ const STEP_STATE: Record<string, { cls: "pending" | "running" | "ok" | "fail" | 
 export function RundeckExecution({ paneId, level, active }: Props) {
     const { execution, state, terminal, watchErr, logs } = useExecutionStreams(level.executionId, active);
     const detail = useResourceEnabled(active, rndJobDetailR, level.jobId);
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const branchOptions = useBranchOptions();
     const [stepFilter, setStepFilter] = useState<string | null>(null);
     const [aborting, setAborting] = useState(false);
     const [abortErr, setAbortErr] = useState<string | null>(null);

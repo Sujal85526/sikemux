@@ -257,7 +257,6 @@ export interface PlanRequest {
     service: string;
     targetBranch: string;
     repoPath: string;
-    branchOptions: string[];
 }
 
 export interface PlanResult {
@@ -289,8 +288,10 @@ export const rundeckApi = {
     jobIndex: () => rndInvoke<JobIndexEntry[]>("jobIndex"),
     jobDetail: (jobId: string) => rndInvoke<JobDetail>("jobDetail", { jobId }),
     optionValues: (url: string) => rndInvoke<OptionValue[]>("optionValues", { url }),
-    branchesMatrix: (project: string, branchOptions: string[]) => rndInvoke<MatrixResult>("branchesMatrix", { project, branchOptions }),
-    jobCells: (jobs: RundeckJob[], branchOptions: string[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs, branchOptions }),
+    branchesMatrix: (project: string) => rndInvoke<MatrixResult>("branchesMatrix", { project }),
+    jobCells: (jobs: RundeckJob[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs }),
+    branchOptions: () => backend.call<string[]>("branchOptions"),
+    setBranchOptions: (names: string[]) => backend.call<null>("setBranchOptions", { names }),
 
     executions: (jobId: string, project: string, max = 25, onlySucceeded = false) =>
         rndInvoke<RundeckExecution[]>("executions", { jobId, project, max, onlySucceeded }),

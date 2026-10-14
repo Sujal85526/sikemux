@@ -5,7 +5,7 @@ import { IconRun, IconWarning, SkeletonRows } from "../../../plugin-api/ui";
 import { failureMessage, rundeckApi, type JobDetail, type JobOption, type PlanResult } from "../api";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
-import { rndExecutionsR, rndJobDetailR, rndJobsR, rndPlanR } from "../resources";
+import { rndExecutionsR, rndJobDetailR, rndJobsR, rndPlanR, useBranchOptions } from "../resources";
 import { branchOf, branchOptionName, envOf, isLiveStatus, isProdTarget, localDateTimeToIso, qualifiedName } from "../shape";
 import { watchRun } from "../runWatch";
 import { useDebounced } from "../../../plugin-api/hooks";
@@ -24,7 +24,7 @@ interface Props {
 export function RundeckDeploy({ paneId, level, active }: Props) {
     const detail = useResourceEnabled(active, rndJobDetailR, level.jobId);
     const jobs = useResourceEnabled(active, rndJobsR, level.project);
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const branchOptions = useBranchOptions();
     const permalink = jobs.data?.find((job) => job.id === level.jobId)?.permalink ?? null;
     const fallback = useMemo(() => (detail.data ? null : fallbackDetail(level, branchOptions)), [detail.data, level, branchOptions]);
 
@@ -110,7 +110,7 @@ interface FormProps extends Props {
 }
 
 function RunForm({ paneId, level, active, detail, permalink, children }: FormProps) {
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const branchOptions = useBranchOptions();
     const isProd = cmd.rundeckSettings.useSelect((s) => isProdTarget(level.project, level.group, s.prodEnvs));
     const repoPath = level.repoPath ?? "";
     const branchKey = useMemo(
@@ -140,9 +140,8 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
             service: qualifiedName(level.name, level.group),
             targetBranch: settledBranch,
             repoPath,
-            branchOptions,
         }),
-        [level.jobId, level.project, level.name, level.group, settledBranch, repoPath, branchOptions],
+        [level.jobId, level.project, level.name, level.group, settledBranch, repoPath],
     );
     const plan = useResourceEnabled(active && runsBranch && !!settledBranch, rndPlanR, planRequest);
     const planReady = !runsBranch || (plan.status === "ok" && plan.data?.target_branch === branch);
@@ -313,7 +312,7 @@ function BranchPicks({
     branch: string;
     onPick: (branch: string) => void;
 }) {
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const branchOptions = useBranchOptions();
     const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 25);
     const picks: { name: string; note?: string }[] = [];
     const add = (name: string | null | undefined, note?: string) => {
