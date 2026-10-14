@@ -17,6 +17,7 @@ import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
+import { ResumeActions } from "./ResumeActions";
 import { showingChat } from "./chatViews";
 import { YoloToggle } from "./YoloToggle";
 import { ShareButton } from "../share/ShareControls";
@@ -71,29 +72,13 @@ function AgentMenuButton({ agent, session, onRetitle }: { agent: Agent; session:
 
 /* Matches the chat's failed-resume row, so both kinds of agent read the same. */
 function TuiRecoveryNotice({ agent, profile, cwd, detail }: { agent: Agent; profile?: ProviderProfile; cwd?: string; detail: string | null }) {
-    const startNewChat = () =>
-        cmd.addAgent(agent.type, undefined, undefined, {
-            permissionMode: agent.permissionMode,
-            profileId: agent.profileId,
-            detectedExecutablePath: profile?.executablePath || agent.executablePath,
-            cwd,
-        });
     return (
         <div className="agent-tui-recovery">
             <div className="chat-reconnect" role="status">
                 <IconPlug size={13} />
                 <span>Couldn&apos;t resume this agent</span>
                 {detail && <span className="chat-recovery-detail">{detail}</span>}
-                <div className="chat-connection-actions">
-                    <button type="button" onClick={() => void relaunchTuiAgent(agent.id, agent.ptyId)}>
-                        Retry
-                    </button>
-                    {agent.resumeId && (
-                        <button type="button" onClick={startNewChat}>
-                            Start new chat
-                        </button>
-                    )}
-                </div>
+                <ResumeActions agent={agent} profile={profile} cwd={cwd} retry="Retry" onRetry={() => void relaunchTuiAgent(agent.id, agent.ptyId)} />
             </div>
         </div>
     );
