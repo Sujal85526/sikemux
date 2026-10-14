@@ -103,9 +103,6 @@
     margin-top: 14px;
 }
 
-/* A question an agent put to the person: one small line naming the asker, its
-   words as prose, then the answers as a list of rows with the tool rows' hover
-   pill. No box around it: it is part of the conversation. */
 .chat-message.agent-question {
     padding-top: 12px;
     padding-bottom: 6px;
@@ -137,13 +134,13 @@
 
 .chat-ask-options {
     display: grid;
-    justify-items: start;
+    grid-template-columns: minmax(0, 1fr);
     margin: 8px 0 2px -8px;
 }
 
 .chat-ask-option {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
     max-width: 100%;
     min-height: 30px;

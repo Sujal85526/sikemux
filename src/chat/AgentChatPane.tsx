@@ -274,16 +274,17 @@ export function AgentChatPane({
         questions.write(question);
         focusComposer();
     };
-    const answerByKey = (digit: number): boolean => {
-        const question = questions.open[0];
+    const answerByKey = (question: AgentQuestion | null | undefined, digit: number, offersWriting: boolean): boolean => {
         if (!question || questions.writing || questions.busy) return false;
         if (digit <= question.choices.length) chooseAnswer(question, digit - 1);
-        else if (digit === question.choices.length + 1) writeAnswer(question);
+        else if (offersWriting && digit === question.choices.length + 1) writeAnswer(question);
         else return false;
         return true;
     };
-    const answerByKeyRef = useRef(answerByKey);
-    answerByKeyRef.current = answerByKey;
+    const answerByKeyRef = useRef<(digit: number) => boolean>(() => false);
+    answerByKeyRef.current = (digit) => answerByKey(questions.open[0], digit, true);
+    const answerFromComposer =
+        questions.composing && !questions.writing ? (digit: number) => answerByKey(questions.composing, digit, false) : undefined;
     const asking = questions.open.length > 0;
     useEffect(() => {
         if (!active || !asking) return;
@@ -563,7 +564,7 @@ export function AgentChatPane({
                                             onRemove: questions.stopComposing,
                                         }
                                     }
-                                    onDigit={asking ? answerByKey : undefined}
+                                    onDigit={answerFromComposer}
                                 />
                             </div>
                             <div className="chat-drop-target" aria-hidden="true">
