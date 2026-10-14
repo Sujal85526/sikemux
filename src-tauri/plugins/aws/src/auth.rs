@@ -178,6 +178,14 @@ fn read_aws_profiles() -> Vec<AwsProfile> {
     out
 }
 
+/// Every profile's name, read now rather than on the async runtime.
+pub(crate) fn profile_names() -> Vec<String> {
+    read_aws_profiles()
+        .into_iter()
+        .map(|profile| profile.name)
+        .collect()
+}
+
 // ============================================================
 // caller identity (cached)
 // ============================================================

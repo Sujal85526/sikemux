@@ -4,6 +4,7 @@
 // ~/.aws/config resolution rules (sso_session refs, source_profile chains,
 // region precedence) for free.
 
+mod agent_profile;
 mod auth;
 mod billing;
 mod common;
@@ -15,6 +16,8 @@ mod logs;
 mod s3;
 mod sqs;
 
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::Deserialize;
@@ -39,6 +42,17 @@ struct Aws {
 #[serde(rename_all = "camelCase")]
 struct ProfileParams {
     profile: String,
+}
+
+#[derive(Deserialize)]
+struct AgentProfilePicksParams {
+    project: Option<PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct PickAgentProfileParams {
+    project: Option<PathBuf>,
+    profile: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -98,15 +112,27 @@ impl Plugin for Aws {
         &self.manifest
     }
 
+    fn agent_environment(&self, ctx: &PluginContext, project: &Path) -> BTreeMap<String, String> {
+        agent_profile::environment(ctx, project)
+    }
+
     fn call<'a>(
         &'a self,
-        _ctx: &'a PluginContext,
+        ctx: &'a PluginContext,
         method: &'a str,
         input: Value,
     ) -> PluginFuture<'a, Value> {
         Box::pin(async move {
             match method {
                 "profiles" => reply(auth::profiles().await),
+                "agentProfilePicks" => {
+                    let AgentProfilePicksParams { project } = params(input)?;
+                    reply(agent_profile::picks(ctx, project.as_deref()))
+                }
+                "pickAgentProfile" => {
+                    let PickAgentProfileParams { project, profile } = params(input)?;
+                    reply(agent_profile::pick(ctx, project.as_deref(), profile)?)
+                }
                 "identity" => {
                     let IdentityParams { profile, force } = params(input)?;
                     reply(auth::identity(profile, force).await)
