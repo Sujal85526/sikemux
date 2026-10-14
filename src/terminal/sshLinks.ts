@@ -6,15 +6,29 @@ import { useStore, type StoreState } from "../state/store";
 import { swallow } from "../state/toast";
 import type { StatusTone } from "../ui/StatusDot";
 
-/** Only terminals whose SSH is up or on its way; any other terminal counts as disconnected. */
-const live = new Map<number, Exclude<SshLink, "disconnected">>();
+type LinkState = Exclude<SshLink, "disconnected"> | "failed";
+
+/** Only terminals whose SSH is up, on its way, or gave up; any other terminal counts as not connected. */
+const live = new Map<number, LinkState>();
 const listeners = new Set<() => void>();
 
+/* The loop says "disconnected" both after a logout and after giving up. A logout follows "connected";
+   giving up follows a "connecting" that never got through. */
+function next(previous: LinkState | undefined, link: SshLink): LinkState | undefined {
+    if (link !== "disconnected") return link;
+    return previous === "connecting" ? "failed" : undefined;
+}
+
 function note(ptyId: number, link: SshLink): void {
-    if (live.get(ptyId) === link || (link === "disconnected" && !live.has(ptyId))) return;
-    if (link === "disconnected") live.delete(ptyId);
-    else live.set(ptyId, link);
+    const state = next(live.get(ptyId), link);
+    if (live.get(ptyId) === state) return;
+    if (state === undefined) live.delete(ptyId);
+    else live.set(ptyId, state);
     for (const listener of [...listeners]) listener();
+}
+
+function forget(ptyId: number): void {
+    if (live.delete(ptyId)) for (const listener of [...listeners]) listener();
 }
 
 /** Follows every SSH terminal for as long as the page runs, shown or not. */
@@ -28,7 +42,7 @@ export function watchSshLinks(): () => void {
     void transport
         .subscribe<{ id: number; link: SshLink }>("pty_ssh_link", (event) => note(event.payload.id, event.payload.link), { signal })
         .catch(fail);
-    void transport.subscribe<{ id: number }>("pty_exited", (event) => note(event.payload.id, "disconnected"), { signal }).catch(fail);
+    void transport.subscribe<{ id: number }>("pty_exited", (event) => forget(event.payload.id), { signal }).catch(fail);
     void coreSessionsApi
         .list()
         .then((sessions) => {
@@ -58,7 +72,8 @@ function toneOf(ptyIds: string): StatusTone {
     const links = ptyIds ? ptyIds.split(",").map((id) => live.get(Number(id))) : [];
     if (links.includes("connected")) return "ok";
     if (links.includes("connecting")) return "pending";
-    return "off";
+    if (links.includes("failed")) return "failed";
+    return "idle";
 }
 
 export function useSshTone(sessionId: string): StatusTone {

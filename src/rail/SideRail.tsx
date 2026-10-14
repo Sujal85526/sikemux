@@ -343,7 +343,7 @@ function renderSession(s: Session) {
     return <SimpleRow key={s.id} s={s} status={s.kind === "ssh" ? <SshDot sessionId={s.id} /> : undefined} />;
 }
 
-const SSH_TONE_LABEL: Record<StatusTone, string> = { ok: "Connected", pending: "Connecting", off: "Disconnected" };
+const SSH_TONE_LABEL: Record<StatusTone, string> = { ok: "Connected", pending: "Connecting", idle: "Not connected", failed: "Connection failed" };
 
 function SshDot({ sessionId }: { sessionId: string }) {
     const tone = useSshTone(sessionId);
@@ -353,7 +353,8 @@ function SshDot({ sessionId }: { sessionId: string }) {
 const SIGN_IN_TONE: Record<PluginSignIn, { tone: StatusTone; label: string }> = {
     "signed-in": { tone: "ok", label: "Signed in" },
     checking: { tone: "pending", label: "Checking sign-in" },
-    "signed-out": { tone: "off", label: "Signed out" },
+    "signed-out": { tone: "idle", label: "Not signed in" },
+    failed: { tone: "failed", label: "Sign-in failed" },
 };
 
 function SignInDot({ useSignIn }: { useSignIn: () => PluginSignIn }) {

@@ -27,6 +27,7 @@ registerFrontendPlugin({
         const profile = awsSettings.useSelect((s) => s.profile);
         const auth = deriveAuthState(profile, useResourceEnabled(!!profile, awsIdentityR, profile ?? "", false));
         if (auth.kind === "checking") return "checking";
-        return auth.kind === "authed" ? "signed-in" : "signed-out";
+        if (auth.kind === "authed") return "signed-in";
+        return auth.kind === "expired" || auth.kind === "error" ? "failed" : "signed-out";
     },
 });
