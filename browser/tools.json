@@ -12,7 +12,7 @@
       "name": "browser_navigate",
       "row": {"verb": "open", "kind": "fetch", "icon": "globe", "target": ["{url}", "{go}"]},
       "method": "browser.navigate",
-      "description": "Open a URL (newTab for a new tab), or go back, forward or reload, and wait for the page. A hard reload skips the cache.",
+      "description": "Open a URL (newTab for a new tab), or go back, forward or reload, and wait for the page.",
       "properties": {
         "url": {
           "type": "string",
@@ -1380,7 +1380,7 @@
       "name": "agent_list",
       "row": {"verb": "list", "kind": "read", "icon": "status", "target": ["agents"]},
       "method": "agent.list",
-      "description": "List the agents Sikemux runs in this project, or in every project with allProjects.",
+      "description": "List Sikemux agents.",
       "properties": {
         "allProjects": {
           "type": "boolean"
@@ -1392,7 +1392,7 @@
       "name": "agent_send",
       "row": {"verb": "message", "kind": "edit", "icon": "message", "target": ["{to}"], "detail": ["{text}"]},
       "method": "agent.send",
-      "description": "Message another Sikemux agent, named as agent_list shows it or by its agentId.",
+      "description": "Message a Sikemux agent.",
       "properties": {
         "to": {
           "type": "string",
