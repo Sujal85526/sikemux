@@ -569,7 +569,9 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: Ending) {
                     blocking(move || Ok(follow::terminal_answer(&core, &worker))).await
                 };
                 let Ok(turn) = turn else { return };
+                let running = core.running_agents();
                 let mut reported = core.harness.spawning.reported();
+                reported.retain(|agent, _| *agent == worker || running.contains(agent));
                 if matches!(ending, Ending::Finished) {
                     if let Some(start) = turn.start {
                         if reported.insert(worker.clone(), start) == Some(start) {
