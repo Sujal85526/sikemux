@@ -760,9 +760,10 @@ in the next agent session, not the running one. Claude names these skills
 
 ## agents: Other agents in the project
 
-Sikemux gives every agent it runs a name, a short word such as Otter or Maple,
-and no two open agents in a project share one. Tabs and the rail show agents
-by name, and the person can rename one.
+Sikemux gives every agent it runs a name, a short word such as Otter or Maple.
+Every agent in a project has its own name, and a name is not given again while
+a recent agent still holds it. Sikemux picks the names, and only the person can
+rename an agent. Tabs and the rail show agents by name.
 
 When a message names `@Otter`, it means the agent called Otter, not the person
 or a file. The message carries a note about each agent it names: its agent
