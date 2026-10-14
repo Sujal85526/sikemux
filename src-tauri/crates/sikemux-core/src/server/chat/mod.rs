@@ -336,8 +336,8 @@ impl Chat {
     /// or the agent went away by itself after it had started.
     fn report_end(&self, core: &Arc<Core>, result: &Result<SessionEnd, String>) {
         let mid_turn = self.unreported.swap(false, Ordering::AcqRel);
-        let by_itself = !matches!(result, Ok(SessionEnd::Requested));
-        if !mid_turn && !(by_itself && self.is_ready()) {
+        let went_away = self.is_ready() && !matches!(result, Ok(SessionEnd::Requested));
+        if !mid_turn && !went_away {
             return;
         }
         let reason = match result {
