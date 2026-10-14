@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use sikemux_core::client::EventSink;
 use sikemux_core::protocol::{CallId, ChatEventKind, Event, SessionId, WindowCall};
-use sikemux_pty::shell_protocol::PTY_SHELL_METADATA_EVENT;
+use sikemux_pty::shell_protocol::{SshLink, PTY_SHELL_METADATA_EVENT};
 use sikemux_pty::task::TaskProcessExit;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -28,6 +28,14 @@ pub(super) fn output_totals() -> (u64, u64) {
 }
 
 const PTY_EXITED_EVENT: &str = "pty_exited";
+const PTY_SSH_LINK_EVENT: &str = "pty_ssh_link";
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PtySshLink {
+    id: SessionId,
+    link: SshLink,
+}
 
 /// How a session's process ended, for every session, watched or not, so the
 /// page can bring back an agent that died while its pane was hidden.
@@ -154,6 +162,7 @@ impl EventSink for AppSink {
                 report_exited(&self.streams, id, task_exit(code, signal));
             }
             Event::ShellMetadata(metadata) => self.emit(PTY_SHELL_METADATA_EVENT, metadata),
+            Event::SshLink { id, link } => self.emit(PTY_SSH_LINK_EVENT, PtySshLink { id, link }),
             Event::TaskOutput { .. } => {}
             Event::AgentState(state) => {
                 if state.state == "stopped" {

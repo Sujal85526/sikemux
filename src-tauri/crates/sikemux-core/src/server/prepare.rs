@@ -63,6 +63,7 @@ pub(crate) struct PreparedLaunch {
     pub kind: SessionKind,
     pub owner: Owner,
     pub shell_integration: Option<ShellLaunchIntegration>,
+    pub ssh: bool,
     pub initial_prompt_submitted: bool,
     pub continues: Option<Continuation>,
 }
@@ -147,6 +148,9 @@ pub(crate) fn prepare_terminal(
         kind: SessionKind::Terminal,
         owner,
         shell_integration,
+        ssh: context
+            .as_ref()
+            .is_some_and(|context| context.session_kind == "ssh"),
         initial_prompt_submitted: context
             .as_ref()
             .is_some_and(|context| context.initial_prompt_submitted),
@@ -231,6 +235,7 @@ pub(crate) fn prepare_task(
         kind: SessionKind::Task,
         owner,
         shell_integration: None,
+        ssh: false,
         initial_prompt_submitted: false,
         continues: None,
     })

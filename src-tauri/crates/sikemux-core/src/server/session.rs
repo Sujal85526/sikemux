@@ -230,10 +230,13 @@ impl Session {
     }
 
     pub(crate) fn info(&self) -> SessionInfo {
-        let (rows, cols) = self
+        let ((rows, cols), ssh) = self
             .parser
             .lock()
-            .map(|parser| parser.screen().size())
+            .map(|parser| {
+                let ssh = parser.callbacks().shell.as_ref().and_then(|shell| shell.ssh());
+                (parser.screen().size(), ssh)
+            })
             .unwrap_or_default();
         SessionInfo {
             id: self.id,
@@ -264,6 +267,7 @@ impl Session {
             group: None,
             status: None,
             attention_rank: None,
+            ssh,
         }
     }
 }
@@ -334,6 +338,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         kind,
         owner,
         shell_integration,
+        ssh,
         initial_prompt_submitted,
         continues,
     } = launch;
@@ -351,7 +356,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
             pixel_height: 0,
         })
         .map_err(CoreError::pty)?;
-    let shell_metadata_enabled = shell_integration.is_some();
+    let shell_metadata_enabled = shell_integration.is_some() || ssh;
 
     let child = pair.slave.spawn_command(command).map_err(CoreError::pty)?;
     let pid = child.process_id();
@@ -815,6 +820,12 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
     drop(parser);
     if let Some(update) = shell_output.ready {
         core.broadcast_event(&Event::ShellMetadata(update.into_event(session.id)));
+    }
+    if let Some(link) = shell_output.ssh {
+        core.broadcast_event(&Event::SshLink {
+            id: session.id,
+            link,
+        });
     }
 }
 

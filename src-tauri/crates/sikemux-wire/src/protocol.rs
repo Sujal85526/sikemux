@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use crate::pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use crate::pty::launch::{PtyContext, PtyDirectCommand};
 use crate::pty::output_log::{OutputPage, OutputQuery};
-use crate::pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot};
+use crate::pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot, SshLink};
 use crate::pty::task::{TaskSource, TaskSpawnRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1250,6 +1250,9 @@ pub struct SessionInfo {
     pub status: Option<AgentStatus>,
     #[serde(default)]
     pub attention_rank: Option<u32>,
+    /// For an SSH terminal, where its connection last stood.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh: Option<SshLink>,
 }
 
 /// A task's launch request without its environment.
@@ -1293,6 +1296,12 @@ pub enum Event {
     /// The app's `pty_shell_metadata` payload, with `ptyId` holding the
     /// session id.
     ShellMetadata(PtyShellMetadataEvent<SessionId>),
+    /// An SSH terminal connected, started connecting or gave up. Sent only
+    /// to clients on this host.
+    SshLink {
+        id: SessionId,
+        link: SshLink,
+    },
     /// A task session has new output to page through with `TaskOutput`.
     TaskOutput {
         id: SessionId,

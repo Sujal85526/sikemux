@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 pub use sikemux_wire::pty::shell_protocol::{
-    PtyShellMetadataEvent, ShellBoundary, ShellMetadataSnapshot, ShellPhase,
+    PtyShellMetadataEvent, ShellBoundary, ShellMetadataSnapshot, ShellPhase, SshLink,
 };
 
 /// Stable frontend event for opt-in local shell metadata. The terminal byte
@@ -11,6 +11,8 @@ const MAX_SHELL_OSC_BYTES: usize = 8 * 1024;
 const MAX_SHELL_PATH_BYTES: usize = 4 * 1024;
 const MAX_SHELL_EXIT_CODE_BYTES: usize = 11;
 const SHELL_EVENT_MIN_INTERVAL: Duration = Duration::from_millis(100);
+/// Sikemux's own OSC, which the SSH startup loop prints its state under.
+const SSH_LINK_OSC: &[u8] = b"6973;ssh;";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShellProtocolUpdate {
@@ -21,6 +23,7 @@ pub struct ShellProtocolUpdate {
 #[derive(Default)]
 struct ShellProtocolBatch {
     latest: Option<ShellProtocolUpdate>,
+    ssh: Option<SshLink>,
     coalesced: usize,
     dropped: usize,
 }
@@ -69,6 +72,8 @@ impl ShellEventCoalescer {
 #[derive(Default)]
 pub struct ShellProtocolOutput {
     pub ready: Option<ShellProtocolUpdate>,
+    /// Set when the SSH link changed; these are rare, so none is held back.
+    pub ssh: Option<SshLink>,
     pub coalesced: usize,
     pub dropped: usize,
 }
@@ -101,6 +106,7 @@ enum ShellScanState {
 enum ShellSignal {
     Cwd(String),
     Boundary(ShellBoundary, ShellPhase, Option<i32>),
+    Ssh(SshLink),
 }
 
 pub struct ShellProtocolParser {
@@ -108,6 +114,7 @@ pub struct ShellProtocolParser {
     osc: Vec<u8>,
     osc_overflowed: bool,
     metadata: ShellMetadataSnapshot,
+    ssh: Option<SshLink>,
     events: ShellEventCoalescer,
 }
 
@@ -123,6 +130,7 @@ impl Default for ShellProtocolParser {
                 phase: ShellPhase::Unknown,
                 last_exit_code: None,
             },
+            ssh: None,
             events: ShellEventCoalescer::default(),
         }
     }
@@ -133,10 +141,15 @@ impl ShellProtocolParser {
         self.metadata.clone()
     }
 
-    /// Carries on from a snapshot another parser took.
-    pub fn restored(metadata: ShellMetadataSnapshot) -> Self {
+    pub fn ssh(&self) -> Option<SshLink> {
+        self.ssh
+    }
+
+    /// Carries on from what another parser had seen.
+    pub fn restored(metadata: ShellMetadataSnapshot, ssh: Option<SshLink>) -> Self {
         Self {
             metadata,
+            ssh,
             ..Self::default()
         }
     }
@@ -185,6 +198,7 @@ impl ShellProtocolParser {
         let Some(latest) = batch.latest.take() else {
             return ShellProtocolOutput {
                 ready: self.events.take_due(now_ms),
+                ssh: batch.ssh,
                 coalesced: batch.coalesced,
                 dropped: batch.dropped,
             };
@@ -192,6 +206,7 @@ impl ShellProtocolParser {
         let decision = self.events.submit(now_ms, latest);
         ShellProtocolOutput {
             ready: decision.ready,
+            ssh: batch.ssh,
             coalesced: batch
                 .coalesced
                 .saturating_add(usize::from(decision.replaced_pending)),
@@ -238,6 +253,13 @@ impl ShellProtocolParser {
                 }
                 boundary
             }
+            ShellSignal::Ssh(link) => {
+                if self.ssh != Some(link) {
+                    self.ssh = Some(link);
+                    batch.ssh = Some(link);
+                }
+                return;
+            }
         };
         self.metadata.revision = self.metadata.revision.saturating_add(1);
         let update = ShellProtocolUpdate {
@@ -251,6 +273,9 @@ impl ShellProtocolParser {
 fn parse_shell_signal(payload: &[u8]) -> Option<ShellSignal> {
     if let Some(uri) = payload.strip_prefix(b"7;") {
         return parse_shell_cwd(uri).map(ShellSignal::Cwd);
+    }
+    if let Some(link) = payload.strip_prefix(SSH_LINK_OSC) {
+        return parse_ssh_link(link).map(ShellSignal::Ssh);
     }
     let payload = payload.strip_prefix(b"133;")?;
     let mut fields = payload.split(|byte| *byte == b';');
@@ -279,6 +304,15 @@ fn parse_shell_signal(payload: &[u8]) -> Option<ShellSignal> {
                 exit_code,
             ))
         }
+        _ => None,
+    }
+}
+
+fn parse_ssh_link(value: &[u8]) -> Option<SshLink> {
+    match value {
+        b"connecting" => Some(SshLink::Connecting),
+        b"connected" => Some(SshLink::Connected),
+        b"disconnected" => Some(SshLink::Disconnected),
         _ => None,
     }
 }

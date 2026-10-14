@@ -27,7 +27,7 @@ use serde_json::{json, Value};
 use sikemux_pty::output_log::OutputLog;
 use sikemux_pty::screen::{replay_snapshot, restored_parser};
 use sikemux_pty::shell::ShellLaunchIntegration;
-use sikemux_pty::shell_protocol::ShellMetadataSnapshot;
+use sikemux_pty::shell_protocol::{ShellMetadataSnapshot, SshLink};
 use tokio::io::unix::AsyncFd;
 
 use crate::frozen::RESUME_FORMAT;
@@ -98,6 +98,7 @@ struct SessionRecord {
     cols: u16,
     shell_protocol: bool,
     shell: Option<ShellMetadataSnapshot>,
+    ssh: Option<SshLink>,
     window_title: String,
     owner: Owner,
     killed: bool,
@@ -143,6 +144,7 @@ fn capture(session: &Session, directory: &Path) -> CoreResult<SessionRecord> {
         .shell
         .as_ref()
         .map(|shell| shell.snapshot());
+    let ssh = parser.callbacks().shell.as_ref().and_then(|shell| shell.ssh());
     let window_title = parser.callbacks().window_title.clone();
     drop(parser);
     write_private(&blob_path(directory, session.id, "replay"), &replay)?;
@@ -162,6 +164,7 @@ fn capture(session: &Session, directory: &Path) -> CoreResult<SessionRecord> {
         cols,
         shell_protocol: session.shell_protocol,
         shell,
+        ssh,
         window_title,
         owner: session.owner().clone(),
         killed: session.is_killed(),
@@ -697,7 +700,7 @@ fn adopt_session(
             kind: record.kind,
             pid: record.pid,
             owner: record.owner,
-            parser: restored_parser(rows, cols, &replay, record.shell, record.window_title),
+            parser: restored_parser(rows, cols, &replay, record.shell, record.ssh, record.window_title),
             shell_protocol: record.shell_protocol,
             last_activity_ms: record.last_activity_ms,
             trimmed: record.trimmed,
@@ -740,7 +743,7 @@ fn adopt_bare(
             kind: SessionKind::Terminal,
             pid,
             owner: Owner::default(),
-            parser: restored_parser(rows, cols, &[], None, String::new()),
+            parser: restored_parser(rows, cols, &[], None, None, String::new()),
             shell_protocol: false,
             last_activity_ms: now_ms(),
             trimmed: false,
