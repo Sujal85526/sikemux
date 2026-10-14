@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe("NetworkBridge", () => {
-    it("fetches failed things again when the network comes back, changes or the Mac wakes, not when it goes", async () => {
+    it("fetches failed things again when the network comes back, changes or the computer wakes, not when it goes", async () => {
         render(<NetworkBridge />);
         await act(async () => {});
 

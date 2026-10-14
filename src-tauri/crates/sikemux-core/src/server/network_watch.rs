@@ -1,10 +1,9 @@
-//! Tells the core when the network comes back, changes, or the Mac wakes, so
+//! Tells the core when the network comes back, changes, or the computer wakes, so
 //! everything that waits on the network can try again at once instead of
 //! sitting out its backoff.
 
-use std::time::{Duration, Instant, SystemTime};
-
 use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
 
 use tokio::sync::mpsc;
 
@@ -45,10 +44,10 @@ pub fn classify(previous: Option<&NetworkPath>, next: &NetworkPath) -> Option<Ne
 }
 
 const WAKE_CHECK: Duration = Duration::from_secs(5);
-/// More than this between the wall clock and the clock that stops in sleep means the Mac slept.
+/// More than this between the wall clock and the clock that stops in sleep means the computer slept.
 const SLEPT: Duration = Duration::from_secs(20);
 
-/// Whether the Mac slept between two readings. The monotonic clock stands
+/// Whether the computer slept between two readings. The monotonic clock stands
 /// still during sleep while the wall clock does not.
 fn slept(since: (Instant, SystemTime), now: (Instant, SystemTime)) -> bool {
     let awake = now.0.duration_since(since.0);

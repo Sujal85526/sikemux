@@ -161,8 +161,6 @@ fn save(core: &Core, inner: &Inner) {
     }
 }
 
-/// Sends `message` to the share connection, starting it first if it is not
-/// running.
 /// Has a link waiting out a failure connect again now, if one runs.
 pub(crate) fn network_back(core: &Core) {
     if let Some(link) = &core.shares.lock().link {
@@ -170,6 +168,8 @@ pub(crate) fn network_back(core: &Core) {
     }
 }
 
+/// Sends `message` to the share connection, starting it first if it is not
+/// running.
 fn tell(core: &Arc<Core>, inner: &mut Inner, message: ToLink) {
     let message = match &inner.link {
         Some(link) => match link.send(message) {

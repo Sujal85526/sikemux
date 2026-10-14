@@ -7,7 +7,7 @@ export const NETWORK_CHANGED_EVENT = "network_changed";
 
 export type NetworkChange = "online" | "offline" | "changed" | "woke";
 
-/** When the network comes back, changes or the Mac wakes, whatever failed for want of it on screen is fetched again. */
+/** When the network comes back, changes or the computer wakes, whatever failed for want of it on screen is fetched again. */
 export function NetworkBridge() {
     useEffect(() => {
         const controller = new AbortController();

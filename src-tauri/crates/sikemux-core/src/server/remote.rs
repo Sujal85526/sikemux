@@ -780,7 +780,7 @@ fn watch_network(core: &Arc<Core>) {
     }));
 }
 
-/// The network came back or changed, or the Mac woke: everything that waits
+/// The network came back or changed, or the computer woke: everything that waits
 /// on the network tries again now rather than sitting out its backoff.
 pub(crate) async fn network_back(core: &Arc<Core>) {
     let endpoint = core

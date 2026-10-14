@@ -1276,7 +1276,7 @@ pub struct SessionExit {
     pub signal: Option<String>,
 }
 
-/// What happened to the Mac's network.
+/// What happened to this host's network.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NetworkChange {
@@ -1330,12 +1330,13 @@ pub enum Event {
         view: DeviceView,
     },
     /// Sent only to clients on this host.
-    /// The network came back, went away or changed, or the Mac woke.
-    Network {
-        change: NetworkChange,
-    },
     Remote {
         status: RemoteStatus,
+    },
+    /// The network came back, went away or changed, or the computer woke.
+    /// Sent only to clients on this host.
+    Network {
+        change: NetworkChange,
     },
     /// An agent started waiting on a person. Every client on this host hears
     /// it, whether or not it shows that agent; devices see it in their view.
