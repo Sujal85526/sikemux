@@ -62,12 +62,27 @@ export function RundeckProjectTree({ paneId, active }: { paneId: string; active:
             name: project,
             depth: 0,
             count: entry ? tree.total : null,
-            expandable: tree.children.length > 0,
+            expandable: tree.total > 0,
             open,
             selected: !onActivity && project === activeProject && activeGroup === null,
             live: project === activeProject && livePaths.has(""),
             error: entry?.error ?? null,
         });
+        if (open && tree.total > 0)
+            rows.push({
+                paneId,
+                project,
+                path: null,
+                name: "Activity",
+                depth: 1,
+                count: null,
+                expandable: false,
+                open: false,
+                selected: onActivity && project === activeProject,
+                live: project === activeProject && livePaths.has(""),
+                error: null,
+                activity: true,
+            });
         if (open)
             addGroups(
                 rows,
@@ -96,33 +111,9 @@ export function RundeckProjectTree({ paneId, active }: { paneId: string; active:
                     </button>
                 </Tooltip>
             </div>
-            {activeProject && (
-                <div
-                    className="rnd-tree-row"
-                    role="button"
-                    tabIndex={0}
-                    aria-pressed={onActivity}
-                    title={`Every run in ${activeProject}`}
-                    onClick={() => cmd.openRundeckActivity(paneId, activeProject)}
-                    onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            cmd.openRundeckActivity(paneId, activeProject);
-                        }
-                    }}>
-                    <span className={`rnd-tree-item${onActivity ? " on" : ""}`}>
-                        <span className="rnd-tree-twist" />
-                        <span className="rnd-tree-icon">
-                            <IconActivity size={14} />
-                        </span>
-                        <span className="rnd-tree-name">Activity</span>
-                        {livePaths.has("") && <span className="rnd-live-dot" title="Something is running" />}
-                    </span>
-                </div>
-            )}
             <div className="rnd-tree-rows" role="tree">
                 {rows.map((row) => (
-                    <TreeRow key={`${row.project}\u0000${row.path ?? ""}`} {...row} />
+                    <TreeRow key={`${row.project}\u0000${row.activity ? "\u0001activity" : (row.path ?? "")}`} {...row} />
                 ))}
                 {names.length === 0 && projects.status === "loading" && <div className="rnd-tree-hint">Loading projects…</div>}
                 {names.length === 0 && projects.status === "ok" && <div className="rnd-tree-hint">No projects</div>}
@@ -174,10 +165,13 @@ interface RowProps {
     selected: boolean;
     live: boolean;
     error: string | null;
+    /** The project's every-run list rather than a folder. */
+    activity?: boolean;
 }
 
-function TreeRow({ paneId, project, path, name, depth, count, expandable, open, selected, live, error }: RowProps) {
+function TreeRow({ paneId, project, path, name, depth, count, expandable, open, selected, live, error, activity }: RowProps) {
     const select = () => {
+        if (activity) return cmd.openRundeckActivity(paneId, project);
         cmd.setTreeOpen(paneId, cmd.treeKey(project, path), true);
         cmd.selectRundeckGroup(paneId, project, path);
     };
@@ -189,7 +183,7 @@ function TreeRow({ paneId, project, path, name, depth, count, expandable, open, 
             aria-selected={selected}
             aria-expanded={expandable ? open : undefined}
             tabIndex={0}
-            title={error ?? (path ? `${project} · ${path}` : project)}
+            title={activity ? `Every run in ${project}` : (error ?? (path ? `${project} · ${path}` : project))}
             onClick={select}
             onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -219,11 +213,9 @@ function TreeRow({ paneId, project, path, name, depth, count, expandable, open, 
                 ) : (
                     <span className="rnd-tree-twist" />
                 )}
-                <span className="rnd-tree-icon">
-                    <IconFolder size={14} />
-                </span>
+                <span className="rnd-tree-icon">{activity ? <IconActivity size={14} /> : <IconFolder size={14} />}</span>
                 <span className="rnd-tree-name">{name}</span>
-                {live && <span className="rnd-live-dot" title="A job in here is running" />}
+                {live && <span className="rnd-live-dot" title={activity ? "Something is running" : "A job in here is running"} />}
                 {error ? <span className="rnd-tree-count err">!</span> : count !== null && <span className="rnd-tree-count">{count}</span>}
             </span>
         </div>
