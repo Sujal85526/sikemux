@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject } from "react";
+import { errorText } from "../lib/format";
 import { acpApi, type PromptContext } from "../api/acp";
 import type { Agent } from "../state/types";
 import * as cmd from "../state/commands";
@@ -56,7 +57,7 @@ export function usePromptQueue({
             try {
                 await acpApi.prompt(agentRef.current.id, text, paths, context, messageId);
             } catch (error) {
-                dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+                dispatch({ type: "error", message: errorText(error) });
             }
         },
         [agentRef, dispatch],
@@ -93,7 +94,7 @@ export function usePromptQueue({
             if ((await acpApi.steer(agentId, message.text, message.paths, ...contextArgs(message.context))) !== "promptRequired") return;
             await acpApi.prompt(agentId, message.text, message.paths, ...contextArgs(message.context));
         } catch (error) {
-            dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+            dispatch({ type: "error", message: errorText(error) });
         }
     };
 

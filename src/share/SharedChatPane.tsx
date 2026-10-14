@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { errorText } from "../lib/format";
 import { shareApi } from "../api/share";
 import { webCipher } from "./cipher";
 import { parseShareLink } from "./link";
@@ -32,7 +33,7 @@ export function SharedChatPane({ link, visible }: { paneId: string; link: string
                 setSession(opened);
             })
             .catch((error: unknown) => {
-                if (live) setProblem(error instanceof Error ? error.message : String(error));
+                if (live) setProblem(errorText(error));
             });
         return () => {
             live = false;

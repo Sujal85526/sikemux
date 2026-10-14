@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
+import { errorText } from "../lib/format";
 import { acpApi, type AcpEvent, type AcpStartResponse } from "../api/acp";
 import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
@@ -228,7 +229,7 @@ export function useAcpSession({
                 if (!controller.signal.aborted && mounted) {
                     flushUpdates();
                     setReplaying(false);
-                    const message = error instanceof Error ? error.message : String(error);
+                    const message = errorText(error);
                     dispatch({ type: "error", message });
                     if (recoveryRef.current?.phase === "resuming") updateRecovery({ phase: "failed", detail: message });
                 }
@@ -283,7 +284,7 @@ export function useAcpSession({
                 if (sessionIdRef.current !== sessionId) return;
                 if (permissionModeOf(agentRef.current) === permissionMode)
                     cmd.setAgentPermissionMode(agent.id, appliedPermissionMode as NonNullable<Agent["permissionMode"]>);
-                onError(error instanceof Error ? error.message : String(error));
+                onError(errorText(error));
             })
             .finally(() => {
                 if (sessionIdRef.current === sessionId) setChangingPermissions(false);

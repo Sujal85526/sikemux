@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { errorText } from "../lib/format";
 import { open } from "@tauri-apps/plugin-dialog";
 import { fsapi } from "../api/fs";
 import { skillsApi, type Skill, type SkillsOverview } from "../api/skills";
@@ -6,10 +7,6 @@ import { reportError } from "../state/toast";
 import { SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
 
 type Form = "create" | "install" | null;
-
-function errorText(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
 
 export function SkillsSection() {
     const [overview, setOverview] = useState<SkillsOverview | null>(null);

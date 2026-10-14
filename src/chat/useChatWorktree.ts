@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorText } from "../lib/format";
 import { deliverToAgent } from "../agents/agentInbox";
 import { worktreeSwitchState } from "./worktreeSwitch";
 import * as cmd from "../state/commands";
@@ -84,8 +85,7 @@ export function useChatWorktree({
                     }
                     setStep("Starting the agent in the worktree");
                 },
-                (failure: unknown) =>
-                    giveBack(message, `Could not create a worktree: ${failure instanceof Error ? failure.message : String(failure)}`),
+                (failure: unknown) => giveBack(message, `Could not create a worktree: ${errorText(failure)}`),
             );
         return true;
     };

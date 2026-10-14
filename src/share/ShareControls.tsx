@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { errorText } from "../lib/format";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { shareApi, type ShareView } from "../api/share";
 import { copyText } from "../lib/clipboard";
@@ -104,7 +105,7 @@ function ShareDialog({ agentId }: { agentId: string }) {
             await refreshShares();
             await copyText(started.url).then(() => notify("success", "copied share link"), reportError("copy"));
         } catch (error) {
-            setProblem(error instanceof Error ? error.message : String(error));
+            setProblem(errorText(error));
         } finally {
             setWorking(false);
         }
@@ -118,7 +119,7 @@ function ShareDialog({ agentId }: { agentId: string }) {
             await refreshShares();
             closeShareDialog();
         } catch (error) {
-            setProblem(error instanceof Error ? error.message : String(error));
+            setProblem(errorText(error));
         } finally {
             setWorking(false);
         }

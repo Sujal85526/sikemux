@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { errorText } from "../lib/format";
 import { modelProvidersApi, type ModelProvider } from "../api/modelProviders";
 import { portsApi } from "../api/ports";
 import { reportError } from "../state/toast";
 import { SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
-
-function errorText(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
 
 export function ModelProvidersSection() {
     const [providers, setProviders] = useState<ModelProvider[]>([]);
