@@ -119,6 +119,24 @@ struct Ask: Equatable {
     let reject: String?
 }
 
+/// A question an agent put to the person or its lead, as the core lists it.
+struct AgentQuestion: Decodable, Equatable {
+    let id: String
+    let agentId: String
+    /// The asker's name, such as Maple.
+    let name: String
+    let text: String
+    let choices: [QuestionChoice]
+    /// The asker waits for the answer rather than going on with an assumption.
+    let blocked: Bool
+    /// The lead it waits on, while it has not reached the person.
+    let lead: String?
+}
+
+struct QuestionChoice: Decodable, Equatable {
+    let label: String
+}
+
 /// One row of the island: an agent and what it needs from the person.
 struct AgentItem: Identifiable, Equatable {
     let id: String
@@ -133,6 +151,8 @@ struct AgentItem: Identifiable, Equatable {
     /// A chat agent can be answered from the notch; a terminal agent only in Sikemux.
     let isChat: Bool
     let ask: Ask?
+    /// What it asked the person and waits on.
+    var question: AgentQuestion? = nil
 
     /// Subagents, shells or monitors still going once its turn is over.
     var background: Bool { subagents > 0 || tasks > 0 }

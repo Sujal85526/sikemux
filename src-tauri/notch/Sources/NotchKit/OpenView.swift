@@ -221,7 +221,9 @@ struct AskCard: View {
                 RowLine(store: store, agent: agent, marks: marks).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            if let ask = agent.ask {
+            if let question = agent.question {
+                QuestionText(question: question).padding(.top, 10)
+            } else if let ask = agent.ask {
                 CommandText(ask: ask, darker: true).padding(.top, 10)
             }
             AnswerButtons(store: store, island: island, agent: agent, height: 28).padding(.top, 10)

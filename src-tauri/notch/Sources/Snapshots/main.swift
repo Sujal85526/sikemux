@@ -60,6 +60,9 @@ let fixture = #"""
     {"agentId": "a7", "provider": "claude", "title": "Tidy the changelog", "cwd": "/Users/me/sikemux", "sessionId": "s7", "state": "ready",
      "running": false, "pendingPermissions": [], "subagents": 0, "tasks": 0, "permissionMode": "bypass", "asleep": false, "unread": false,
      "group": "idle", "status": "idle", "attentionRank": 5},
+    {"agentId": "a9", "provider": "codex", "title": "Move the ledger import", "cwd": "/Users/me/server", "sessionId": "s9", "state": "ready",
+     "running": false, "pendingPermissions": [], "subagents": 0, "tasks": 0, "permissionMode": "bypass", "asleep": false, "unread": true,
+     "group": "blocked", "status": "blocked", "attentionRank": 0},
     {"agentId": "a4", "provider": "grok", "title": "Bump Astro to 6", "cwd": "/Users/me/sikemux-front", "sessionId": "s4", "state": "ready",
      "running": false, "pendingPermissions": [], "subagents": 0, "tasks": 0, "permissionMode": "bypass", "asleep": false, "unread": true,
      "group": "done", "status": "done", "attentionRank": 3}
@@ -95,6 +98,12 @@ func view(keeping ids: Set<String>?) -> DeviceView {
     )
 }
 
+let questions = [AgentQuestion(
+    id: "q1", agentId: "a9", name: "Maple",
+    text: "Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.",
+    choices: [QuestionChoice(label: "Cents"), QuestionChoice(label: "Decimals")], blocked: true, lead: nil
+)]
+
 let notch = NotchGeometry(notchWidth: 221, height: 38, centerX: 0)
 let plain = NotchGeometry(notchWidth: 0, height: 24, centerX: 0)
 
@@ -105,6 +114,7 @@ func render(_ name: String, agents: Set<String>? = nil, geometry: NotchGeometry 
     options.dev = dev
     let store = NotchStore(options: options)
     store.apply(view(keeping: agents))
+    store.apply(questions)
     store.apply(devices, now: Date().addingTimeInterval(-8))
     let island = IslandModel(geometry: geometry)
     setup(island)
@@ -191,6 +201,7 @@ render("C4-done", agents: ["a4"])
 render("C4b-working-and-done", agents: ["a2", "a3", "a4"])
 render("C6-hover", agents: ["a2", "a3"]) { $0.hovering = true }
 render("P1-permission", height: 260) { $0.mode = .peekAsk("a1") }
+render("P4-question", agents: ["a2", "a9"], height: 260) { $0.mode = .peekAsk("a9") }
 render("P2-finished", agents: ["a2", "a4"]) { $0.mode = .peekDone("a4") }
 render("P3-connect", agents: ["a2", "a3"], height: 240, devices: [PendingDevice(id: "d1", name: "Pixel 8", platform: "android", expiresAt: (Date().timeIntervalSince1970 + 112) * 1000)]) {
     $0.mode = .connect("d1")

@@ -320,7 +320,7 @@ struct AskHeader: View {
             if let agent {
                 AgentMark(provider: agent.provider, size: 20).matchedGeometryEffect(id: agent.id, in: marks)
             }
-            Text(agent.map { agentName($0.provider) } ?? "").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
+            Text(agent.map { $0.question?.name ?? agentName($0.provider) } ?? "").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink)
         } trailing: {
             Text("Needs you").font(Theme.ui(12, .semibold)).foregroundStyle(Theme.warn)
             StateMark(state: .blocked)
@@ -339,10 +339,12 @@ struct AskBody: View {
             if let agent {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.title).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.ink).lineLimit(1)
-                    ProjectLabel(project: agent.project, suffix: suffix(agent.ask))
+                    ProjectLabel(project: agent.project, suffix: agent.question == nil ? suffix(agent.ask) : "asks you")
                 }
                 .padding(.top, 8)
-                if let ask = agent.ask {
+                if let question = agent.question {
+                    QuestionText(question: question).padding(.top, 10)
+                } else if let ask = agent.ask {
                     CommandText(ask: ask).padding(.top, 10)
                 }
                 AnswerButtons(store: store, island: island, agent: agent, height: 32).padding(.top, 10)
@@ -375,6 +377,20 @@ struct ProjectLabel: View {
     }
 }
 
+/// What an agent asked the person, in its own words.
+struct QuestionText: View {
+    let question: AgentQuestion
+
+    var body: some View {
+        Text(question.text)
+            .font(Theme.ui(13))
+            .foregroundStyle(Theme.ink)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct CommandText: View {
     let ask: Ask
     var darker = false
@@ -400,7 +416,16 @@ struct AnswerButtons: View {
     var height: CGFloat
 
     var body: some View {
-        if let ask = agent.ask, agent.isChat, store.settings.answerInNotch, ask.allowOnce != nil || ask.allowAlways != nil {
+        if let question = agent.question {
+            HStack(spacing: 8) {
+                if store.settings.answerInNotch, question.choices.count <= 2 {
+                    ForEach(Array(question.choices.enumerated()), id: \.offset) { index, choice in
+                        CapsuleButton(title: choice.label, height: height) { choose(question, index) }
+                    }
+                }
+                CapsuleButton(title: "Answer in Sikemux", primary: true, height: height) { store.focus(agent.id) }
+            }
+        } else if let ask = agent.ask, agent.isChat, store.settings.answerInNotch, ask.allowOnce != nil || ask.allowAlways != nil {
             HStack(spacing: 8) {
                 if let reject = ask.reject {
                     CapsuleButton(title: "Deny", height: height) { answer(ask, reject) }
@@ -419,6 +444,11 @@ struct AnswerButtons: View {
 
     private func answer(_ ask: Ask, _ option: String) {
         store.answer(ask, agentId: agent.id, optionId: option)
+        if case .peekAsk = island.mode { island.set(island.hovering ? .open : .closed) }
+    }
+
+    private func choose(_ question: AgentQuestion, _ choice: Int) {
+        store.answer(question, choice: choice)
         if case .peekAsk = island.mode { island.set(island.hovering ? .open : .closed) }
     }
 }

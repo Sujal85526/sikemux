@@ -210,6 +210,7 @@ struct CapsuleButton: View {
         Button(action: action) {
             Text(title)
                 .font(Theme.ui(12.5, .semibold))
+                .lineLimit(1)
                 .foregroundStyle(primary ? Theme.onAccent : Theme.ink)
                 .frame(maxWidth: .infinity)
                 .frame(height: height)

@@ -182,6 +182,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
     background: rgba(255, 255, 255, 0.06); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ask .cmd { background: rgba(0, 0, 0, 0.45); }
+.question {
+    margin-top: 10px; font-size: 13px; line-height: 1.4; color: var(--ink);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .ask.connect { padding: 14px; border-radius: 16px; margin-bottom: 0; }
 .ask.connect .ask-head { gap: 12px; }
 .ask.connect .title { font-size: 14px; }
@@ -195,6 +199,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .btn {
     height: 32px; padding: 0 14px; border-radius: 16px; font-size: 12.5px; font-weight: 600;
     background: rgba(255, 255, 255, 0.1); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    white-space: nowrap; overflow: hidden;
 }
 .btn:hover { background: rgba(255, 255, 255, 0.16); }
 .btn.primary { background: var(--acc); color: var(--on-accent); }
@@ -395,6 +400,7 @@ code { font-family: var(--mono); font-size: 11px; color: var(--ink); }
         <div class="controls" id="controls">
             <button data-act="start">An agent starts</button>
             <button data-act="block">Claude asks for permission</button>
+            <button data-act="question">Codex asks a question</button>
             <button data-act="finish">Codex finishes</button>
             <button data-act="connect">A phone asks to connect</button>
             <button data-act="drag">A file is dragged in</button>
@@ -525,6 +531,9 @@ function freshAgents() {
     return [
         { id: "a1", type: "claude", title: "Fix the login flake", project: "sikemux", state: "blocked", time: "2:14",
           ask: { tool: "Bash", cmd: "pnpm test --filter core -- --runInBand" } },
+        { id: "a9", type: "codex", title: "Move the ledger import", project: "server", state: "blocked", time: "0:01",
+          question: { name: "Maple", text: "Should amounts be stored in cents or as decimals? The API sends decimals but the ledger table uses integers.",
+                      choices: ["Cents", "Decimals"] } },
         { id: "a2", type: "codex", title: "Refactor the auth middleware", project: "server", state: "working", time: "4:12", subagents: 3 },
         { id: "a3", type: "opencode", title: "Draft the notch spec", project: "sikemux", state: "working", time: "0:48" },
         { id: "a4", type: "grok", title: "Bump Astro to 6", project: "sikemux-front", state: "done", unread: true, time: "1m ago" },
@@ -541,6 +550,15 @@ const ANSWER_WINDOW = 120;
 function timeLeft(device) {
     const left = Math.max(0, ANSWER_WINDOW - Math.floor((Date.now() - device.at) / 1000));
     return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+}
+
+/** What answers a question: up to two of its choices, then Answer in Sikemux, which opens the agent's chat. */
+function questionActions(a, size) {
+    const choices = a.question.choices.length <= 2 ? a.question.choices : [];
+    return `<div class="actions">
+        ${choices.map((choice) => `<button class="btn${size}" data-answer="choice" data-id="${a.id}">${choice}</button>`).join("")}
+        <button class="btn${size} primary" data-answer="open" data-id="${a.id}" style="grid-column:${choices.length + 1} / 4">Answer in Sikemux</button>
+    </div>`;
 }
 
 function stateMark(state, fresh) {
@@ -727,16 +745,17 @@ class Island {
             const inner = 460 - 2 * t - 16;
             this.layers.peek.style.width = `${inner}px`;
             this.layers.peek.innerHTML = `
-                ${head(`<span class="tile lg">${ICON[a.type]}</span><span class="lead">${NAME[a.type]}</span>`,
+                ${head(`<span class="tile lg">${ICON[a.type]}</span><span class="lead">${a.question ? a.question.name : NAME[a.type]}</span>`,
                        `<span class="trail" style="color:var(--warn)">Needs you</span>${stateMark("blocked", true)}`, inner)}
                 <div style="padding:8px 0 16px">
-                    <div class="text"><span class="title">${a.title}</span><span class="sub">${GLYPH.folderSmall}${a.project}<span class="dotsep">·</span>wants to run a command</span></div>
+                    <div class="text"><span class="title">${a.title}</span><span class="sub">${GLYPH.folderSmall}${a.project}<span class="dotsep">·</span>${a.question ? "asks you" : "wants to run a command"}</span></div>
+                    ${a.question ? `<div class="question">${a.question.text}</div>${questionActions(a, "")}` : `
                     <div class="cmd"><span class="sign">$</span>${a.ask.cmd}</div>
                     <div class="actions">
                         <button class="btn" data-answer="deny" data-id="${a.id}">Deny</button>
                         <button class="btn" data-answer="always" data-id="${a.id}">Always allow</button>
                         <button class="btn primary" data-answer="allow" data-id="${a.id}">Allow</button>
-                    </div>
+                    </div>`}
                 </div>`;
         }
 
@@ -799,12 +818,13 @@ class Island {
                                 <span class="title">${a.title}</span><span class="proj">${GLYPH.folderSmall}${a.project}</span>
                                 <span class="time">${a.time}</span>${stateMark("blocked")}
                             </div>
+                            ${a.question ? `<div class="question">${a.question.text}</div>${questionActions(a, " small")}` : `
                             <div class="cmd"><span class="sign">$</span>${a.ask.cmd}</div>
                             <div class="actions">
                                 <button class="btn small" data-answer="deny" data-id="${a.id}">Deny</button>
                                 <button class="btn small" data-answer="always" data-id="${a.id}">Always allow</button>
                                 <button class="btn small primary" data-answer="allow" data-id="${a.id}">Allow</button>
-                            </div>
+                            </div>`}
                         </div>` : `
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
@@ -976,8 +996,9 @@ class Island {
             const answer = e.target.closest("[data-answer]");
             if (answer) {
                 const a = this.agents.find((x) => x.id === answer.dataset.id);
-                a.state = answer.dataset.answer === "deny" ? "working" : "working";
+                a.state = "working";
                 delete a.ask;
+                delete a.question;
                 if (this.mode === "peek-ask") this.mode = this.hover ? "open" : "closed";
                 this.render();
                 return;
@@ -1066,6 +1087,10 @@ const SECTIONS = [
             { id: "P1", name: "Permission request", when: "An agent asks to run something.",
               shows: "The agent, its task and the exact command, with Deny, Always allow and Allow (⏎).",
               leaves: "Answering closes it. Unanswered, it shrinks to C3 after 6 s.", opts: { agents: () => freshAgents(), mode: "peek-ask", peekAgent: "a1" } },
+            { id: "P4", name: "A question", when: "An agent asks the person something with ask, or its lead passes the question on.",
+              shows: "The agent's name, its task and the question in two lines. Up to two of its answers as buttons, then Answer in Sikemux, which opens its chat for any other answer.",
+              leaves: "Answering here, in the chat, on a phone or in the terminal closes it: the first answer wins. Unanswered, it shrinks to C3 after 6 s.",
+              opts: { agents: () => only(["a2", "a9"]), mode: "peek-ask", peekAgent: "a9" } },
             { id: "P2", name: "Finished", when: "An agent finishes.",
               shows: "One line either side of the camera: the agent's mark and Finished, then the task and a purple dot.",
               leaves: "Shrinks to C4 after 3 s.", opts: { agents: () => only(["a2", "a4"]), mode: "peek-done", peekAgent: "a4" } },
@@ -1080,7 +1105,7 @@ const SECTIONS = [
         lede: "Opened by resting the pointer for 0.3 s. The header sits in the menu-bar band, split around the camera: tabs on the left, Sikemux on the right.",
         states: [
             { id: "O1", name: "Agents", when: "Opened, on the Agents tab.",
-              shows: "Every open agent, grouped Needs you, Working, Done, Idle. A permission can be answered in place. Clicking a row opens that agent in Sikemux.",
+              shows: "Every open agent, grouped Needs you, Working, Done, Idle. A permission, or a question with up to two answers, can be answered in place. Clicking a row opens that agent in Sikemux.",
               leaves: "The pointer leaves, and 0.1 s later it closes.", opts: { agents: () => freshAgents(), mode: "open" } },
             { id: "O2", name: "New agent", when: "Opened, on the New agent tab.",
               shows: "Sikemux's own composer: add files, the yolo toggle, the model picker (agent mark + model, in accent), effort, project and send.",
@@ -1279,6 +1304,12 @@ document.getElementById("controls").addEventListener("click", (e) => {
         if (!a) { a = freshAgents()[0]; live.agents.unshift(a); }
         a.state = "blocked";
         a.ask = { tool: "Bash", cmd: "pnpm test --filter core -- --runInBand" };
+        live.peek("peek-ask", a.id, 6000);
+    } else if (act === "question") {
+        let a = live.agents.find((x) => x.id === "a9");
+        if (!a) { a = freshAgents().find((x) => x.id === "a9"); live.agents.unshift(a); }
+        a.state = "blocked";
+        a.question = freshAgents().find((x) => x.id === "a9").question;
         live.peek("peek-ask", a.id, 6000);
     } else if (act === "finish") {
         let a = live.agents.find((x) => x.type === "codex");

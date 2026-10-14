@@ -21,6 +21,7 @@ final class NotchStore {
     @ObservationIgnored private var link: CoreLink?
     @ObservationIgnored private var startedCore = false
     @ObservationIgnored private var seenAttentions: Set<String> = []
+    @ObservationIgnored private var questions: [AgentQuestion] = []
     /// The state each agent was last seen in, kept across a reconnect so its time does not restart.
     @ObservationIgnored private var lastStates: [String: AgentState] = [:]
     @ObservationIgnored private var heard = false
@@ -89,7 +90,7 @@ final class NotchStore {
 
     func apply(_ view: DeviceView) {
         let before = lastStates
-        let fresh = view.agents
+        let fresh = asked(view.agents)
         let now = Date()
         var since: [String: Date] = [:]
         for agent in fresh {
@@ -100,14 +101,21 @@ final class NotchStore {
             since[attention.agentId] = Date(timeIntervalSince1970: attention.at / 1000)
         }
         let newAsks = view.attentions.filter { !seenAttentions.contains($0.id) }.map(\.agentId)
-        // A terminal agent asks in its own terminal, so the notch hears only that it is now blocked.
-        let newlyBlocked = fresh.filter { !$0.isChat && $0.state == .blocked && before[$0.id] != .blocked }.map(\.id)
+        // A terminal agent asks in its own terminal, and an agent's question comes from a call, so the notch hears
+        // only that it is now blocked.
+        let asking = Set(view.attentions.map(\.agentId))
+        let newlyBlocked = fresh.filter { $0.state == .blocked && before[$0.id] != .blocked && !asking.contains($0.id) }.map(\.id)
         let finished = fresh.filter { $0.state == .done && before[$0.id].map { $0 != .done } ?? false }
         seenAttentions = Set(view.attentions.map(\.id))
         lastStates = Dictionary(uniqueKeysWithValues: fresh.map { ($0.id, $0.state) })
         self.view = view
         withAnimation(Motion.open) { agents = fresh }
         self.since = since
+        if fresh.contains(where: { $0.state == .blocked }) {
+            readQuestions()
+        } else if !questions.isEmpty {
+            questions = []
+        }
         defer { heard = true }
         guard heard else { return }
         if let ask = (newAsks + newlyBlocked).last {
@@ -115,6 +123,31 @@ final class NotchStore {
         } else if let done = finished.last {
             onPeek?(.done(done.id))
         }
+    }
+
+    /// Each agent with the question it waits on the person to answer.
+    private func asked(_ items: [AgentItem]) -> [AgentItem] {
+        items.map { item in
+            var item = item
+            item.question = questions.first { $0.agentId == item.id && $0.blocked && $0.lead == nil }
+            return item
+        }
+    }
+
+    private func readQuestions() {
+        link?.request(["op": "call", "method": "questions", "params": [String: Any]()]) { [weak self] result in
+            guard case .success(let response) = result, let raw = response["result"],
+                  let data = try? JSONSerialization.data(withJSONObject: raw),
+                  let questions = try? JSONDecoder().decode([AgentQuestion].self, from: data)
+            else { return }
+            self?.apply(questions)
+        }
+    }
+
+    func apply(_ questions: [AgentQuestion]) {
+        guard questions != self.questions else { return }
+        self.questions = questions
+        withAnimation(Motion.open) { agents = asked(view.agents) }
     }
 
     private func receiveRemote(_ raw: Any?) {
@@ -160,6 +193,14 @@ final class NotchStore {
             "requestId": ask.attentionId,
             "optionId": optionId,
         ]) { [weak self] result in
+            if case .failure(let error) = result { self?.fail(error.message) }
+        }
+    }
+
+    /// Answers an agent's question with one of the answers it offered. The first answer anywhere wins.
+    func answer(_ question: AgentQuestion, choice: Int) {
+        link?.request(["op": "call", "method": "answerQuestion", "params": ["id": question.id, "choice": choice]]) {
+            [weak self] result in
             if case .failure(let error) = result { self?.fail(error.message) }
         }
     }
