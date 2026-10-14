@@ -9,11 +9,12 @@ function AgentMark({ cli }: { cli: string }) {
 }
 
 /** Who is asking, above the question itself. */
-function AskedBy({ cli, children }: { cli: string; children: ReactNode }) {
+function AskedBy({ cli, ticket, children }: { cli: string; ticket?: string; children: ReactNode }) {
     return (
         <div className="chat-ask-who">
             <AgentMark cli={cli} />
             <span>{children}</span>
+            {ticket && <span className="chat-ask-ticket">{ticket}</span>}
         </div>
     );
 }
@@ -40,7 +41,7 @@ export function OpenQuestion({
     return (
         <article className="chat-message agent-question">
             <div className="chat-message-content">
-                <AskedBy cli={question.cli}>
+                <AskedBy cli={question.cli} ticket={question.ticket}>
                     <b>{question.name}</b> asks you{via && ` · ${via}`}
                 </AskedBy>
                 <div className="chat-ask-text">{question.text}</div>

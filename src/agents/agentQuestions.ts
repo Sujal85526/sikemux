@@ -26,6 +26,8 @@ export interface AgentQuestion {
     readonly via: string | null;
     /** That lead passed it on itself rather than leaving it unanswered. */
     readonly passed: boolean;
+    /** The ticket of the board card the asker is working, such as PROJ-12. */
+    readonly ticket?: string;
 }
 
 export type QuestionAnswer = { readonly answer: string } | { readonly choice: number } | { readonly fine: true };
