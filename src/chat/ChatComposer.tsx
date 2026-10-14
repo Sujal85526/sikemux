@@ -36,7 +36,7 @@ import { contextChip } from "./promptContext";
 import { mentionContext, useMates, type Mate } from "./agentMentions";
 import type { EarlierChat } from "./earlierChats";
 import type { MenuKeys, MenuPick } from "./ComposerMenu";
-import { lazyPart } from "../lib/lazyPart";
+import { ComposerMenu, DictationPreview } from "./chatParts";
 
 /** Puts the caret at `at` once the next frame has the new draft in the box. */
 function caretTo(editor: RefObject<HTMLTextAreaElement | null>, at: number) {
@@ -88,8 +88,6 @@ function readContext(item: ComposerContext): Promise<PromptContext> {
 }
 
 const TrackedSource = lazy(() => import("./TrackedSource"));
-export const DictationPreview = lazyPart(() => import("./DictationPreview").then((module) => module.default));
-export const ComposerMenu = lazyPart(() => import("./ComposerMenu").then((module) => module.default));
 const WorktreeToggle = lazy(() => import("./ChatWorktree").then(({ WorktreeToggle }) => ({ default: WorktreeToggle })));
 
 function Chip({

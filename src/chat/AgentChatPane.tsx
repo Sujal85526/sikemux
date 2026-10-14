@@ -17,10 +17,9 @@ import { activeToolLabel } from "./toolLabels";
 import { runningSubagents, subagentsById } from "./transcript";
 import { activityText, backendState, composerPlaceholder as placeholderFor, connectingLabel, knownEffort } from "./chatStatus";
 import { ChatAgentContext, ChatSubagentsContext, ReaderScrollContext } from "./chatAgent";
-import { MessageEditor, warmTranscript } from "./ChatMessageRow";
+import { warmTranscript } from "./ChatMessageRow";
 import { ChatTranscript } from "./ChatTranscript";
-import { ChatComposer, ComposerMenu, DictationPreview } from "./ChatComposer";
-import { PickerMenu } from "./ComposerPickers";
+import { ChatComposer } from "./ChatComposer";
 import { useMessageArrival } from "./useMessageArrival";
 import { useAcpSession } from "./useAcpSession";
 import { useSavedUsage } from "./useSavedUsage";
@@ -33,7 +32,7 @@ import type { AgentQuestion } from "../agents/agentQuestions";
 import type { OutgoingMessage } from "./queuedMessages";
 import { useChatQuestions } from "./useChatQuestions";
 import { ResumeActions } from "./ResumeActions";
-import { lazyPart, whenIdle } from "../lib/lazyPart";
+import { ChatFailureActions, LiveStack, QuestionRows } from "./chatParts";
 
 /* Reading a whole transcript is one round trip to the parser, so this waits
    at most this long before showing it anyway. */
@@ -79,10 +78,6 @@ function answerText({ text, paths, context }: OutgoingMessage): string {
         .filter(Boolean)
         .join("\n\n");
 }
-
-const ChatFailureActions = lazyPart(() => import("./ChatFailureActions").then((module) => module.ChatFailureActions));
-const LiveStack = lazyPart(() => import("./LiveStack").then((module) => module.default));
-const QuestionRows = lazyPart(() => import("./QuestionRows").then((module) => module.default));
 
 const ChatFind = lazy(() => import("./ChatFind"));
 const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
@@ -226,15 +221,6 @@ export function AgentChatPane({
         send,
         onError: setComposerError,
     });
-    useEffect(
-        () =>
-            whenIdle(() =>
-                [LiveStack, QuestionRows, ChatFailureActions, ComposerMenu, PickerMenu, DictationPreview, MessageEditor].forEach(
-                    (part) => void part.preload(),
-                ),
-            ),
-        [],
-    );
     const sentHistory = useMemo(
         () =>
             sentPrompts(

@@ -5,8 +5,7 @@ import { IS_MACOS } from "../lib/platform";
 import { dispatchPathDrop } from "../state/dropRegistry";
 import type { Agent } from "../state/types";
 import { AgentChatPane } from "./AgentChatPane";
-import { MessageEditor } from "./ChatMessageRow";
-import { PickerMenu } from "./ComposerPickers";
+import { loadChatParts } from "./chatParts";
 import { shownImage } from "../state/imageViewer";
 import { forgetPathState } from "./pathExistence";
 
@@ -169,7 +168,7 @@ function fakeScroller(element: HTMLElement, clientHeight: number) {
 }
 
 beforeAll(async () => {
-    await Promise.all([PickerMenu.preload(), MessageEditor.preload()]);
+    await loadChatParts();
 });
 
 beforeEach(() => {

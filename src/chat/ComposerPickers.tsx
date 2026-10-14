@@ -2,11 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, IconChevron } from "../ui/Icons";
 import type { ChatAgentType } from "../agents/agentLaunch";
 import type { Agent, ProviderProfile } from "../state/types";
-import { lazyPart } from "../lib/lazyPart";
 import type { AgentChoicesProps, Choice } from "./PickerMenu";
+import { PickerMenu } from "./chatParts";
 import { currentLabel, pickerSlots, sessionConfigs, type SessionConfig } from "./sessionConfig";
-
-export const PickerMenu = lazyPart(() => import("./PickerMenu").then((module) => module.default));
 
 function Picker({
     name,

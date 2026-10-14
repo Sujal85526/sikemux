@@ -8,7 +8,7 @@ import { acpApi } from "../api/acp";
 import { Workspace, WorkspaceTabs } from "./Workspace";
 import { agentIdsOf, agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
-import { PickerMenu } from "../chat/ComposerPickers";
+import { loadChatParts } from "../chat/chatParts";
 import { acceptDialog, useDialogs } from "../state/dialog";
 
 vi.mock("../api/acp", () => ({
@@ -40,7 +40,7 @@ const Stage = () => (
 );
 
 beforeAll(async () => {
-    await PickerMenu.preload();
+    await loadChatParts();
 });
 
 beforeEach(() => {

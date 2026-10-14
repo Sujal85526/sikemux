@@ -1,6 +1,7 @@
 import "./styles/restored-rails.css";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invokeCommand as invoke } from "./api/invoke";
+import { whenIdle } from "./lib/lazyPart";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate, UPDATES_IN_APP } from "./api/updater";
@@ -845,6 +846,7 @@ export default function App() {
 
     useEffect(() => watchTerminalAgentExits(), []);
     useEffect(() => watchFocusForAgentStatus(), []);
+    useEffect(() => whenIdle(() => void import("./chat/AgentSurface").then(({ loadChatParts }) => loadChatParts())), []);
 
     useEffect(() => {
         let disposed = false;

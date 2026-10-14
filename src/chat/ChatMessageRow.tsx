@@ -44,7 +44,7 @@ import {
 import type { AccountMove, AcpSubagent, AcpTaskNotice, AgentNotice, ChatMessage, ChatPart } from "./types";
 import { ContextChipLabel } from "./ContextChip";
 import { Shimmer } from "./Shimmer";
-import { lazyPart } from "../lib/lazyPart";
+import { MessageEditor } from "./chatParts";
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;
@@ -80,8 +80,6 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     }
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
-
-export const MessageEditor = lazyPart(() => import("./MessageEditor").then((module) => module.MessageEditor));
 
 const warmed = new WeakSet<ChatMessage>();
 let warming: Promise<void> = Promise.resolve();

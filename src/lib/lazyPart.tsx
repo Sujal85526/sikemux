@@ -31,6 +31,15 @@ export function lazyPart<P extends object>(load: () => Promise<ComponentType<P>>
     return { Part, preload };
 }
 
+export interface LazyPart {
+    preload: () => Promise<unknown>;
+}
+
+/** Settles once every part has been fetched, or has failed to be and will try again when it mounts. */
+export function loadParts(parts: readonly LazyPart[]): Promise<void> {
+    return Promise.all(parts.map((part) => part.preload())).then(() => undefined);
+}
+
 /** Runs `work` once the page has nothing else to do, so fetching it never competes with drawing. */
 export function whenIdle(work: () => void): () => void {
     if (typeof window.requestIdleCallback === "function") {

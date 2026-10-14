@@ -25,6 +25,8 @@ import { agentCwd, agentPtyContext } from "../agents/agentPtyContext";
 import { clearTuiRecovery, relaunchTuiAgent, useTuiResume } from "../agents/tuiResume";
 import "../styles/chat.css";
 
+export { loadChatParts } from "./chatParts";
+
 type AgentView = "gui" | "tui";
 
 const WorktreeHeader = lazy(() => import("./WorktreeHeader"));

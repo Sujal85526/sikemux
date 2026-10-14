@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { ComposerPickers, PickerMenu } from "./ComposerPickers";
+import { ComposerPickers } from "./ComposerPickers";
+import { loadChatParts } from "./chatParts";
 import { effortConfig, sessionConfigs } from "./sessionConfig";
 import { getState, setState } from "../state/store";
 
@@ -24,7 +25,7 @@ afterEach(() => {
 });
 
 beforeAll(async () => {
-    await PickerMenu.preload();
+    await loadChatParts();
 });
 
 describe("composer pickers", () => {
