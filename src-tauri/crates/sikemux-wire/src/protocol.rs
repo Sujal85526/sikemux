@@ -1276,6 +1276,18 @@ pub struct SessionExit {
     pub signal: Option<String>,
 }
 
+/// What happened to the Mac's network.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NetworkChange {
+    Online,
+    Offline,
+    /// Still online, over a different interface.
+    Changed,
+    /// The Mac woke from sleep.
+    Woke,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -1318,6 +1330,10 @@ pub enum Event {
         view: DeviceView,
     },
     /// Sent only to clients on this host.
+    /// The network came back, went away or changed, or the Mac woke.
+    Network {
+        change: NetworkChange,
+    },
     Remote {
         status: RemoteStatus,
     },
