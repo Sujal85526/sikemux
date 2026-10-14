@@ -311,6 +311,12 @@ impl Chat {
         }
     }
 
+    pub(crate) fn letter_unread(&self, text: String) {
+        if let Some(core) = self.core.upgrade() {
+            core.harness.mailbox.returned(self.agent_id(), text);
+        }
+    }
+
     pub(crate) fn turn_running(&self) -> bool {
         self.running.load(Ordering::Acquire) || self.unprompted.load(Ordering::Acquire)
     }

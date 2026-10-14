@@ -61,6 +61,9 @@ pub(crate) struct Turn {
     /// Steered messages Claude Code has queued but not yet taken in, whose
     /// own result is still to come.
     pub waiting: HashSet<String>,
+    /// The text of each steered message that came from another agent, by
+    /// its id, until Claude Code takes it in.
+    pub letters: HashMap<String, String>,
     pub cancelled: bool,
     pub failure: Option<Failure>,
 }
@@ -442,15 +445,24 @@ impl Reader {
             Some("result") => self.result(&message),
             Some("system") => self.system(&message),
             Some("command_lifecycle") => {
-                if text(&message, "state") == Some("queued") {
+                let state = text(&message, "state");
+                if state == Some("queued") {
                     return;
                 }
+                let mut unread = None;
                 if let (Some(uuid), Ok(mut shared)) =
                     (text(&message, "command_uuid"), self.shared.lock())
                 {
                     if let Some(turn) = shared.turn.as_mut() {
                         turn.waiting.remove(uuid);
+                        let letter = turn.letters.remove(uuid);
+                        if matches!(state, Some("cancelled" | "dropped")) {
+                            unread = letter;
+                        }
                     }
+                }
+                if let Some(letter) = unread {
+                    self.sink.letter_unread(letter);
                 }
             }
             Some("conversation_reset") => {
@@ -880,12 +892,19 @@ impl Reader {
                 None
             }
         };
-        let Some(turn) = ended else {
+        let Some(mut turn) = ended else {
             if !self.turn_running() {
                 self.sink.work_ended("end_turn");
             }
             return;
         };
+        if turn.cancelled {
+            for uuid in &turn.waiting {
+                if let Some(letter) = turn.letters.remove(uuid) {
+                    self.sink.letter_unread(letter);
+                }
+            }
+        }
         let end = if turn.cancelled {
             TurnEnd::Completed(json!({ "stopReason": "cancelled" }))
         } else if let Some(failure) = turn.failure {

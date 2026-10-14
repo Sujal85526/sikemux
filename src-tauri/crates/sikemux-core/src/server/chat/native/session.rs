@@ -28,6 +28,8 @@ pub(crate) struct Prompt {
     pub text: String,
     pub paths: Vec<String>,
     pub context: Vec<ChatContext>,
+    /// A message from another agent rather than the person.
+    pub letter: bool,
 }
 
 impl From<&Replay> for Prompt {
@@ -37,6 +39,7 @@ impl From<&Replay> for Prompt {
             text: replay.text.clone(),
             paths: replay.paths.clone(),
             context: replay.context.clone(),
+            letter: false,
         }
     }
 }
@@ -212,6 +215,12 @@ impl Sink {
         }
     }
 
+    /// A message from another agent went into the running turn but the agent
+    /// dropped it unread, so it waits for the agent's next turn instead.
+    pub fn letter_unread(&self, text: String) {
+        self.chat.letter_unread(text);
+    }
+
     /// The person's message `text` went into the running turn.
     pub fn prompted(&self, text: &str, paths: &[String]) {
         self.chat.feed.prompted(NOBODY, None, text, paths);
@@ -252,6 +261,17 @@ impl Sink {
 
 /// No client: a message that went in on its own, which every client is told of.
 const NOBODY: crate::server::connection::ClientId = 0;
+const HELD_PROMPT_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Sends `command` to the chat's loop again once the running turn has ended.
+fn after_turn(chat: Arc<Chat>, command: ChatCommand) {
+    tokio::spawn(async move {
+        while chat.running.load(Ordering::Acquire) && !chat.commands.is_closed() {
+            tokio::time::sleep(HELD_PROMPT_POLL).await;
+        }
+        let _ = chat.send(command);
+    });
+}
 
 /// The session an agent opened, as the chat reads it.
 pub(crate) struct Opened {
@@ -497,6 +517,7 @@ pub(crate) async fn run<B: Backend>(
         });
     }
 
+    let mut letter_turn = false;
     let end = loop {
         chat.at_rest.store(true, Ordering::Release);
         // What the agent already said is taken in before the next command,
@@ -581,9 +602,11 @@ pub(crate) async fn run<B: Backend>(
                 continue;
             }
         };
+        let mut by_letter = false;
         let command = match command {
             ChatCommand::Letter { text, reply } if !chat.running.load(Ordering::Acquire) => {
                 let _ = reply.send(Delivery::NewTurn);
+                by_letter = true;
                 ChatCommand::Prompt {
                     from: NOBODY,
                     message_id: None,
@@ -601,6 +624,7 @@ pub(crate) async fn run<B: Backend>(
                     text,
                     paths: Vec::new(),
                     context: Vec::new(),
+                    letter: true,
                 };
                 let steering = backend.steer(prompt.clone());
                 let chat = chat.clone();
@@ -624,12 +648,26 @@ pub(crate) async fn run<B: Backend>(
                 context,
             } => {
                 if chat.running.swap(true, Ordering::AcqRel) {
-                    chat.emit(
-                        ChatEventKind::Error,
-                        error_message("wait for the current turn to finish"),
-                    );
+                    // Another agent's message can start a turn just as the
+                    // person sends one, so theirs goes next rather than lost.
+                    if letter_turn {
+                        let held = ChatCommand::Prompt {
+                            from,
+                            message_id,
+                            text,
+                            paths,
+                            context,
+                        };
+                        after_turn(chat.clone(), held);
+                    } else {
+                        chat.emit(
+                            ChatEventKind::Error,
+                            error_message("wait for the current turn to finish"),
+                        );
+                    }
                     continue;
                 }
+                letter_turn = by_letter;
                 state.exhausted.clear();
                 state.signed_in_again = false;
                 state.failed_prompt = None;
@@ -719,6 +757,7 @@ pub(crate) async fn run<B: Backend>(
                     &replay.paths,
                 );
                 chat.running.store(true, Ordering::Release);
+                letter_turn = false;
                 state.turn += 1;
                 begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
                 state.last_prompt = Some(replay);
@@ -801,6 +840,7 @@ pub(crate) async fn run<B: Backend>(
                     text,
                     paths,
                     context,
+                    letter: false,
                 };
                 let steering = backend.steer(prompt.clone());
                 let chat = chat.clone();

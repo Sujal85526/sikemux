@@ -781,7 +781,7 @@ when another agent started it, and `canMessage`. `you: true` marks you.
 ### Sending a message
 
 `agent_send` takes `to`, a name such as `Otter` or an `agentId`, and `text`, at
-most 64 KB; put anything longer in a file and send its path. A name means the
+most 64 KB (65,536 bytes); put anything longer in a file and send its path. A name means the
 agent of that name in your project before one elsewhere. The message reaches
 the agent as text marked as yours, never as the person's, so it cannot approve
 a permission request or change a setting. The answer's `delivery` says what
@@ -789,14 +789,15 @@ happened:
 
 - `steered`: the agent was working and reads it at its next step, without
   stopping.
-- `newTurn`: the agent was idle and started a turn to read it.
-- `waiting`: the agent cannot be interrupted, so it gets the message when its
-  turn ends, together with the others waiting. At most ten wait for one agent.
+- `newTurn`: the agent was idle and started a turn to read it. An agent in a
+  terminal gets it typed in as its next prompt.
+- `waiting`: the agent cannot take it now, such as an agent in a terminal
+  that is working, so it gets the message when its turn ends, together with
+  the others waiting. At most ten wait for one agent.
 - `repeat`: you sent it the same text a moment ago, so it was not sent again.
 
-An asleep agent is woken first. Agents running in a terminal cannot get
-messages yet. Do not wait for an answer in a loop: carry on, and a reply
-arrives as a message of its own.
+An asleep agent is woken first, or once Sikemux is open again. Do not wait for
+an answer in a loop: carry on, and a reply arrives as a message of its own.
 
 ### Messages you get
 

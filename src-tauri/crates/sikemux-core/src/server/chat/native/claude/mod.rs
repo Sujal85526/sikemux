@@ -315,6 +315,9 @@ impl Claude {
             if let Some(turn) = shared.turn.as_mut() {
                 turn.messages.insert(uuid.clone());
                 turn.waiting.insert(uuid.clone());
+                if prompt.letter {
+                    turn.letters.insert(uuid.clone(), prompt.text.clone());
+                }
             }
         }
         // Claude Code takes it in after the turn's next tool call, or once the turn ends.
@@ -480,6 +483,7 @@ impl Backend for Claude {
                 number: turn,
                 messages: HashSet::from([uuid.clone()]),
                 waiting: HashSet::new(),
+                letters: HashMap::new(),
                 cancelled: false,
                 failure: None,
             });
@@ -725,6 +729,7 @@ mod tests {
                 title: "X-1".into(),
                 text: "the issue".into(),
             }],
+            letter: false,
         };
         let content = content(&prompt).unwrap();
         let texts: Vec<&str> = content

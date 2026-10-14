@@ -153,6 +153,11 @@ impl AgentActivity {
             .map(|_| state_label(self.state.load(Ordering::Acquire)))
     }
 
+    /// Its screen shows it waiting for a prompt.
+    pub(crate) fn idle(&self) -> bool {
+        self.kind.is_some() && self.state.load(Ordering::Acquire) == IDLE
+    }
+
     pub(crate) fn silence(&self) {
         self.silenced.store(true, Ordering::Release);
     }

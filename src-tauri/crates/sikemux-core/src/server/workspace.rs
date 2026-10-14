@@ -37,6 +37,8 @@ struct Published {
     projects: Vec<ProjectInfo>,
     launchers: Vec<ChatLauncher>,
     chats: Vec<PublishedChat>,
+    /// The app has said which chats it holds since this core started.
+    chats_known: bool,
     titles: BTreeMap<String, String>,
     recent: Vec<PublishedRecent>,
     /// Each provider's `configOptions` from its last session, by provider.
@@ -157,6 +159,7 @@ impl Workspaces {
         }
         let mut published = self.lock();
         published.chats = chats;
+        published.chats_known = true;
         published.titles = titles;
         Ok(())
     }
@@ -309,6 +312,12 @@ impl Workspaces {
             .collect();
         running.extend(stopped);
         running
+    }
+
+    /// Whether the app is known to have closed the chat.
+    pub(crate) fn closed(&self, agent_id: &str) -> bool {
+        let published = self.lock();
+        published.chats_known && !published.chats.iter().any(|chat| chat.agent_id == agent_id)
     }
 
     /// Whether the app has the chat open, and if so whether it is asleep.

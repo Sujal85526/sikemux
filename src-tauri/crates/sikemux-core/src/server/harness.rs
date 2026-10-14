@@ -67,7 +67,6 @@ const LAUNCH_CUT_SHORT: &str = "Sikemux's background process was updated while t
 pub(crate) struct HarnessRecord {
     runs: RunsRecord,
     journals: Vec<JournalRecord>,
-    #[serde(default)]
     mailbox: MailboxRecord,
 }
 

@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use portable_pty::{Child, ChildKiller, ExitStatus};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sikemux_pty::output_log::OutputLog;
 use sikemux_pty::screen::{replay_snapshot, restored_parser};
 use sikemux_pty::shell::ShellLaunchIntegration;
@@ -476,7 +476,25 @@ fn migrate(mut state: Value) -> Result<Value, String> {
                 state["liveChats"] = Value::Array(Vec::new());
                 state["format"] = Value::from(5);
             }
-            5 => return Ok(state),
+            5 => {
+                // Format 5 cores kept no messages between agents, and their
+                // Claude turns no record of which steered messages were one.
+                if let Some(harness) = state.get_mut("harness").and_then(Value::as_object_mut) {
+                    harness.insert("mailbox".into(), json!({ "waiting": {} }));
+                }
+                let chats = state.get_mut("liveChats").and_then(Value::as_array_mut);
+                for chat in chats.into_iter().flatten() {
+                    if chat["launch"]["provider"] != "claude" {
+                        continue;
+                    }
+                    let turn = chat.pointer_mut("/backend/shared/turn");
+                    if let Some(turn) = turn.and_then(Value::as_object_mut) {
+                        turn.insert("letters".into(), json!({}));
+                    }
+                }
+                state["format"] = Value::from(6);
+            }
+            6 => return Ok(state),
             other => return Err(format!("it is in format {other}, not {RESUME_FORMAT}")),
         }
     }
@@ -1032,7 +1050,7 @@ mod tests {
     #[test]
     fn format_one_state_gains_an_empty_chat_list() {
         let migrated = migrate(json!({ "format": 1, "sessions": [] })).expect("migrate");
-        assert_eq!(migrated["format"], 5);
+        assert_eq!(migrated["format"], 6);
         assert_eq!(migrated["chats"], json!([]));
         assert_eq!(migrated["liveChats"], json!([]));
         assert_eq!(migrated["sessions"], json!([]));
@@ -1046,7 +1064,7 @@ mod tests {
             "chats": [{ "launch": {} }],
         }))
         .expect("migrate");
-        assert_eq!(migrated["format"], 5);
+        assert_eq!(migrated["format"], 6);
         assert_eq!(
             migrated["sessions"][0]["owner"],
             json!({ "project": "/p", "startedBy": null })
@@ -1060,9 +1078,10 @@ mod tests {
     #[test]
     fn current_state_is_left_as_it_is_and_unknown_formats_are_refused() {
         let current = json!({
-            "format": 5,
+            "format": 6,
             "chats": [{ "launch": {}, "startedBy": "phone", "launcher": "claude", "notice": null }],
             "liveChats": [],
+            "harness": { "mailbox": { "waiting": {} } },
         });
         assert_eq!(migrate(current.clone()).expect("migrate"), current);
         assert!(migrate(json!({ "format": 9 })).is_err());

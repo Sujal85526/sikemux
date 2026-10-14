@@ -1,8 +1,8 @@
 //! What `agent_list` and `agent_send` answer: the agents running here, and
-//! messages between them. A message reaches a chat as text marked as coming
+//! messages between them. A message reaches an agent as text marked as coming
 //! from the agent that sent it, so it can never answer a permission request.
-//! A busy chat takes it into its turn when it can; one that cannot gets the
-//! messages waiting for it together once its turn ends.
+//! A busy chat takes it into its turn when it can; an agent that cannot gets
+//! the messages waiting for it together once its turn ends.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -19,7 +19,8 @@ use super::chat::{self, Delivery};
 use super::connection::blocking;
 use super::names::project_of;
 use super::remote::unix_ms;
-use super::{workspace, Core};
+use super::session::{self, Session};
+use super::{agent, workspace, Core};
 
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_WAITING: usize = 10;
@@ -28,15 +29,16 @@ const REPEAT_WINDOW_MS: u64 = 2 * 60 * 1000;
 /// Two agents answering each other forever stop here.
 const PAIR_WINDOW_MS: u64 = 10 * 60 * 1000;
 const PAIR_LIMIT: usize = 30;
-/// How long a chat rests after a turn before waiting messages go to it, so a
+/// How long an agent rests after a turn before a message starts another, so a
 /// message the person queued in the app goes first.
 const SETTLE_MS: u64 = 1500;
-const STEER_TRIES: usize = 3;
-const STEER_RETRY: Duration = Duration::from_millis(200);
+/// How long after waking an asleep chat failed before it is tried again.
+const WAKE_RETRY_MS: u64 = 60_000;
+/// A terminal agent takes the Enter that sends a pasted message only once it
+/// has taken in the paste.
+const ENTER_AFTER_PASTE: Duration = Duration::from_millis(150);
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Letter {
+struct Letter {
     from_id: String,
     from_name: String,
     cli: String,
@@ -44,11 +46,12 @@ pub(crate) struct Letter {
     at: u64,
 }
 
-/// The messages still waiting, for a core that takes over.
+/// The messages still waiting, as each agent reads them, for a core that
+/// takes over.
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MailboxRecord {
-    waiting: HashMap<String, Vec<Letter>>,
+    waiting: HashMap<String, Vec<String>>,
 }
 
 struct Sent {
@@ -60,9 +63,10 @@ struct Sent {
 
 #[derive(Default)]
 struct State {
-    waiting: HashMap<String, Vec<Letter>>,
+    waiting: HashMap<String, Vec<String>>,
     sent: VecDeque<Sent>,
     delivering: HashSet<String>,
+    wake_failed: HashMap<String, u64>,
 }
 
 #[derive(Default)]
@@ -136,18 +140,34 @@ impl Mailbox {
         });
     }
 
-    fn take(&self, agent_id: &str) -> Vec<Letter> {
+    fn has_waiting(&self, agent_id: &str) -> bool {
+        self.lock().waiting.contains_key(agent_id)
+    }
+
+    /// Answers how many wait now.
+    fn wait(&self, agent_id: &str, text: String) -> usize {
+        let mut state = self.lock();
+        let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
+        waiting.push(text);
+        waiting.len()
+    }
+
+    fn take(&self, agent_id: &str) -> Vec<String> {
         self.lock().waiting.remove(agent_id).unwrap_or_default()
     }
 
-    /// Keeps `letters` waiting ahead of any that arrived meanwhile, and
-    /// answers how many wait now.
-    fn put_back(&self, agent_id: &str, mut letters: Vec<Letter>) -> usize {
+    /// Keeps `texts` waiting ahead of any that arrived meanwhile.
+    fn put_back(&self, agent_id: &str, mut texts: Vec<String>) {
         let mut state = self.lock();
         let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
-        letters.append(waiting);
-        *waiting = letters;
-        waiting.len()
+        texts.append(waiting);
+        *waiting = texts;
+    }
+
+    /// A message the agent was handed but dropped unread waits for its next
+    /// turn, ahead of the rest.
+    pub(crate) fn returned(&self, agent_id: &str, text: String) {
+        self.put_back(agent_id, vec![text]);
     }
 }
 
@@ -175,10 +195,6 @@ fn wrapped(letter: &Letter) -> String {
         attribute(&letter.cli),
         letter.text.replace("</agent-message", "&lt;/agent-message"),
     )
-}
-
-fn together(letters: &[Letter]) -> String {
-    letters.iter().map(wrapped).collect::<Vec<_>>().join("\n\n")
 }
 
 /// How an agent can be reached.
@@ -332,13 +348,17 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                     "title": agent.title,
                     "status": status_word(agent.status),
                     "lastActive": since(agent.active_at, now),
-                    "canMessage": matches!(agent.reach, Reach::Chat | Reach::Asleep) && agent.agent_id != caller,
+                    "canMessage": agent.reach != Reach::Stopped && agent.agent_id != caller,
                 });
                 let fields = row.as_object_mut().expect("a row is an object");
                 if let Some(parent) = &agent.parent {
                     fields.insert(
                         "startedBy".into(),
-                        names.get(parent).cloned().unwrap_or_else(|| parent.clone()).into(),
+                        names
+                            .get(parent)
+                            .cloned()
+                            .unwrap_or_else(|| parent.clone())
+                            .into(),
                     );
                 }
                 if agent.agent_id == caller {
@@ -362,9 +382,8 @@ fn message_text(params: &Value) -> Result<String, String> {
             Ok(text.clone())
         }
         Some(Value::String(text)) if !text.trim().is_empty() => Err(format!(
-            "text is {} KB; a message holds at most {} KB, so put long material in a file and send its path",
-            text.len() / 1024,
-            MAX_TEXT_BYTES / 1024
+            "text is {} bytes; a message holds at most {MAX_TEXT_BYTES}, so put long material in a file and send its path",
+            text.len(),
         )),
         _ => Err("text must be the message, as nonempty text".into()),
     }
@@ -372,20 +391,24 @@ fn message_text(params: &Value) -> Result<String, String> {
 
 /// The agent `to` names: an agent id, or a name, preferring the caller's
 /// project.
-fn resolve(agents: &[Listed], to: &str, project: &str) -> Result<Listed, String> {
+fn resolve(agents: &[Listed], to: &str, project: &str, caller: &str) -> Result<Listed, String> {
     let wanted = to.trim().trim_start_matches('@');
     if let Some(agent) = agents.iter().find(|agent| agent.agent_id == wanted) {
         return Ok(agent.clone());
     }
-    let called: Vec<&Listed> = agents
+    let named = |agent: &&Listed| {
+        agent
+            .name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(wanted))
+    };
+    let (yours, called): (Vec<&Listed>, Vec<&Listed>) = agents
         .iter()
-        .filter(|agent| {
-            agent
-                .name
-                .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case(wanted))
-        })
-        .collect();
+        .filter(named)
+        .partition(|agent| agent.agent_id == caller);
+    if called.is_empty() && !yours.is_empty() {
+        return Err("That agent is you".into());
+    }
     let here: Vec<&Listed> = called
         .iter()
         .copied()
@@ -421,7 +444,7 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         blocking(move || {
             let project = caller_project(&core, &request);
             let agents = listed(&core);
-            let target = resolve(&agents, &to, &project)?;
+            let target = resolve(&agents, &to, &project, &from)?;
             if target.agent_id == from {
                 return Err("That agent is you".into());
             }
@@ -453,18 +476,15 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         ));
     }
     let mut woke = "";
+    let mut held = None;
     match target.reach {
-        Reach::Chat => {}
+        Reach::Chat | Reach::Terminal => {}
+        Reach::Asleep if !core.window.is_open() => held = Some("is asleep while Sikemux is closed"),
         Reach::Asleep => {
             workspace::wake_chat(core, target.agent_id.clone())
                 .await
                 .map_err(|error| format!("{name} is asleep and did not wake: {error}"))?;
             woke = " Sikemux woke it first.";
-        }
-        Reach::Terminal => {
-            return Err(format!(
-                "{name} runs in a terminal, and Sikemux cannot pass messages to agents in terminals yet"
-            ))
         }
         Reach::Stopped => {
             return Err(format!(
@@ -473,43 +493,110 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         }
     }
     mailbox.note_sent(&letter, &target.agent_id);
-    let mut letters = mailbox.take(&target.agent_id);
-    letters.push(letter);
-    Ok(match hand(core, &target.agent_id, &letters).await {
-        Some(Delivery::Steered) => answer(
-            "steered",
-            format!("{name} is working and reads this at its next step.{woke}"),
-        ),
-        Some(_) => answer(
-            "newTurn",
-            format!("{name} was idle and started a turn to read this.{woke}"),
-        ),
-        None => {
-            let waiting = mailbox.put_back(&target.agent_id, letters);
-            answer(
-                "waiting",
-                format!("{name} cannot take messages mid-turn, so this waits until its turn ends ({waiting} waiting).{woke}"),
-            )
-        }
-    })
-}
-
-/// Hands `letters` to the chat as one message. None when it could not take
-/// them now.
-async fn hand(core: &Core, agent_id: &str, letters: &[Letter]) -> Option<Delivery> {
-    let text = together(letters);
-    for _ in 0..STEER_TRIES {
-        match chat::letter(core, agent_id, text.clone()).await {
-            Ok(Delivery::TurnEnded) => tokio::time::sleep(STEER_RETRY).await,
-            Ok(Delivery::Refused) | Err(_) => return None,
-            Ok(delivered) => return Some(delivered),
+    let text = wrapped(&letter);
+    if held.is_none() && mailbox.has_waiting(&target.agent_id) {
+        held = Some("already has messages waiting");
+    }
+    if held.is_none() {
+        let delivered = match target.reach {
+            Reach::Terminal => {
+                ready_terminal(core, &target.agent_id).map(|terminal| paste(core, terminal, &text))
+            }
+            _ => hand(core, &target.agent_id, &text).await,
+        };
+        match delivered {
+            Ok(Delivery::Steered) => {
+                return Ok(answer(
+                    "steered",
+                    format!("{name} is working and reads this at its next step.{woke}"),
+                ))
+            }
+            Ok(_) => {
+                return Ok(answer(
+                    "newTurn",
+                    format!("{name} was idle and started a turn to read this.{woke}"),
+                ))
+            }
+            Err(busy) => held = Some(busy),
         }
     }
-    None
+    let waiting = mailbox.wait(&target.agent_id, text);
+    let busy = held.unwrap_or_default();
+    Ok(answer(
+        "waiting",
+        format!("{name} {busy}, so it gets this once it is free, with any others waiting ({waiting} now).{woke}"),
+    ))
 }
 
-/// Gives each chat that has rested since its turn ended the messages waiting
-/// for it, and drops those for agents that are gone.
+fn rested(core: &Core, agent_id: &str) -> bool {
+    core.seen
+        .active_at(agent_id)
+        .is_none_or(|at| unix_ms().saturating_sub(at) >= SETTLE_MS)
+}
+
+/// Hands `text` to the chat as one message, or says why it cannot take it
+/// now.
+async fn hand(core: &Core, agent_id: &str, text: &str) -> Result<Delivery, &'static str> {
+    let chat = core.chats.get(agent_id).ok_or("is not running")?;
+    if !chat.is_ready() {
+        return Err("is still starting");
+    }
+    if !chat.turn_running() && !rested(core, agent_id) {
+        return Err("has just finished a turn");
+    }
+    match chat::letter(core, agent_id, text.to_owned()).await {
+        Ok(delivered @ (Delivery::Steered | Delivery::NewTurn)) => Ok(delivered),
+        Ok(Delivery::TurnEnded) => Err("has just finished a turn"),
+        Ok(Delivery::Refused) | Err(_) => Err("is working and cannot read messages mid-turn"),
+    }
+}
+
+/// The terminal of an agent that waits for a prompt, or why it cannot take
+/// one now.
+fn ready_terminal(core: &Core, agent_id: &str) -> Result<Arc<Session>, &'static str> {
+    let terminal = core
+        .agent_session(agent_id)
+        .ok_or("no longer has a terminal")?;
+    let idle = terminal
+        .agent
+        .as_ref()
+        .is_some_and(agent::AgentActivity::idle);
+    if !idle {
+        return Err("is working in its terminal");
+    }
+    if !rested(core, agent_id) {
+        return Err("has just finished a turn");
+    }
+    Ok(terminal)
+}
+
+/// Types `text` into the agent's terminal as one pasted prompt.
+fn paste(core: &Arc<Core>, terminal: Arc<Session>, text: &str) -> Delivery {
+    let plain: String = text
+        .chars()
+        .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
+        .collect();
+    let pastes = terminal
+        .parser
+        .lock()
+        .is_ok_and(|parser| parser.screen().bracketed_paste());
+    let typed = if pastes {
+        format!("\x1b[200~{plain}\x1b[201~")
+    } else {
+        plain.replace('\n', " ")
+    };
+    agent::note_input(core, &terminal, b"\r");
+    session::queue_input(&terminal, typed.into_bytes(), Box::new(drop));
+    tokio::spawn(async move {
+        tokio::time::sleep(ENTER_AFTER_PASTE).await;
+        session::queue_input(&terminal, b"\r".to_vec(), Box::new(drop));
+    });
+    Delivery::NewTurn
+}
+
+/// Gives each agent that has rested since its turn ended the messages
+/// waiting for it, wakes an asleep chat that has some, and drops those for
+/// agents that are gone.
 pub(crate) fn deliver_waiting(core: &Arc<Core>) {
     let mailbox = &core.harness.mailbox;
     let due: Vec<String> = {
@@ -524,32 +611,59 @@ pub(crate) fn deliver_waiting(core: &Arc<Core>) {
             .cloned()
             .collect()
     };
-    let now = unix_ms();
     for agent_id in due {
-        let Some(chat) = core.chats.get(&agent_id) else {
-            if core.workspaces.published(&agent_id).is_none() {
-                mailbox.take(&agent_id);
+        if let Some(chat) = core.chats.get(&agent_id) {
+            if chat.is_ready() && !chat.turn_running() && rested(core, &agent_id) {
+                deliver_later(core, agent_id, Pending::Chat);
             }
-            continue;
-        };
-        let rested = core
-            .seen
-            .active_at(&agent_id)
-            .is_none_or(|at| now.saturating_sub(at) >= SETTLE_MS);
-        if !chat.is_ready() || chat.turn_running() || !rested {
-            continue;
-        }
-        if !mailbox.lock().delivering.insert(agent_id.clone()) {
-            continue;
-        }
-        let core = core.clone();
-        tokio::spawn(async move {
-            let mailbox = &core.harness.mailbox;
-            let letters = mailbox.take(&agent_id);
-            if !letters.is_empty() && hand(&core, &agent_id, &letters).await.is_none() {
-                mailbox.put_back(&agent_id, letters);
+        } else if core.agent_session(&agent_id).is_some() {
+            if let Ok(terminal) = ready_terminal(core, &agent_id) {
+                let texts = mailbox.take(&agent_id);
+                if !texts.is_empty() {
+                    paste(core, terminal, &texts.join("\n\n"));
+                }
             }
-            mailbox.lock().delivering.remove(&agent_id);
-        });
+        } else if core.workspaces.published(&agent_id) == Some(true) {
+            let failed = mailbox.lock().wake_failed.get(&agent_id).copied();
+            let retry = failed.is_none_or(|at| unix_ms().saturating_sub(at) >= WAKE_RETRY_MS);
+            if core.window.is_open() && retry {
+                deliver_later(core, agent_id, Pending::Asleep);
+            }
+        } else if core.workspaces.closed(&agent_id) {
+            mailbox.take(&agent_id);
+        }
     }
+}
+
+enum Pending {
+    Chat,
+    Asleep,
+}
+
+fn deliver_later(core: &Arc<Core>, agent_id: String, pending: Pending) {
+    let mailbox = &core.harness.mailbox;
+    if !mailbox.lock().delivering.insert(agent_id.clone()) {
+        return;
+    }
+    let core = core.clone();
+    tokio::spawn(async move {
+        let mailbox = &core.harness.mailbox;
+        match pending {
+            Pending::Chat => {
+                let texts = mailbox.take(&agent_id);
+                if !texts.is_empty() && hand(&core, &agent_id, &texts.join("\n\n")).await.is_err() {
+                    mailbox.put_back(&agent_id, texts);
+                }
+            }
+            Pending::Asleep => {
+                if workspace::wake_chat(&core, agent_id.clone()).await.is_err() {
+                    mailbox
+                        .lock()
+                        .wake_failed
+                        .insert(agent_id.clone(), unix_ms());
+                }
+            }
+        }
+        mailbox.lock().delivering.remove(&agent_id);
+    });
 }
