@@ -810,6 +810,13 @@ your account and in your permission mode, which you cannot change, and records
 you as the agent that started it: you are its lead. The answer gives its `name`
 and `agentId` at once; it gets the prompt, from you, once it is ready.
 
+It runs in Sikemux's chat unless you pass `mode: "terminal"`, which starts the
+CLI in a terminal tab of its own instead, the CLI's own screen, as when the
+person asks for one. Do that only when the person or the task asks for a
+terminal. Its prompt is typed in once its prompt box shows; if that takes more
+than two minutes, such as when it waits for the person to trust the folder,
+you hear so. Everything below works the same for it.
+
 Each time its turn ends, its final answer comes to you as a message from it,
 cut to about 4 KB, with the board card it holds, if any. It says instead when the turn was stopped or failed, or the
 agent stopped running, so you are never left waiting. Pass
@@ -837,6 +844,12 @@ transcript, what its tools returned or its thinking. Pass back the `cursor` it
 gives you to read only what came after; `more: true` means read again with the
 cursor for the rest. Read an agent before you ask it to repeat itself, or to
 see how far one you started has got.
+
+For an agent in a terminal, Sikemux reads the session file Claude or Codex
+writes, once it knows which session the agent runs. For another CLI, or
+before then, the answer holds only `screen`, the last lines its terminal
+shows, and no cursor. One waiting on the person also comes with its `screen`,
+which shows what it is asking.
 
 ### Waiting for agents
 
