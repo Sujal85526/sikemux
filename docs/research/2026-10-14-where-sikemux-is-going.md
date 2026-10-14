@@ -168,6 +168,10 @@ US/EU-hosted copies of Chinese weights for companies.
 ### 3. Many agents, one checkout, every line knows who wrote it
 Nobody has this. Anthropic's article leaves it open. Sikemux has none of it yet: the chat drivers parse
 Edit/Write/apply_patch only to draw tool rows, and the file watcher knows nothing about agents.
+Anthropic (Scion), Cursor ("Git at any scale") and Perplexity (Projects, section 12) all landed on the
+same commit layer: one shared head, accept a commit only if it builds on that head, make the loser replay
+and resubmit, no pull requests, a log of who changed what. All three give each agent its own sandbox and
+share at commits. Sikemux shares the working tree itself, which is the part none of them solve.
 - **Hunk attribution, live:** the core already sees every Edit/Write/apply_patch; add the file watcher for
   Bash edits (marked unattributed). The git panel shows a lane per agent.
 - **Safe commit tool:** commit only that agent's hunks through a private index, move `main` with a
@@ -384,7 +388,47 @@ commenter / editor / owner roles.
 
 ---
 
-## 12. Go-to-market
+## 12. Perplexity Projects: a Git forge for agents
+
+Perplexity (2026-10-12; Aravind Srinivas: "a Git forge for agents, without the GitHub bloat, since no
+human has to approve anything") backs every Project in Perplexity Computer with a Git repository. It is
+for knowledge work in general, not only code.
+
+- Each agent gets its own short-lived sandbox with a local checkout, managed by a small CLI that commits
+  after each meaningful unit of work. Repos are bare Git on S3-backed storage (AWS S3Files), served by
+  stateless replicas in isolated cells.
+- Concurrency: a submit is accepted only if it builds on the current head; otherwise the agent gets a
+  stale-base response, replays its change and resubmits. Fewer than 2% of submits collide; median submit
+  1.7 s, p99 under 8 s.
+- No pull requests. A repository "contract" is checked mechanically at submit (size, large files through
+  LFS), old history is compacted into a snapshot, and an outbox logs each accepted commit with user and
+  changed paths for downstream workers.
+- Large files arrive as pointers with their size; PDFs and Office files are parsed into text kept outside
+  the repo, so agents read the text and download the original only when needed. A FUSE virtual
+  filesystem was tried and was about 400 times slower.
+- Agents search with plain `ls` and `grep`: 0.627 answer accuracy against about 0.37 for semantic search
+  on 150 financial-document questions.
+- They rejected one long-lived shared sandbox per project (sized for peak, months of uptime).
+
+Replies were mostly about the grep result; the open question raised was the one that matters for
+Sikemux: "How do you catch two agents making incompatible changes that don't produce a merge conflict?"
+
+What it means for Sikemux:
+- A third lab confirms focus #3's commit design: stale-base check, replay, no PRs, an outbox of who changed
+  what. Build the safe commit tool exactly this way, and let the outbox feed provenance and the inbox.
+- Their "contract checked at submit" is the definition-of-done gate in focus #5.
+- Real files plus grep beat an index. Don't build a semantic index for agents; give them files, and text
+  extracted from PDFs and Office files next to the originals (the PDFKit and Quick Look previews only
+  display them today, so extraction would be new).
+- They are cloud-only and run only Perplexity's own agents. Sikemux can offer the same shape locally and
+  across harnesses, and goes further by sharing the working tree, which is why attribution and collision
+  warnings matter.
+- Agents beyond code, sharing a workspace with people, is where Perplexity, Claude Cowork and Amoeba are
+  all heading; Sikemux's ops plugins are its version of that.
+
+---
+
+## 13. Go-to-market
 
 - X: short screen recordings of what rivals can't show (two vendors' agents talking, an open model
   reviewing Claude's work, the inbox on the phone, closing the lid while the shed keeps going).
@@ -393,12 +437,12 @@ commenter / editor / owner roles.
 - Phone app in the App Store catches "Claude Code / Codex mobile" searches; word the listing carefully.
 - Discord for retention.
 
-## 13. Website implications
+## 14. Website implications
 
 If the Host, the model layer, the inbox, attribution or Team ship, sikemux.com needs new copy and a
 pricing page. The site can already claim browser annotate-to-agent and native chat for many harnesses.
 
-## 14. Main sources
+## 15. Main sources
 
 - Posts: [owengretzinger](https://x.com/owengretzinger/status/2109846365065052351),
   [brunogsantos](https://x.com/brunogsantos/status/2109964126810517775),
@@ -419,6 +463,8 @@ pricing page. The site can already claim browser annotate-to-agent and native ch
   [plugins](https://herdr.dev/docs/plugins/), [seed](https://herdr.dev/blog/herdr-raised-a-seed/),
   [cloud](https://herdr.dev/cloud/)
 - Herdr UI: [repo](https://github.com/penso/herdr-gpui), [site](https://herdrui.dev)
+- [Perplexity: Building shared workspaces for people and agents](https://www.perplexity.ai/hub/blog/building-shared-workspaces-for-people-and-agents),
+  [Aravind Srinivas](https://x.com/AravSrinivas/status/2109738344011972893)
 - [Amoeba](https://useamoeba.com/), [pricing](https://useamoeba.com/pricing), [docs](https://useamoeba.com/docs)
 - Open models: [Artificial Analysis open-weights launches](https://artificialanalysis.ai/articles/recent-open-weights-model-launches),
   [OpenRouter apps](https://openrouter.ai/apps), [OpenRouter Exacto](https://openrouter.ai/blog/announcements/auto-exacto/),
