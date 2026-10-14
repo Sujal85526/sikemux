@@ -16,7 +16,8 @@ use crate::acp::{permission, SessionEnd};
 use crate::protocol::{ChatContext, ChatEventKind, ChatLaunch, ChatStart};
 
 use super::super::rebind::{
-    error_message, next_account, on_account, switch_notice, Carried, Outcome, Rebind, Replay,
+    error_message, next_account, on_account, switch_notice, switches_at_limit, Carried, Outcome,
+    Rebind, Replay,
 };
 use super::super::{stall_later, Asked, Chat, ChatCommand, Delivery, Respond};
 use super::git_guard;
@@ -577,7 +578,7 @@ pub(crate) async fn run<B: Backend>(
                             notice: None,
                         })
                     }
-                    FailureKind::Limit if state.reloadable => {
+                    FailureKind::Limit if state.reloadable && switches_at_limit(&chat) => {
                         let mut tried = state.exhausted.clone();
                         tried.extend(current.clone());
                         next_account(&provider, &launch, &tried).and_then(|next| {

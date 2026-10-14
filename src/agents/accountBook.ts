@@ -7,14 +7,19 @@ import { swallow } from "../state/toast";
 const RETRY_MS = 5_000;
 
 function bookOf(state: StoreState): AgentAccountBook {
-    return { profiles: state.providerProfiles, selected: state.selectedProviderProfileIds };
+    return { profiles: state.providerProfiles, selected: state.selectedProviderProfileIds, autoSwitch: state.accountAutoSwitch };
 }
 
 /** Sends the person's agent accounts to the core whenever they change here. */
 function follow(): () => void {
     let sent = JSON.stringify(bookOf(getState()));
     return useStore.subscribe((state, previous) => {
-        if (state.providerProfiles === previous.providerProfiles && state.selectedProviderProfileIds === previous.selectedProviderProfileIds) return;
+        if (
+            state.providerProfiles === previous.providerProfiles &&
+            state.selectedProviderProfileIds === previous.selectedProviderProfileIds &&
+            state.accountAutoSwitch === previous.accountAutoSwitch
+        )
+            return;
         const book = bookOf(state);
         const json = JSON.stringify(book);
         if (json === sent) return;

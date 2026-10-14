@@ -4,7 +4,7 @@ import { acpApi, type AcpEvent, type AcpStartResponse } from "../api/acp";
 import type { Agent, AgentPermissionMode, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
 import { getState } from "../state/store";
-import { acpAccount, fallbackAccounts } from "../agents/accounts";
+import { acpAccount } from "../agents/accounts";
 import { noteSignedOut } from "../agents/statusRefresh";
 import { swallow } from "../state/toast";
 import type { FoldMemory } from "./longText";
@@ -201,7 +201,6 @@ export function useAcpSession({
                     if (attached.status === "restart") await acpApi.stop(current.id);
                     if (!mounted) return;
                     appliedMode = permissionModeOf(current);
-                    const { providerProfiles, accountAutoSwitch } = getState();
                     const account = profileRef.current;
                     response = await acpApi.start({
                         agentId: current.id,
@@ -215,7 +214,6 @@ export function useAcpSession({
                         effort: current.effort,
                         environmentKeys: JSON.parse(environmentKeys) as string[],
                         account: account ? acpAccount(account) : undefined,
-                        fallbacks: fallbackAccounts(account, providerProfiles, accountAutoSwitch),
                         modelProvider: current.modelProvider,
                     });
                 }

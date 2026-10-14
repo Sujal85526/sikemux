@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 use sikemux_pty::user_shell::login_shell_environment;
 use tokio::process::Command;
 
-use crate::launch::AgentSpec;
+use crate::launch::{account_environment, AgentSpec};
+use crate::protocol::ChatAccount;
 
 const MAX_PROFILES: usize = 64;
 const MAX_TEXT: usize = 4_096;
@@ -55,6 +56,10 @@ pub struct Book {
     pub profiles: Vec<Profile>,
     #[serde(default)]
     pub selected: BTreeMap<String, String>,
+    /// Whether a chat moves to the next signed-in account at a usage limit,
+    /// by provider. Off unless the person turns it on.
+    #[serde(default)]
+    pub auto_switch: BTreeMap<String, bool>,
 }
 
 impl Book {
@@ -75,8 +80,13 @@ impl Book {
                 || profile.environment_keys.len() > 64
         });
         let selected = |(provider, id): (&String, &String)| long(provider) || long(id);
-        let oversized = oversized || self.selected.iter().any(selected);
-        if self.profiles.len() > MAX_PROFILES || oversized || self.selected.len() > MAX_PROFILES {
+        let oversized = oversized
+            || self.selected.iter().any(selected)
+            || self.auto_switch.keys().any(|provider| long(provider));
+        let many = [self.selected.len(), self.auto_switch.len()]
+            .into_iter()
+            .any(|len| len > MAX_PROFILES);
+        if self.profiles.len() > MAX_PROFILES || oversized || many {
             return Err("the app sent more agent accounts than the core keeps".into());
         }
         Ok(())
@@ -94,6 +104,65 @@ impl Book {
                 config_path: config_path.map(str::to_owned),
                 ..AgentSpec::new(provider)
             })
+    }
+
+    /// The account a chat of `provider` runs on when its folder is `folder`,
+    /// and the others that keep chats where it does, which it may move to.
+    pub fn chat_accounts(
+        &self,
+        provider: &str,
+        folder: Option<&str>,
+    ) -> (Option<ChatAccount>, Vec<ChatAccount>) {
+        let folder_of = |profile: &Profile| {
+            account_environment(provider, profile.config_path.as_deref()).map(|(_, dir)| dir)
+        };
+        let own: Vec<&Profile> = self
+            .profiles
+            .iter()
+            .filter(|profile| profile.provider == provider)
+            .collect();
+        let Some(current) = own
+            .iter()
+            .find(|profile| folder_of(profile).as_deref() == folder)
+        else {
+            return (None, Vec::new());
+        };
+        let config_path = current.config_path.as_deref();
+        let others = own
+            .iter()
+            .filter(|other| {
+                other.id != current.id
+                    && folders::sessions_shared(provider, config_path, other.config_path.as_deref())
+            })
+            .map(|other| {
+                chat_account(
+                    provider,
+                    &other.id,
+                    &other.name,
+                    other.config_path.as_deref(),
+                )
+            })
+            .collect();
+        let current = chat_account(provider, &current.id, &current.name, config_path);
+        (Some(current), others)
+    }
+}
+
+/// The account in `config_path` as a chat names it, with its folder sharing
+/// the default one's chats.
+pub fn chat_account(
+    provider: &str,
+    id: &str,
+    label: &str,
+    config_path: Option<&str>,
+) -> ChatAccount {
+    folders::link_shared(provider, config_path);
+    ChatAccount {
+        id: id.to_owned(),
+        label: label.to_owned(),
+        env: account_environment(provider, config_path)
+            .into_iter()
+            .collect(),
     }
 }
 

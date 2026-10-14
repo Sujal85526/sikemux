@@ -648,6 +648,7 @@ describe("frontend persistence", () => {
         applyHydrate(JSON.stringify(saved), {
             profiles: [kept, bad] as never,
             selected: { codex: "codex-work", claude: "bad", unknown: "codex-work" } as never,
+            autoSwitch: {},
         });
         expect(getState().providerProfiles).toEqual([
             {

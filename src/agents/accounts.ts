@@ -21,18 +21,6 @@ export function acpAccount(profile: ProviderProfile): AcpAccount {
     return { id: profile.id, label: profile.name, configPath: profile.configPath };
 }
 
-/** Where a chat on `profile` goes when its account runs out of usage, in the order the person keeps their accounts. */
-export function fallbackAccounts(
-    profile: ProviderProfile | undefined,
-    profiles: readonly ProviderProfile[],
-    autoSwitch: Partial<Record<AccountProvider, boolean>>,
-): AcpAccount[] {
-    if (!profile || !isAccountProvider(profile.provider) || !autoSwitch[profile.provider]) return [];
-    return accountsOf(profile.provider, profiles)
-        .filter((other) => other.id !== profile.id)
-        .map(acpAccount);
-}
-
 const sameDirectory = (a: string | null | undefined, b: string | null | undefined) => (a || null) === (b || null);
 
 /** Reads an account's sign-in and limits again, after they changed. */

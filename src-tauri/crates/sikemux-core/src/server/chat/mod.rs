@@ -1286,6 +1286,7 @@ fn start(
     origin: Origin,
     subscriber: Option<&Arc<ClientConn>>,
 ) -> CoreResult<Arc<Chat>> {
+    rebind::name_accounts(core, &mut launch_spec);
     for (key, value) in super::plugins::agent_environment(core, &launch_spec.cwd) {
         launch_spec.env.entry(key).or_insert(value);
     }

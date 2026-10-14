@@ -15,8 +15,6 @@ export interface AcpStartOptions {
     environmentKeys?: string[];
     /** The account the agent signs in as. */
     account?: AcpAccount;
-    /** Accounts the chat moves to, in order, when its own runs out of usage. */
-    fallbacks?: AcpAccount[];
     /** The model provider the chat runs on, by catalogue id, in place of its maker's account. */
     modelProvider?: string;
 }
@@ -108,7 +106,6 @@ export const acpApi = {
             effort: options.effort ?? null,
             environmentKeys: options.environmentKeys ?? [],
             account: options.account ?? null,
-            fallbacks: options.fallbacks ?? [],
             modelProvider: options.modelProvider ?? null,
         }),
     attach: (options: AcpAttachOptions): Promise<AcpAttachment> =>

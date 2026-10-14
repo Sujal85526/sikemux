@@ -126,7 +126,6 @@ const PERSISTED_KEYS = [
     "keptRunningNoticeShown",
     "railDensity",
     "agentRailAllAgents",
-    "accountAutoSwitch",
     "agentRailScope",
     "onboardingComplete",
     "lastSeenVersion",
@@ -190,7 +189,6 @@ function packPrefs(s: StoreState): PersistedPrefs {
         keptRunningNoticeShown: s.keptRunningNoticeShown,
         railDensity: s.railDensity,
         agentRailAllAgents: s.agentRailAllAgents,
-        accountAutoSwitch: s.accountAutoSwitch,
         agentRailScope: s.agentRailScope,
         onboardingComplete: s.onboardingComplete,
         lastSeenVersion: s.lastSeenVersion,
@@ -911,7 +909,11 @@ export function hydrationAllowsPersistence(result: HydrationResult): boolean {
 
 export function adoptAgentAccounts(book: AgentAccountBook): void {
     const providerProfiles = normaliseProviderProfiles(book.profiles, []);
-    setState({ providerProfiles, selectedProviderProfileIds: normaliseProviderProfileSelection(book.selected, providerProfiles, {}) });
+    setState({
+        providerProfiles,
+        selectedProviderProfileIds: normaliseProviderProfileSelection(book.selected, providerProfiles, {}),
+        accountAutoSwitch: normaliseAccountAutoSwitch(book.autoSwitch),
+    });
 }
 
 /** Applies the saved workspace, after the agent accounts the core keeps, which restoring its agents needs. */
@@ -1160,7 +1162,6 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null): H
         keptRunningNoticeShown: prefs.keptRunningNoticeShown === true,
         railDensity: prefs.railDensity === "compact" || prefs.railDensity === "comfortable" ? prefs.railDensity : cur.railDensity,
         agentRailAllAgents: prefs.agentRailAllAgents === true,
-        accountAutoSwitch: normaliseAccountAutoSwitch(prefs.accountAutoSwitch),
         agentRailScope: prefs.agentRailScope === "all" ? "all" : "project",
         onboardingComplete:
             typeof prefs.onboardingComplete === "boolean"

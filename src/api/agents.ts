@@ -1,6 +1,7 @@
 import { invokeCommand as invoke } from "./invoke";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
+import type { AccountAgentType } from "../agents/catalog";
 import type { AgentEffort, AgentType, ProviderProfile, ProviderProfileSelection } from "../state/types";
 
 /** Whether an agent can be used right now; `unknown` when its CLI has no way to say if it is signed in. */
@@ -80,6 +81,8 @@ export interface AgentUsage {
 export interface AgentAccountBook {
     profiles: ProviderProfile[];
     selected: ProviderProfileSelection;
+    /** Whether a chat moves to the next signed-in account at a usage limit, by provider. */
+    autoSwitch: Partial<Record<AccountAgentType, boolean>>;
 }
 
 const inflight = new Map<string, Promise<AgentSession[]>>();

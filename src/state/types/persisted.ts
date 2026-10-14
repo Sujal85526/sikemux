@@ -1,4 +1,3 @@
-import type { AccountAgentType } from "../../agents/catalog";
 import type { Theme } from "../../themes";
 import type { CustomCommand } from "../../commands/registry";
 import type { KeybindingOverrides } from "../../commands/keybindings";
@@ -97,7 +96,6 @@ export interface PersistedPrefs {
     keptRunningNoticeShown?: boolean;
     railDensity?: RailDensity;
     agentRailAllAgents?: boolean;
-    accountAutoSwitch?: Partial<Record<AccountAgentType, boolean>>;
     agentRailScope?: AgentRailScope;
     onboardingComplete?: boolean;
     lastSeenVersion?: string;

@@ -594,6 +594,15 @@ fn account_launch(agent_id: &str, history: &std::path::Path, limited: &str) -> C
     launch
 }
 
+/// Lets chats of the fake agent move to another account at a usage limit.
+async fn switch_at_limit(client: &CoreClient) {
+    let book = json!({ "profiles": [], "selected": {}, "autoSwitch": { "opencode": true } });
+    client
+        .call("setAgentAccounts", book)
+        .await
+        .expect("the accounts");
+}
+
 fn turns_completed(events: &[ChatEvent]) -> usize {
     events
         .iter()
@@ -643,6 +652,7 @@ async fn a_sign_in_made_elsewhere_reaches_the_chat_on_its_next_prompt() {
 async fn a_chat_that_runs_out_carries_on_with_the_next_account() {
     let core = TestCore::start();
     let (client, mut chat) = core.connect().await;
+    switch_at_limit(&client).await;
     let history = tempfile::tempdir().expect("history");
     let mut launch = account_launch("agent-l", history.path(), "personal");
     launch.fallbacks = vec![account("work", "Work")];
@@ -682,6 +692,7 @@ async fn a_chat_that_runs_out_carries_on_with_the_next_account() {
 async fn a_chat_out_of_accounts_says_so_and_takes_one_the_person_picks() {
     let core = TestCore::start();
     let (client, mut chat) = core.connect().await;
+    switch_at_limit(&client).await;
     let history = tempfile::tempdir().expect("history");
     let mut launch = account_launch("agent-m", history.path(), "personal,work");
     launch.fallbacks = vec![account("work", "Work")];

@@ -1375,7 +1375,7 @@ mod tests {
         workspaces
             .set_accounts(Book {
                 profiles,
-                selected: BTreeMap::new(),
+                ..Book::default()
             })
             .unwrap();
         workspaces.set(vec![project()], "bypass".into()).unwrap();

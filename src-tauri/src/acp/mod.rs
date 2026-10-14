@@ -11,9 +11,9 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_core::acp::bounded_text;
-use sikemux_core::agent_accounts::folders;
+use sikemux_core::agent_accounts;
 use sikemux_core::client::{ClientError, CoreClient, Reply};
-use sikemux_core::launch::{self, AgentLaunch, AgentSpec};
+use sikemux_core::launch::{AgentLaunch, AgentSpec};
 use sikemux_core::protocol::{
     ChatAccount, ChatAttachment, ChatContext, ChatEvent, ChatEventKind, ChatInfo, ChatLaunch,
     ChatStart, Request, Response,
@@ -229,30 +229,12 @@ pub struct AccountRequest {
 }
 
 fn chat_account(provider: &str, account: &AccountRequest) -> ChatAccount {
-    folders::link_shared(provider, account.config_path.as_deref());
-    ChatAccount {
-        id: account.id.clone(),
-        label: account.label.clone(),
-        env: launch::account_environment(provider, account.config_path.as_deref())
-            .into_iter()
-            .collect(),
-    }
-}
-
-/// The accounts a chat on `config_path` may move to: only those that keep
-/// chats where it does, since a chat moves by being loaded from there.
-fn fallback_accounts(
-    provider: &str,
-    config_path: Option<&str>,
-    fallbacks: &[AccountRequest],
-) -> Vec<ChatAccount> {
-    fallbacks
-        .iter()
-        .filter(|fallback| {
-            folders::sessions_shared(provider, config_path, fallback.config_path.as_deref())
-        })
-        .map(|fallback| chat_account(provider, fallback))
-        .collect()
+    agent_accounts::chat_account(
+        provider,
+        &account.id,
+        &account.label,
+        account.config_path.as_deref(),
+    )
 }
 
 fn failure(error: ClientError) -> String {
@@ -315,7 +297,6 @@ pub async fn acp_start(
     effort: Option<String>,
     environment_keys: Vec<String>,
     account: Option<AccountRequest>,
-    fallbacks: Option<Vec<AccountRequest>>,
     model_provider: Option<String>,
 ) -> Result<ChatStart, String> {
     bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
@@ -376,11 +357,7 @@ pub async fn acp_start(
         account: account
             .as_ref()
             .map(|account| chat_account(&provider, account)),
-        fallbacks: fallback_accounts(
-            &provider,
-            config_path.as_deref(),
-            fallbacks.as_deref().unwrap_or_default(),
-        ),
+        fallbacks: Vec::new(),
     };
     let client = core(&pty).await?;
     let started = client
