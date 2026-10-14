@@ -11,6 +11,7 @@
 
 .board-pane > .kanban {
     min-height: 0;
+    overflow: hidden;
 }
 
 .board-project {
