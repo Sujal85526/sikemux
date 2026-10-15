@@ -301,6 +301,8 @@ pub(crate) struct Core {
     pub(crate) shares: share::Shares,
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
+    /// Pokes the device view awake once something may be watching it.
+    pub(crate) view_watched: Notify,
     pub(crate) names: names::Names,
     pub(crate) boards: board::Boards,
     pub(crate) edits: edits::Edits,
@@ -354,6 +356,7 @@ impl Core {
             shares: share::Shares::default(),
             workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
+            view_watched: Notify::new(),
             names,
             boards: board::Boards::new(data_dir),
             edits: edits::Edits::new(data_dir, me.clone()),
@@ -568,6 +571,7 @@ impl Core {
         if let Ok(mut clients) = self.clients.lock() {
             clients.insert(client.id, client);
         }
+        self.view_watched.notify_one();
     }
 
     fn unregister_client(&self, client: &ClientConn) {
@@ -682,12 +686,15 @@ impl Core {
 
     /// Sends every paired device what it shows of this host, when that changed
     /// since they were last sent it.
-    pub(crate) fn publish_device_view(&self) {
-        let devices: Vec<_> = self
-            .clients()
+    fn view_watchers(&self) -> Vec<Arc<ClientConn>> {
+        self.clients()
             .into_iter()
             .filter(|client| !client.peer.is_local() || client.watches_view())
-            .collect();
+            .collect()
+    }
+
+    pub(crate) fn publish_device_view(&self) {
+        let devices = self.view_watchers();
         if devices.is_empty() {
             return;
         }
@@ -913,6 +920,10 @@ async fn device_views(core: Arc<Core>) {
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut window = None;
     loop {
+        if core.view_watchers().is_empty() {
+            core.view_watched.notified().await;
+            ticker.reset();
+        }
         ticker.tick().await;
         let seen = core.seen.on_phones(core.on_phones());
         if !seen.is_empty() {
