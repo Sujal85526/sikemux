@@ -3,14 +3,17 @@
 //! can, so no secret tells Sikemux's own window and notch from them; the
 //! kernel's word on the peer's code does.
 //!
-//! On macOS that is the peer's code signature, checked against Sikemux's
-//! team. On Linux it is the path of the peer's executable, which is weaker: a
-//! process can connect and then `exec` the app, keeping the connection. A dev
-//! build also trusts the dev app and notch beside its own binary, and the
-//! program that started it, such as a test.
+//! On macOS a core signed by Sikemux's team trusts only peers its team signed
+//! as the app or the notch. A build without that signature, such as a dev or
+//! community build, cannot ask for it, so it trusts the app and notch at their
+//! paths beside its own binary. On Linux that path is all there is, and it is
+//! weaker: a process can connect and then `exec` the app, keeping the
+//! connection. A dev build also trusts the program that started it, such as a
+//! test.
 
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use tokio::net::UnixStream;
 
@@ -18,13 +21,59 @@ use super::access::Peer;
 
 /// The window's executable, beside the core's own in the app or the build.
 const APP: &str = "sikemux";
+/// The notch inside a release bundle; the core runs from `Contents/MacOS`.
+const BUNDLED_NOTCH: &str = "Contents/Helpers/Sikemux Notch.app";
+const NOTCH_EXECUTABLE: &str = "Contents/MacOS/sikemux-notch";
 /// The programs beside a dev build's own binary that act as its app.
-const DEV_PROGRAMS: [&str; 4] = [
-    APP,
+const DEV_PROGRAMS: [&str; 3] = [
     "Sikemux Notch Dev.app",
     "Sikemux Notch Dev.app/Contents/MacOS/sikemux-notch",
     "examples/remote",
 ];
+
+struct Trust {
+    team_signed: bool,
+    /// Empty for a core its team signed, which never trusts a path.
+    app_paths: Vec<PathBuf>,
+}
+
+static TRUST: OnceLock<Trust> = OnceLock::new();
+
+/// Settles what this core trusts from its own code as it started, before an
+/// update can replace the files it ran from.
+pub(crate) fn settle() {
+    trust();
+}
+
+fn trust() -> &'static Trust {
+    TRUST.get_or_init(|| {
+        let team_signed = platform::own_code_signed_by_team();
+        let app_paths = match own_directory() {
+            Some(own) if !team_signed => app_paths_beside(&own),
+            _ => Vec::new(),
+        };
+        Trust {
+            team_signed,
+            app_paths,
+        }
+    })
+}
+
+fn app_paths_beside(own: &Path) -> Vec<PathBuf> {
+    let mut paths = vec![own.join(APP)];
+    if let Some(bundle) = own
+        .ends_with("Contents/MacOS")
+        .then(|| own.parent()?.parent())
+        .flatten()
+    {
+        let notch = bundle.join(BUNDLED_NOTCH);
+        paths.extend([bundle.to_path_buf(), notch.join(NOTCH_EXECUTABLE), notch]);
+    }
+    if cfg!(debug_assertions) {
+        paths.extend(DEV_PROGRAMS.iter().map(|dev| own.join(dev)));
+    }
+    paths
+}
 
 pub(crate) async fn identify(stream: &UnixStream) -> Peer {
     let Some(credentials) = platform::credentials(stream.as_raw_fd()) else {
@@ -42,8 +91,11 @@ pub(crate) async fn identify(stream: &UnixStream) -> Peer {
 
 fn is_app(credentials: &platform::Credentials) -> bool {
     let pid = credentials.pid();
+    let trust = trust();
     if pid == std::process::id()
-        || cfg!(debug_assertions) && pid == std::os::unix::process::parent_id()
+        || cfg!(debug_assertions)
+            && !trust.team_signed
+            && pid == std::os::unix::process::parent_id()
     {
         return true;
     }
@@ -51,13 +103,9 @@ fn is_app(credentials: &platform::Credentials) -> bool {
     if examined.signed_app {
         return true;
     }
-    let (Some(program), Some(own)) = (examined.program, own_directory()) else {
-        return false;
-    };
-    if cfg!(target_os = "linux") && program == own.join(APP) {
-        return true;
-    }
-    cfg!(debug_assertions) && DEV_PROGRAMS.iter().any(|dev| program == own.join(dev))
+    examined
+        .program
+        .is_some_and(|program| trust.app_paths.contains(&program))
 }
 
 fn own_directory() -> Option<PathBuf> {
@@ -83,6 +131,12 @@ mod platform {
 
     use super::Examined;
 
+    macro_rules! team {
+        () => {
+            r#"anchor apple generic and certificate leaf[subject.OU] = "D577WD6Z5U""#
+        };
+    }
+
     const SOL_LOCAL: libc::c_int = 0;
     const LOCAL_PEERTOKEN: libc::c_int = 6;
     const TOKEN_PID: usize = 5;
@@ -90,7 +144,19 @@ mod platform {
     /// Signed by Sikemux's team as its app or its notch. `sikemux-editor`, the
     /// command agents run, carries the app's identifier too, but no bundle
     /// naming it the executable.
-    const SIGNED_APP: &str = r#"anchor apple generic and certificate leaf[subject.OU] = "D577WD6Z5U" and (identifier "com.nodelike.sikemux" and info[CFBundleExecutable] = "sikemux" or identifier "com.nodelike.sikemux.notch")"#;
+    const SIGNED_APP: &str = concat!(
+        team!(),
+        r#" and (identifier "com.nodelike.sikemux" and info[CFBundleExecutable] = "sikemux" or identifier "com.nodelike.sikemux.notch")"#
+    );
+
+    pub(super) fn own_code_signed_by_team() -> bool {
+        let Ok(code) = SecCode::for_self(Flags::NONE) else {
+            return false;
+        };
+        team!()
+            .parse::<SecRequirement>()
+            .is_ok_and(|requirement| code.check_validity(Flags::NONE, &requirement).is_ok())
+    }
 
     /// The peer's audit token, which names the process as it was when it
     /// connected, so one that has since run another program no longer matches.
@@ -183,6 +249,10 @@ mod platform {
         (read == 0 && credentials.pid > 0).then(|| Credentials(credentials.pid.unsigned_abs()))
     }
 
+    pub(super) fn own_code_signed_by_team() -> bool {
+        false
+    }
+
     pub(super) fn examine(credentials: &Credentials) -> Examined {
         Examined {
             signed_app: false,
@@ -207,6 +277,10 @@ mod platform {
 
     pub(super) fn credentials(_fd: RawFd) -> Option<Credentials> {
         None
+    }
+
+    pub(super) fn own_code_signed_by_team() -> bool {
+        false
     }
 
     pub(super) fn examine(_credentials: &Credentials) -> Examined {

@@ -977,6 +977,7 @@ pub(crate) async fn run_core(
         listener_fd: listener.as_raw_fd(),
         lock_fd: lock.as_raw_fd(),
     });
+    local_peer::settle();
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
     remote::start(&core, &config).await;
