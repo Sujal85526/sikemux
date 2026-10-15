@@ -521,6 +521,7 @@ export class ShowcaseBackend implements IpcTransport {
         working: 0,
         away: false,
         agentMessages: {},
+        collisions: {},
         remoteAgents: [],
       };
     });
