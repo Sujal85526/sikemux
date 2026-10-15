@@ -40,7 +40,7 @@ let fixture = #"""
   "chats": [
     {"agentId": "a1", "subagents": 0, "tasks": 0},
     {"agentId": "a2", "subagents": 3, "tasks": 0},
-    {"agentId": "a3", "subagents": 0, "tasks": 0},
+    {"agentId": "a3", "subagents": 0, "tasks": 0, "reconnecting": 3},
     {"agentId": "a4", "subagents": 0, "tasks": 0},
     {"agentId": "a5", "subagents": 0, "tasks": 2},
     {"agentId": "a9", "subagents": 0, "tasks": 0},

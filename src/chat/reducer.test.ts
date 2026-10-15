@@ -36,6 +36,28 @@ function withoutTimes(value: unknown): unknown {
 }
 
 describe("chat reducer", () => {
+    it("holds the agent's retries until it streams again or the turn ends", () => {
+        const retry = (failure: Record<string, unknown>) => ({
+            sessionUpdate: "session_info_update",
+            _meta: { jetbrains: { air: { version: 1, sessionFailure: { id: "t:retry", category: "connection", title: "x", ...failure } } } },
+        });
+        const idle = update(initialChatState, retry({ severity: "warning", attempt: 1 }));
+        expect(idle.retrying).toBeNull();
+
+        const running = chatReducer(initialChatState, { type: "turn_started" });
+        const retrying = update(running, retry({ severity: "warning", attempt: 2 }));
+        expect(retrying.retrying).toEqual({ attempt: 2, connection: true });
+        expect(update(running, retry({ severity: "warning" })).retrying).toEqual({ attempt: null, connection: true });
+        expect(update(running, retry({ severity: "error", attempt: 2 })).retrying).toBeNull();
+        expect(update(running, retry({ severity: "warning", attempt: 1, category: "service" })).retrying).toEqual({ attempt: 1, connection: false });
+        expect(update(retrying, { sessionUpdate: "session_info_update", title: "Fix login" }).retrying).toEqual({ attempt: 2, connection: true });
+
+        const streaming = update(retrying, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Back" } });
+        expect(streaming.retrying).toBeNull();
+        expect(chatReducer(retrying, { type: "turn_completed" }).retrying).toBeNull();
+        expect(chatReducer(retrying, { type: "error", message: "Connection error" }).retrying).toBeNull();
+    });
+
     it("rebuilds from a core's replay, with streamed text joined, the transcript a watching client built", () => {
         const say = (kind: string, text: string) => ({ sessionUpdate: kind, content: { type: "text", text } });
         const tool = { sessionUpdate: "tool_call", toolCallId: "call-1", title: "Read file", status: "in_progress" };

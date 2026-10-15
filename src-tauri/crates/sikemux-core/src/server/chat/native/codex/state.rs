@@ -77,6 +77,8 @@ pub(super) struct Session {
     /// Turns this side ended already, whose late notifications are dropped.
     stale: HashSet<String>,
     errors: HashMap<String, Value>,
+    /// How many times Codex has retried each turn's request.
+    retries: HashMap<String, u64>,
     /// The turn each of the app's message ids began.
     pub message_turns: HashMap<String, String>,
     items: Items,
@@ -169,6 +171,7 @@ impl Session {
             waiting: None,
             stale: HashSet::new(),
             errors: HashMap::new(),
+            retries: HashMap::new(),
             message_turns: HashMap::new(),
             items: Items::default(),
             edits: HashMap::new(),
@@ -391,6 +394,7 @@ impl Session {
 
     fn turn_completed(&mut self, ended: &Value) -> Vec<Effect> {
         let id = text(ended, "id");
+        self.retries.remove(id);
         if self.stale.remove(id) {
             return Vec::new();
         }
@@ -472,7 +476,26 @@ impl Session {
         match method {
             "turn/started" => self.turn_started(text(&params["turn"], "id")),
             "turn/completed" => self.turn_completed(&params["turn"]),
-            "error" if params["willRetry"] != true => {
+            "error" if params["willRetry"] == true => {
+                let turn = params["turnId"].as_str().unwrap_or_default().to_owned();
+                if self.stale.contains(&turn) {
+                    return Vec::new();
+                }
+                let attempt = self.retries.entry(turn.clone()).or_default();
+                *attempt += 1;
+                let (category, _) = failure_policy(&params["error"]["codexErrorInfo"]);
+                let detail = params["error"]["message"]
+                    .as_str()
+                    .unwrap_or("Codex is retrying");
+                let update = crate::acp::account::retrying(
+                    &format!("{turn}:retry"),
+                    category,
+                    *attempt,
+                    detail,
+                );
+                vec![Effect::Update(self.thread_id.clone(), update)]
+            }
+            "error" => {
                 if let Some(turn) = params["turnId"].as_str() {
                     self.errors.insert(turn.to_owned(), params["error"].clone());
                 }
@@ -693,6 +716,26 @@ mod tests {
 
     fn turn(id: &str, status: &str, error: Value) -> Value {
         json!({ "threadId": "thread", "turn": { "id": id, "items": [], "status": status, "error": error } })
+    }
+
+    #[test]
+    fn each_retry_codex_makes_is_a_warning_with_its_attempt() {
+        let mut session = Session::new("thread".into());
+        let retry = json!({
+            "error": { "message": "Reconnecting... 1/5", "codexErrorInfo": { "responseStreamDisconnected": {} } },
+            "willRetry": true, "threadId": "thread", "turnId": "turn-a",
+        });
+        notify(&mut session, "error", retry.clone());
+        let effects = notify(&mut session, "error", retry);
+        let [Effect::Update(thread, update)] = effects.as_slice() else {
+            panic!("a retry should tell the chat");
+        };
+        assert_eq!(thread, "thread");
+        let notice = &update["_meta"]["jetbrains"]["air"]["sessionFailure"];
+        assert_eq!(notice["severity"], "warning");
+        assert_eq!(notice["category"], "connection");
+        assert_eq!(notice["attempt"], 2);
+        assert_eq!(notice["title"], "Reconnecting... 1/5");
     }
 
     #[test]

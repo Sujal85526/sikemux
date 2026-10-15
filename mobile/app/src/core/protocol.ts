@@ -86,6 +86,8 @@ export type ChatInfo = {
   subagents: number;
   /** Background shells and monitors still running for it; hosts from before it was sent leave it out. */
   tasks?: number;
+  /** The attempt its agent is retrying a failed request on, 0 when it did not say. */
+  reconnecting?: number | null;
   startedBy?: string;
   launcher?: string;
   permissionMode: string;

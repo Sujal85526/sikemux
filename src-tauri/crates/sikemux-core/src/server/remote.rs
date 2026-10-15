@@ -187,6 +187,8 @@ struct Inner {
 pub(crate) struct Remote {
     inner: Mutex<Inner>,
     left: Notify,
+    /// Cuts the wait before the next read of the network short.
+    refresh: Arc<Notify>,
 }
 
 pub(crate) fn file_path(socket: &Path) -> PathBuf {
@@ -784,6 +786,7 @@ fn watch_network(core: &Arc<Core>) {
     if inner.direct_only || inner.network.is_some() {
         return;
     }
+    let refresh = core.remote.refresh.clone();
     let core = Arc::downgrade(core);
     inner.network = Some(tokio::spawn(async move {
         loop {
@@ -799,9 +802,29 @@ fn watch_network(core: &Arc<Core>) {
                 None => NETWORK_RETRY,
             };
             drop(core);
-            tokio::time::sleep(wait).await;
+            tokio::select! {
+                _ = tokio::time::sleep(wait) => {}
+                _ = refresh.notified() => {}
+            }
         }
     }));
+}
+
+/// The network came back or changed, or the computer woke: everything that waits
+/// on the network tries again now rather than sitting out its backoff.
+pub(crate) async fn network_back(core: &Arc<Core>) {
+    let endpoint = core
+        .remote
+        .lock()
+        .running
+        .as_ref()
+        .map(|running| running.endpoint.clone());
+    if let Some(endpoint) = endpoint {
+        endpoint.network_change().await;
+    }
+    core.remote.refresh.notify_one();
+    ensure_live(core);
+    super::share::network_back(core);
 }
 
 pub(crate) fn stop_network(core: &Core) {

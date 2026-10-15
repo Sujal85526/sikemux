@@ -34,6 +34,8 @@ struct ChatInfo: Decodable, Equatable {
     let agentId: String
     let subagents: Int
     let tasks: Int
+    /// The attempt the agent is retrying a failed request on, 0 when it did not say.
+    let reconnecting: Int?
 }
 
 struct Attention: Decodable, Equatable {
@@ -178,6 +180,8 @@ struct Entry: Identifiable, Equatable {
     let tasks: Int
     let ask: Ask?
     var question: AgentQuestion? = nil
+    /// The attempt its agent is retrying a failed request on, 0 when it did not say.
+    var reconnecting: Int? = nil
 
     var id: String { item.id }
     var provider: String { item.cli ?? "" }
@@ -222,7 +226,8 @@ extension DeviceView {
                 subagents: chat?.subagents ?? 0,
                 tasks: chat?.tasks ?? 0,
                 ask: attentions.first { $0.id == item.requestId }.map(Ask.init),
-                question: questions.first { $0.id == item.questionId }
+                question: questions.first { $0.id == item.questionId },
+                reconnecting: chat?.reconnecting
             )
         }
     }

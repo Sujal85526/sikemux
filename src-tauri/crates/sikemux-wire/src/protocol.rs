@@ -624,6 +624,10 @@ pub struct ChatInfo {
     /// Background shells and monitors still running for it.
     #[serde(default)]
     pub tasks: u32,
+    /// The agent is retrying a request that got no answer over the network:
+    /// the attempt it is on, or 0 when it did not say.
+    #[serde(default)]
+    pub reconnecting: Option<u32>,
     /// The paired device that started it. The app started the rest.
     pub started_by: Option<String>,
     /// The app's launcher a device started it with.
@@ -1278,6 +1282,18 @@ pub struct SessionExit {
     pub signal: Option<String>,
 }
 
+/// What happened to this host's network.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NetworkChange {
+    Online,
+    Offline,
+    /// Still online, over a different interface.
+    Changed,
+    /// The Mac woke from sleep.
+    Woke,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -1328,6 +1344,11 @@ pub enum Event {
     /// Sent only to clients on this host.
     Remote {
         status: RemoteStatus,
+    },
+    /// The network came back, went away or changed, or the computer woke.
+    /// Sent only to clients on this host.
+    Network {
+        change: NetworkChange,
     },
     /// An agent started waiting on a person. Every client on this host hears
     /// it, whether or not it shows that agent; devices see it in their view.

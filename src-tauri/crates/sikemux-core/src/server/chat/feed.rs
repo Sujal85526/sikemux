@@ -96,6 +96,8 @@ pub(crate) struct Replay {
     history: Option<History>,
     next_index: u64,
     in_turn: bool,
+    /// The attempt an agent is retrying a failed request on, 0 when unsaid.
+    reconnecting: Option<u32>,
     last_from_user: bool,
     since_point: usize,
     /// What a phone shown only the chat's end still needs from before it:
@@ -424,6 +426,7 @@ impl Replay {
             history,
             next_index: 0,
             in_turn: false,
+            reconnecting: None,
             last_from_user: false,
             since_point: 0,
             standing: Vec::new(),
@@ -531,10 +534,17 @@ impl Replay {
         self.note_standing(kind, index, &event);
         if kind == ChatEventKind::SessionUpdate {
             self.work.note(payload);
+            self.note_retry(payload);
         }
         match kind {
-            ChatEventKind::TurnStarted => self.in_turn = true,
-            ChatEventKind::TurnCompleted | ChatEventKind::Error => self.in_turn = false,
+            ChatEventKind::TurnStarted => {
+                self.in_turn = true;
+                self.reconnecting = None;
+            }
+            ChatEventKind::TurnCompleted | ChatEventKind::Error => {
+                self.in_turn = false;
+                self.reconnecting = None;
+            }
             _ => {}
         }
         self.last_from_user = kind == ChatEventKind::Prompt
@@ -799,8 +809,30 @@ impl Replay {
         }
         self.standing.retain(|(_, held, _)| *held < index);
         self.in_turn = false;
+        self.reconnecting = None;
         self.last_from_user = false;
         self.since_point = 0;
+    }
+
+    /// An agent retrying says so as a warning; its next output means it got through.
+    /// A service that answered with an error is not a lost connection.
+    fn note_retry(&mut self, payload: &Value) {
+        match session_update_kind(payload) {
+            Some("session_info_update") if self.in_turn => {
+                let notice = payload.pointer("/update/_meta/jetbrains/air/sessionFailure");
+                if let Some(notice) = notice.filter(|notice| notice["severity"] == "warning") {
+                    let attempt = notice["attempt"].as_u64().unwrap_or(0);
+                    self.reconnecting = (notice["category"] == "connection")
+                        .then(|| u32::try_from(attempt).unwrap_or(u32::MAX));
+                }
+            }
+            Some(
+                "agent_message_chunk" | "agent_thought_chunk" | "tool_call" | "tool_call_update",
+            ) => {
+                self.reconnecting = None;
+            }
+            _ => {}
+        }
     }
 
     pub(crate) fn page(&self, before: u64, turns: usize) -> Result<Page, String> {
@@ -1339,6 +1371,10 @@ impl Feed {
         self.inner.lock().ok()?.replay.last_answer()
     }
 
+    pub(crate) fn reconnecting(&self) -> Option<u32> {
+        self.inner.lock().ok()?.replay.reconnecting
+    }
+
     pub(crate) fn running_subagents(&self) -> u32 {
         self.inner
             .lock()
@@ -1779,6 +1815,34 @@ mod tests {
             })
             .filter(|(kind, _)| kind != "agent_message_chunk" && kind != "tool_call")
             .collect()
+    }
+
+    #[test]
+    fn a_retrying_agent_reads_as_reconnecting_until_it_answers_or_the_turn_ends() {
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
+        let retry = |attempt: u64| {
+            update(
+                "s",
+                crate::acp::account::retrying("t:retry", "connection", attempt, "x"),
+            )
+        };
+        replay.push(ChatEventKind::SessionUpdate, &retry(1));
+        assert_eq!(replay.reconnecting, None);
+
+        replay.push(ChatEventKind::TurnStarted, &json!({}));
+        replay.push(ChatEventKind::SessionUpdate, &retry(2));
+        assert_eq!(replay.reconnecting, Some(2));
+        let chunk = json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "Back" } });
+        replay.push(ChatEventKind::SessionUpdate, &update("s", chunk));
+        assert_eq!(replay.reconnecting, None);
+
+        let busy = crate::acp::account::retrying("t:retry", "service", 4, "Anthropic answered 529");
+        replay.push(ChatEventKind::SessionUpdate, &update("s", busy));
+        assert_eq!(replay.reconnecting, None);
+
+        replay.push(ChatEventKind::SessionUpdate, &retry(3));
+        replay.push(ChatEventKind::TurnCompleted, &json!({}));
+        assert_eq!(replay.reconnecting, None);
     }
 
     #[test]

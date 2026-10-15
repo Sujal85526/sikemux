@@ -5838,6 +5838,7 @@ version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "base64 0.22.1",
+ "block2",
  "futures-util",
  "hex",
  "iroh",
@@ -8591,7 +8592,6 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "bitflags 2.13.2",
- "block2",
  "cc",
  "crc32fast",
  "crossbeam-utils",

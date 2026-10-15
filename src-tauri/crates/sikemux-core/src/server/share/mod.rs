@@ -95,6 +95,8 @@ pub(super) enum ToLink {
     /// A frame the chat sent a share's client.
     Heard(String, Arc<[u8]>),
     Send(crate::accounts::share::ShareClientMessage),
+    /// The network came back: stop waiting out the backoff and connect now.
+    Retry,
 }
 
 #[derive(Default)]
@@ -156,6 +158,13 @@ fn save(core: &Core, inner: &Inner) {
     shares.sort_by(|a, b| a.id.cmp(&b.id));
     if let Err(error) = core.remote.keep_shares(shares) {
         eprintln!("sikemux core: could not save the shared chats: {error}");
+    }
+}
+
+/// Has a link waiting out a failure connect again now, if one runs.
+pub(crate) fn network_back(core: &Core) {
+    if let Some(link) = &core.shares.lock().link {
+        let _ = link.send(ToLink::Retry);
     }
 }
 

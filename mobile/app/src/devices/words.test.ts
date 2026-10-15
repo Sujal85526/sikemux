@@ -34,6 +34,12 @@ describe('chatState', () => {
     expect(chatState(chat({ pendingPermissions: ['p1'], asleep: true, running: true }))).toBe('Needs input');
   });
 
+  it('says a running chat is reconnecting while its agent retries', () => {
+    expect(chatState(chat({ running: true, reconnecting: 2 }))).toBe('Reconnecting…');
+    expect(chatState(chat({ running: true, reconnecting: 0, pendingPermissions: ['p1'] }))).toBe('Needs input');
+    expect(chatState(chat({ running: false, reconnecting: 2 }))).not.toBe('Reconnecting…');
+  });
+
   it('says a sleeping chat is asleep even when stopped', () => {
     expect(chatState(chat({ asleep: true, state: 'stopped' }))).toBe('Sleeping');
   });

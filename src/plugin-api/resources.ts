@@ -1,1 +1,1 @@
-export { invalidate, peekResource, resource, useCachedResourceEnabled, useResource, useResourceEnabled, type ResourceHandle } from "../state/resources";
+export { invalidate, peekResource, refetchFailed, resource, useCachedResourceEnabled, useResource, useResourceEnabled, type ResourceHandle } from "../state/resources";

@@ -546,7 +546,7 @@ function freshAgents() {
         { id: "a10", name: "Pine", type: "claude", title: "Rotate the signing keys", project: "server", tier: "finished", state: "failed", time: "5m ago" },
         { id: "a11", name: "Moss", type: "claude", title: "Tidy the changelog", project: "sikemux", tier: "finished", state: "done", time: "15m ago" },
         { id: "a2", name: "Flint", type: "codex", title: "Refactor the auth middleware", project: "server", tier: "progress", state: "working", time: "4:12", subagents: 3 },
-        { id: "a3", name: "Wren", type: "opencode", title: "Draft the notch spec", project: "sikemux", tier: "progress", state: "working", time: "0:48" },
+        { id: "a3", name: "Wren", type: "opencode", title: "Draft the notch spec", project: "sikemux", tier: "progress", state: "working", time: "0:48", reconnecting: 3 },
         { id: "a5", name: "Cedar", type: "codex", title: "Read the release notes", project: "sikemux", tasks: 2 },
     ];
 }
@@ -838,7 +838,7 @@ class Island {
                         <div class="row">
                             <span class="mark">${ICON[a.type]}</span>
                             <span class="title">${named(a)}</span>${a.subagents ? `<span class="subagents">${GLYPH.agent}${a.subagents}</span>` : ""}${a.tasks ? `<span class="shells">${GLYPH.command}${a.tasks}</span>` : ""}<span class="proj">${GLYPH.folderSmall}${a.project}</span>
-                            <span class="time">${a.time}</span>${stateMark(a.state)}
+                            ${a.reconnecting != null ? `<span class="word">Reconnecting…${a.reconnecting ? ` ${a.reconnecting}` : ""}</span>` : `<span class="time">${a.time}</span>`}${stateMark(a.state)}
                         </div>`}`).join("");
             }
         } else {
