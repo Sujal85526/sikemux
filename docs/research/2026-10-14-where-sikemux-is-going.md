@@ -190,8 +190,7 @@ Anthropic (Scion), Cursor ("Git at any scale") and Perplexity (Projects, section
 same commit layer: one shared head, accept a commit only if it builds on that head, make the loser replay
 and resubmit, no pull requests, a log of who changed what. All three give each agent its own sandbox and
 share at commits. Sikemux shares the working tree itself, which is the part none of them solve.
-- **Close the holes.** The git guard now covers every agent and transport (Hermes started by another
-  agent or by Auto aside).
+- **Close the holes.** The git guard now covers every agent and transport.
   Terminal agents' edits and Bash edits are still not recorded; a file changed outside the record loses
   its owners instead of being marked unattributed.
 - **Collision warnings before commit:** two agents in one file/hunk → both told via agent_send; short
@@ -538,8 +537,8 @@ The weak spots are trust, review and durability.
 - Problem 2, fixed: every agent Sikemux starts runs git through a guard that refuses sweeping commands in
   the shared checkout and allows them in its own worktree. Grok and Hermes rebuild PATH from the login
   profile, so a hook checks each of their shell commands by the same rule: Grok chats load it as a
-  plugin, Grok in a terminal and Hermes read it from their private home. Still open: a Hermes chat that
-  another agent or Auto starts has no private home, so its git goes unchecked.
+  plugin, Grok in a terminal and Hermes read it from a private home the core gives every launch, whoever
+  starts it.
 - Problem 3, fixed: Auto checks the whole team at merge time, and merges only after a blind reviewer on
   another CLI, which sees only the card, its acceptance criteria and the diff, approves that exact
   commit. Not yet run end to end against a real pull request.
