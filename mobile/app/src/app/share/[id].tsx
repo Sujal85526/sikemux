@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Pressable, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { getClerkInstance } from '@clerk/expo';
@@ -16,15 +16,13 @@ import { sharedChatTitle, ShareSession, type ShareSnapshot } from '@mac/share/se
 import { apiUrl } from '@/account/config';
 import { Folds, FoldsContext } from '@/chat/folds';
 import { SharedFilesContext } from '@/chat/hostFiles';
+import { useTranscriptScroll } from '@/chat/transcriptScroll';
 import { Activity, Earlier, Message, ProviderContext, WorkSummary } from '@/chat/Transcript';
 import { phoneCipher } from '@/share/cipher';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Nav, Screen } from '@/ui/screen';
 import { Working } from '@/ui/status';
 import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
-
-/** How near the end, as a share of the transcript's height, still counts as reading the latest. */
-const FOLLOW = 0.1;
 
 const PROBLEMS: Partial<Record<ShareSnapshot['status'], string>> = {
   missing: 'This chat is not running on its host right now.',
@@ -132,12 +130,11 @@ function SharedChat({ session }: { session: ShareSession }) {
   const activity = live ? activityText({ ...state, permissions: [...snapshot.permissions] }, activeToolLabel(state.messages)) : null;
   const problem = problemOf(snapshot);
   const list = useRef<FlashListRef<ChatMessage>>(null);
-  const [away, setAway] = useState(false);
-  const onScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = nativeEvent;
-    setAway(contentSize.height - contentOffset.y - layoutMeasurement.height > layoutMeasurement.height * FOLLOW);
-  };
-  const toEnd = () => requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
+  const scroll = useTranscriptScroll(list, {
+    has: snapshot.hasEarlier,
+    idle: snapshot.earlier === 'idle',
+    load: session.loadEarlier,
+  });
   const noTap = () => {};
   const noRetry = () => {};
   const emptyFiles = useMemo(() => new Map(), []);
@@ -225,7 +222,6 @@ function SharedChat({ session }: { session: ShareSession }) {
                       />
                     ) : null
                   }
-                  onStartReached={snapshot.hasEarlier && snapshot.earlier === 'idle' ? session.loadEarlier : undefined}
                   ListFooterComponent={
                     <>
                       {snapshot.permissions.map((request) => (
@@ -238,17 +234,11 @@ function SharedChat({ session }: { session: ShareSession }) {
                     </>
                   }
                   contentContainerStyle={styles.content}
-                  maintainVisibleContentPosition={{
-                    startRenderingFromBottom: true,
-                    autoscrollToBottomThreshold: FOLLOW,
-                    animateAutoScrollToBottom: false,
-                  }}
-                  onScroll={onScroll}
-                  scrollEventThrottle={100}
+                  {...scroll.listProps}
                 />
-                {away ? (
+                {scroll.away ? (
                   <Pressable
-                    onPress={toEnd}
+                    onPress={scroll.toEnd}
                     style={styles.jump}
                     hitSlop={8}
                     accessibilityRole="button"
