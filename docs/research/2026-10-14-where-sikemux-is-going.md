@@ -190,10 +190,9 @@ Anthropic (Scion), Cursor ("Git at any scale") and Perplexity (Projects, section
 same commit layer: one shared head, accept a commit only if it builds on that head, make the loser replay
 and resubmit, no pull requests, a log of who changed what. All three give each agent its own sandbox and
 share at commits. Sikemux shares the working tree itself, which is the part none of them solve.
-- **Close the holes.** The git guard runs only when an agent asks permission, so Codex, Muse and ACP
-  agents in bypass mode (the default) and every terminal agent can still run the sweeping commands. Check
-  commands for every driver before they run. Terminal agents' edits and Bash edits are not recorded; a
-  file changed outside the record loses its owners instead of being marked unattributed.
+- **Close the holes.** The git guard now covers every agent and transport (Grok in bypass mode aside).
+  Terminal agents' edits and Bash edits are still not recorded; a file changed outside the record loses
+  its owners instead of being marked unattributed.
 - **Collision warnings before commit:** two agents in one file/hunk → both told via agent_send; short
   leases on lockfiles, migrations, generated code. Block a stale full-file write that would erase
   another agent's edit (the failure every shared-checkout write-up names).
@@ -222,13 +221,13 @@ when an agent stops. A "while you were away" digest on open.
   harnesses, before anything is a PR.
 
 ### 5. Make review cross-vendor, on top of agent-to-agent
-- ADR 0012 is built (section 13). First fix what the audit found: an agent can pass itself off as the
-  window, Auto merges with no review gate, and messages are neither durable nor logged.
+- ADR 0012 is built, and the audit's problems are fixed (section 13). Left there: spawn across hosts,
+  collision warnings, and secrets out of agents' environments.
 - Linear cards (#67; only Jira feeds the board). The adapter for agents outside Sikemux stays deferred.
   Agent-to-agent across hosts waits on focus 1.
-- **A blind reviewer before Auto merges:** a different vendor, seeing only the diff and the card's
-  acceptance criteria, never the builder's transcript, must approve. Today it can be done by hand
-  (spawn a reviewer with `cli: "codex"`); nothing builds it in.
+- **Done: a blind reviewer before Auto merges.** An agent on another CLI, seeing only the card, its
+  acceptance criteria and the diff, must approve the exact commit. Left: an on-demand version any lead
+  can call outside Auto, and a first real run against a pull request.
 - **Definition-of-done gates.** Auto runs a project's check command before it lands a card with no CI.
   Make it a gate any agent's card must pass, with acceptance criteria on cards and hooks that reject and
   say why. Huntley: enforcement beats rules files.
@@ -528,6 +527,29 @@ The weak spots are trust, review and durability.
 4. Events instead of the tick, and fix the loss paths (problems 4 and 5).
 5. Enforce the git guard for every driver and warn when an agent edits lines another live agent hasn't
    committed (problem 2); then spawn across hosts over iroh, with lineage.
+
+**Status after the fixes (2026-10-15, on `main`, in no release yet).** The audit above is kept as found.
+- Problem 1, fixed: the core checks the code signature of whatever connects to its socket; only Sikemux's
+  own window and notch act as the person. A second registration no longer breaks the real window, only
+  the app can swap in a new core binary, and the agent key lives in memory, not a file. Builds not signed
+  by Sikemux's team trust their own app and notch by path. Still open: each agent's secret travels in its
+  environment, which other processes running as the person can read (`ps -E`); Linux checks by path only.
+- Problem 2, fixed: every agent Sikemux starts runs git through a guard that refuses sweeping commands in
+  the shared checkout and allows them in its own worktree. Still open: Grok in bypass mode rebuilds its
+  PATH from the login shell and slips past.
+- Problem 3, fixed: Auto checks the whole team at merge time, and merges only after a blind reviewer on
+  another CLI, which sees only the card, its acceptance criteria and the diff, approves that exact
+  commit. Not yet run end to end against a real pull request.
+- Problems 4 and 5, fixed: reports are never dropped or refused, terminal pastes count only once taken, a
+  lead's message closes only the question it answers, Codex's and Muse's questions reach the lead, and
+  waiting messages and questions survive a crash. Secret questions go straight to the person and are
+  masked on the Mac and phone.
+- Problem 6, fixed, and the unpruned maps.
+- Problem 7, fixed: events and per-item deadlines replace the tick for messages, questions, the board
+  and Auto; looping pairs are held after a few rounds and named in the inbox. A per-project message log
+  shows on the Mac board and the phone.
+- Left: spawn across hosts with lineage, collision warnings between agents in the shared checkout, and
+  taking secrets out of agents' environments.
 
 ---
 
