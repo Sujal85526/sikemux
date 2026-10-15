@@ -26,6 +26,7 @@ vi.mock("../api/acp", () => ({
         attach: mocks.attach,
         start: mocks.start,
         stop: mocks.stop,
+        list: vi.fn(async () => []),
         setPermissionMode: vi.fn(async () => {}),
         setConfig: vi.fn(),
         prompt: vi.fn(async () => {}),
