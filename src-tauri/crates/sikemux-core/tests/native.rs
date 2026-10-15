@@ -41,6 +41,7 @@ impl TestCore {
                 built_at: 0,
                 source: "chat".into(),
             },
+            data_dir: Some(dir.path().join("data")),
             ..ServerConfig::new(socket.clone())
         };
         let thread = std::thread::spawn(move || server::run(config));
@@ -759,7 +760,7 @@ async fn live_claude_streams_edits_and_resumes() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_long_claude_chat_comes_back_whole() {
+async fn a_long_claude_chat_comes_back_as_its_last_turns_and_pages_back_whole() {
     let config = tempfile::tempdir().expect("config");
     let session = uuid::Uuid::new_v4().to_string();
     let project = config.path().join("projects").join("fake");
@@ -795,9 +796,29 @@ async fn a_long_claude_chat_comes_back_whole() {
     launch.resume_id = Some(session);
     client.acp_start(launch).await.expect("resume");
     chat.until_kind(ChatEventKind::Ready).await;
-    let answers = updates(&chat.heard)
-        .into_iter()
-        .filter(|update| update["update"]["sessionUpdate"] == "agent_message_chunk")
-        .count();
-    assert_eq!(answers, 200);
+    let heard = updates(&chat.heard);
+    let answers = |updates: &[Value]| {
+        updates
+            .iter()
+            .filter(|update| update["update"]["sessionUpdate"] == "agent_message_chunk")
+            .count()
+    };
+    let shown = answers(&heard);
+    assert!(shown < 20, "{shown} answers were sent at once");
+    let earlier = heard
+        .iter()
+        .find(|update| update["update"]["sessionUpdate"] == "earlier_turns")
+        .expect("where the earlier turns start");
+    let feed = earlier["update"]["feed"].as_str().unwrap().to_owned();
+    let mut before = earlier["update"]["before"].as_u64();
+    let mut paged = 0;
+    while let Some(from) = before {
+        let (events, older) = client
+            .acp_history("claude-long".into(), feed.clone(), from, 20)
+            .await
+            .expect("a page");
+        paged += answers(&updates(&events));
+        before = older;
+    }
+    assert_eq!(shown + paged, 200);
 }

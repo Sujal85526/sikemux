@@ -35,7 +35,7 @@ const EVENT_OVERHEAD: usize = 48;
 const MAX_RECENT_BYTES: usize = 1024 * 1024;
 const MAX_RECENT_EVENTS: usize = 4096;
 
-/// A phone opening a chat is sent this much of its end, and pages back
+/// A client opening a chat is sent this much of its end, and pages back
 /// through the rest.
 const TAIL_TURNS: usize = 50;
 const TAIL_BYTES: usize = 1024 * 1024;
@@ -74,8 +74,7 @@ struct Entry {
     on_disk: bool,
 }
 
-/// The newest of a chat's events, for a phone, and where the history before
-/// them ends.
+/// The newest of a chat's events, and where the history before them ends.
 pub(crate) struct Tail {
     pub events: Vec<ChatEvent>,
     pub older_before: Option<u64>,
@@ -806,15 +805,16 @@ impl Replay {
         (said, skipped, self.next_index)
     }
 
-    /// The last turns, as many as fit, and whatever set how the chat stands
-    /// before them. A chat that has gone a whole replay without a turn
-    /// starting is cut where a page of its history can start.
-    pub(crate) fn tail(&self) -> Tail {
+    /// The last turns from index `floor` on, as many as fit, and whatever set
+    /// how the chat stands before them. A chat that has gone a whole replay
+    /// without a turn starting is cut where a page of its history can start.
+    pub(crate) fn tail(&self, floor: u64) -> Tail {
+        let lowest = self.entries.partition_point(|entry| entry.index < floor);
         let mut chosen = None;
         let mut piece = None;
         let mut turns = 0;
         let mut bytes = 0;
-        for (position, entry) in self.entries.iter().enumerate().rev() {
+        for (position, entry) in self.entries.iter().enumerate().skip(lowest).rev() {
             bytes += entry.bytes;
             if bytes > TAIL_BYTES && chosen.is_some() {
                 break;
@@ -831,7 +831,7 @@ impl Replay {
             }
         }
         let cut = chosen.or(piece);
-        let start = cut.unwrap_or(0);
+        let start = cut.unwrap_or(lowest);
         let Some(first) = self.entries.get(start).map(|entry| entry.index) else {
             return Tail {
                 events: Vec::new(),
@@ -846,7 +846,7 @@ impl Replay {
         let mut standing: Vec<(u64, &ChatEvent)> = self
             .standing
             .iter()
-            .filter(|(_, index, _)| *index < first)
+            .filter(|(_, index, _)| (floor..first).contains(index))
             .map(|(_, index, event)| (*index, event))
             .collect();
         let named = self.entries.range(start..).map(|entry| &entry.event);
@@ -968,8 +968,13 @@ impl Replay {
     }
 
     pub(crate) fn events(&self) -> Vec<ChatEvent> {
+        self.events_from(0)
+    }
+
+    fn events_from(&self, floor: u64) -> Vec<ChatEvent> {
+        let lowest = self.entries.partition_point(|entry| entry.index < floor);
         self.entries
-            .iter()
+            .range(lowest..)
             .map(|entry| entry.event.clone())
             .collect()
     }
@@ -1055,6 +1060,8 @@ struct Inner {
     /// The session ended, so nobody new is let in to wait for events that
     /// will not come.
     closed: bool,
+    /// Events from this index on are kept but not sent yet.
+    holding: Option<u64>,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1106,6 +1113,7 @@ impl Feed {
                 permission_mode,
                 title: None,
                 closed: false,
+                holding: None,
             }),
         })
     }
@@ -1130,6 +1138,7 @@ impl Feed {
                 permission_mode: state.permission_mode,
                 title: state.title,
                 closed: false,
+                holding: None,
             }),
         })
     }
@@ -1252,10 +1261,13 @@ impl Feed {
             stamp(&mut payload);
         }
         let bytes = inner.replay.push(kind, &payload);
+        if let Some(title) = session_title(&payload) {
+            inner.title = Some(title);
+        }
+        if inner.holding.is_some() && is_kept(kind) {
+            return;
+        }
         if kind == ChatEventKind::SessionUpdate {
-            if let Some(title) = session_title(&payload) {
-                inner.title = Some(title);
-            }
             inner.pending.push(payload);
             inner.pending_bytes += bytes;
             // A loaded chat replays its history all at once, and in one batch
@@ -1389,7 +1401,7 @@ impl Feed {
             },
             (Some(start), None) => {
                 let (mut replay, older_before) = if paged {
-                    let tail = inner.replay.tail();
+                    let tail = inner.replay.tail(0);
                     (tail.events, tail.older_before)
                 } else {
                     (inner.replay.events(), None)
@@ -1424,6 +1436,56 @@ impl Feed {
         if let Ok(mut inner) = self.inner.lock() {
             inner.closed = true;
         }
+    }
+
+    /// Keeps what the agent says from the clients until [`Feed::let_out`]. A
+    /// resumed session replays its whole saved history while it starts, more
+    /// than a client could be sent at once.
+    pub(crate) fn hold(&self) {
+        if let Ok(mut inner) = self.inner.lock() {
+            self.flush_locked(&mut inner);
+            inner.holding = Some(inner.replay.next_index);
+        }
+    }
+
+    /// Sends the clients the last turns of what was held back, then where
+    /// the turns before them can be paged from. Without a history on disk to
+    /// page through, they are sent all the replay still holds.
+    pub(crate) fn let_out(&self) {
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        let Some(floor) = inner.holding.take() else {
+            return;
+        };
+        let tail = if inner.replay.keeps_history() {
+            inner.replay.tail(floor)
+        } else {
+            Tail {
+                events: inner.replay.events_from(floor),
+                older_before: None,
+            }
+        };
+        for event in tail.events {
+            if event.kind != ChatEventKind::SessionUpdate {
+                self.flush_locked(&mut inner);
+                self.broadcast(&mut inner, event.kind, event.payload);
+                continue;
+            }
+            inner.pending_bytes +=
+                serde_json::to_vec(&event.payload).map_or(0, |bytes| bytes.len());
+            inner.pending.push(event.payload);
+            if inner.pending_bytes >= BATCH_BYTES {
+                self.flush_locked(&mut inner);
+            }
+        }
+        if let Some(before) = tail.older_before {
+            inner.pending.push(json!({
+                "sessionId": "",
+                "update": { "sessionUpdate": "earlier_turns", "feed": self.id, "before": before },
+            }));
+        }
+        self.flush_locked(&mut inner);
     }
 
     pub(crate) fn set_start(&self, start: ChatStart) {
@@ -1526,7 +1588,7 @@ impl Feed {
         }
     }
 
-    /// The turns before `before` in this run of the chat, which a phone
+    /// The turns before `before` in this run of the chat, which a client
     /// shown only the chat's end scrolls back to.
     pub(crate) fn history(&self, feed: &str, before: u64, turns: usize) -> Result<Page, String> {
         if feed != self.id {
@@ -1911,7 +1973,7 @@ mod tests {
         }
         assert!(replay.is_trimmed());
 
-        let tail = replay.tail();
+        let tail = replay.tail(0);
         assert_eq!(tail.events[0].payload, commands());
         assert_eq!(tail.events[1].kind, ChatEventKind::Prompt);
         assert_eq!(asked(&tail.events), asks(78..80));
@@ -2047,7 +2109,7 @@ mod tests {
             turn(&mut replay, n);
         }
         assert_eq!(
-            standing_kinds(&replay.tail()),
+            standing_kinds(&replay.tail(0)),
             [
                 ("plan".to_owned(), "second".to_owned()),
                 ("async_task_spawned".to_owned(), "shell".to_owned()),
@@ -2129,7 +2191,7 @@ mod tests {
         replay.push(ChatEventKind::SessionUpdate, &ended("corpus"));
 
         let starts: Vec<String> = replay
-            .tail()
+            .tail(0)
             .events
             .iter()
             .filter(|event| session_update_kind(&event.payload) == Some("subagent_spawned"))
@@ -2179,6 +2241,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_long_history_loaded_at_the_start_reaches_clients_as_its_last_turns() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = crate::server::Core::new(Default::default(), None).unwrap();
+        let (client, mut frames) = ClientConn::inside(&core, Peer::Local);
+        let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
+        feed.subscribe(&client);
+
+        feed.hold();
+        for n in 0..60 {
+            let (asked, answer) = (format!("ask {n}"), format!("m{n}"));
+            feed.emit(
+                ChatEventKind::SessionUpdate,
+                text("user_message_chunk", None, &asked),
+            );
+            feed.emit(
+                ChatEventKind::SessionUpdate,
+                text("agent_message_chunk", Some(&answer), "done"),
+            );
+        }
+        let mut heard = Vec::new();
+        while let Ok(frame) = frames.try_recv() {
+            heard.push(frame);
+        }
+        assert!(heard.is_empty(), "nothing goes out while the history loads");
+
+        feed.let_out();
+        let mut updates = Vec::new();
+        while let Ok(frame) = frames.try_recv() {
+            let frame = crate::protocol::read_frame_sync(&mut &frame[..])
+                .unwrap()
+                .unwrap();
+            let Ok(ServerMessage::Event {
+                event: Event::Chat { event, .. },
+            }) = serde_json::from_slice(&frame.payload)
+            else {
+                continue;
+            };
+            updates.extend(
+                event.payload["updates"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        }
+        let asked: Vec<String> = updates
+            .iter()
+            .filter(|update| update["update"]["sessionUpdate"] == "user_message_chunk")
+            .filter_map(|update| update["update"]["content"]["text"].as_str())
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(asked, asks(10..60));
+        assert_eq!(
+            updates.last().unwrap()["update"],
+            json!({ "sessionUpdate": "earlier_turns", "feed": feed.id, "before": 10 * 2 })
+        );
+    }
+
+    #[tokio::test]
     async fn the_last_turns_go_to_a_phone_and_to_the_app_once_the_replay_is_trimmed() {
         let dir = tempfile::tempdir().unwrap();
         let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
@@ -2197,33 +2317,24 @@ mod tests {
             turn(&mut inner.replay, n);
         }
 
-        let ChatAttachment::Live {
-            replay,
-            older_before,
-            ..
-        } = feed.attachment(&inner, &phone, standing(), None)
-        else {
-            panic!("a phone takes up a long chat");
-        };
-        assert_eq!(asked(&replay), asks(10..60));
-        assert_eq!(older_before, Some(10 * 5));
+        for peer in [&phone, &Peer::Local] {
+            let ChatAttachment::Live {
+                replay,
+                older_before,
+                ..
+            } = feed.attachment(&inner, peer, standing(), None)
+            else {
+                panic!("a client takes up a long chat");
+            };
+            assert_eq!(asked(&replay), asks(10..60));
+            assert_eq!(older_before, Some(10 * 5));
+        }
         drop(inner);
         let page = feed.history(&feed.id, 10 * 5, 100).unwrap();
         assert_eq!(asked(&page.events), asks(0..10));
         assert_eq!(page.older_before, None);
         assert!(feed.history("an earlier run", 10 * 5, 100).is_err());
         let mut inner = feed.inner.lock().unwrap();
-
-        let ChatAttachment::Live {
-            replay,
-            older_before,
-            ..
-        } = feed.attachment(&inner, &Peer::Local, standing(), None)
-        else {
-            panic!("the app takes up a chat the replay still holds");
-        };
-        assert_eq!(asked(&replay), asks(0..60));
-        assert_eq!(older_before, None);
 
         let history = History::open(dir.path(), "trimmed", MAX_HISTORY_BYTES);
         inner.replay = Replay::new(MAX_REPLAY_BYTES, 12, Some(history));
