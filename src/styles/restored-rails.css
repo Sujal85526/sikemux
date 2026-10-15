@@ -127,6 +127,10 @@
     flex-shrink: 0;
 }
 
+.proj-pip-term {
+    color: var(--live);
+}
+
 /* Agent glyphs are drawn with room around them inside the 20px box; pull them together. */
 .proj-pip + .proj-pip {
     margin-left: -6px;

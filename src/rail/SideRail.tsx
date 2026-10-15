@@ -14,19 +14,19 @@ import {
 } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { keybindingLabelForAction, type KeybindingActionId } from "../commands/keybindings";
-import type { Agent, Session, SessionKind, Window, WindowRole } from "../state/types";
+import type { Agent, Session, SessionKind, Window } from "../state/types";
 import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
 import { rollupAgentDisplays, type AgentDisplay } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentIcon, IconClose, IconFolder, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconClose, IconFolder, IconPencil, IconPlus, IconServer, IconTerminal, WindowIcon } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
 import { UpdateChip } from "./UpdateChip";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { agentDisplayOf, agentIdsOf } from "../state/selectors";
-import { PROJECT_SURFACE_ORDER, PROJECT_SURFACES } from "../workbench/surfaces";
+import { PROJECT_SURFACE_ORDER, PROJECT_SURFACES, type ProjectSurfaceRole } from "../workbench/surfaces";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
 import type { PluginSignIn } from "../plugin-api/signInState";
 import { StatusDot, type StatusTone } from "../ui/StatusDot";
@@ -280,11 +280,60 @@ function ProjectBlock({ s }: { s: Session }) {
     }
 
     const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
-    const isSubActive = (role: WindowRole): boolean => activeRole === role;
+    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
+    const termIcons: ReactNode[] =
+        tabCount > 1
+            ? Array.from({ length: tabCount }, (_, i) => (
+                  <span key={i} className="proj-pip proj-pip-term">
+                      <IconTerminal size={LINE_ICON_SIZE} />
+                  </span>
+              ))
+            : [];
+    const agentIcons: ReactNode[] = agents.map((a) => (
+        <span key={a.id} className={`proj-pip proj-pip-${a.type}`}>
+            <AgentIcon type={a.type} size={20} />
+        </span>
+    ));
 
-    const children: SubRow[] = PROJECT_SURFACE_ORDER.map((role) => {
+    const surfaceRow = (role: ProjectSurfaceRole): SubRow => {
         const { label, shortcut, open } = PROJECT_SURFACES[role];
-        return { role, label, kbd: kb(shortcut), title: `${label} — ${kb(shortcut)}`, open };
+        return {
+            key: role,
+            icon: <WindowIcon role={role} size={13} />,
+            label,
+            kbd: kb(shortcut),
+            title: `${label} — ${kb(shortcut)}`,
+            open,
+            active: activeRole === role,
+            icons: [],
+        };
+    };
+    const terminalRow: SubRow = {
+        key: "term",
+        icon: <WindowIcon role="term" size={13} />,
+        label: "Terminal",
+        kbd: kb("window.terminal"),
+        title: `Terminal${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${kb("window.terminal")}`,
+        open: () => cmd.selectWindowByRole("term"),
+        active: activeRole === "term",
+        icons: termIcons,
+    };
+    const agentsRow: SubRow = {
+        key: "agents",
+        icon: <IconAgent size={13} />,
+        label: "Agents",
+        kbd: kb("window.agents"),
+        title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
+        open: () => cmd.focusAgents(),
+        active: activeRole === "agent",
+        icons: agentIcons,
+        status: rollup && showsAgentState(rollup) ? <AgentStateIndicator display={rollup} /> : undefined,
+    };
+    const children: SubRow[] = PROJECT_SURFACE_ORDER.flatMap((role) => {
+        const row = surfaceRow(role);
+        if (role === "files") return [row, terminalRow];
+        if (role === "git") return [row, agentsRow];
+        return [row];
     });
     return (
         <div ref={treeRef} className={`proj-tree active${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
@@ -300,30 +349,35 @@ function ProjectBlock({ s }: { s: Session }) {
                             <IconFolder size={LINE_ICON_SIZE} />
                         </span>
                         <span className="proj-name">{s.name}</span>
-                        {agentBadge}
                     </button>
                 </Tooltip>
                 <SessionCloseButton session={s} />
             </div>
             <div className="proj-children" ref={foldChildren}>
                 {children.map((c) => {
-                    const subActive = isSubActive(c.role);
+                    const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
+                    const overflow = c.icons.length - visibleIcons.length;
                     return (
-                        <Tooltip key={c.role} label={c.title} side="right">
+                        <Tooltip key={c.key} label={c.title} side="right">
                             <button
                                 type="button"
-                                className={`proj-child${subActive ? " active" : ""}`}
+                                className={`proj-child${c.active ? " active" : ""}`}
                                 aria-label={c.label}
-                                aria-current={subActive ? "page" : undefined}
+                                aria-current={c.active ? "page" : undefined}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     c.open();
                                 }}>
                                 <span className="proj-child-tick" />
-                                <span className="proj-child-ic">
-                                    <WindowIcon role={c.role} size={13} />
-                                </span>
+                                <span className="proj-child-ic">{c.icon}</span>
                                 <span className="proj-child-label">{c.label}</span>
+                                {visibleIcons.length > 0 && (
+                                    <span className="proj-child-icons">
+                                        {visibleIcons}
+                                        {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+                                    </span>
+                                )}
+                                {c.status}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
                         </Tooltip>
@@ -335,11 +389,15 @@ function ProjectBlock({ s }: { s: Session }) {
 }
 
 interface SubRow {
-    role: WindowRole;
+    key: string;
+    icon: ReactNode;
     label: string;
     kbd?: string;
     title: string;
     open: () => void;
+    active: boolean;
+    icons: ReactNode[];
+    status?: ReactNode;
 }
 
 function renderSession(s: Session) {
