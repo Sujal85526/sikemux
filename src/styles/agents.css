@@ -1034,11 +1034,8 @@
 .agent-tree .proj-child {
     cursor: default;
 }
-.agent-row:not(.recent) > .agent-row-text > .agent-title {
+.agent-row-text > .agent-title {
     color: var(--text-primary);
-}
-.agent-row.recent:not(:hover) {
-    color: var(--text-tertiary);
 }
 .agent-row-text {
     flex: 1;
