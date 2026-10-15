@@ -5,11 +5,50 @@ const SITE = "acme-labs.atlassian.net";
 const iso = (hoursAgo: number) =>
   new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
 
+const AVATAR_HUES: Record<string, number> = {
+  "u-edon": 262,
+  "u-maya": 18,
+  "u-sam": 150,
+  "u-lena": 330,
+  "u-jonas": 200,
+  "u-ana": 45,
+};
+
 const person = (accountId: string, name: string) => ({
   accountId,
   name,
-  avatarUrl: null,
+  avatarUrl:
+    accountId in AVATAR_HUES ? `https://avatars.acme.test/${accountId}` : null,
 });
+
+const svgAddress = (svg: string) => `data:image/svg+xml;base64,${btoa(svg)}`;
+
+/** A drawn stand-in for a person's photo: a soft gradient with a head and shoulders. */
+const faceOf = (url: string) => {
+  const hue = AVATAR_HUES[url.split("/").pop() ?? ""] ?? 220;
+  return svgAddress(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue} 55% 62%)"/><stop offset="1" stop-color="hsl(${hue + 30} 50% 38%)"/></linearGradient></defs><rect width="48" height="48" fill="url(#g)"/><circle cx="24" cy="19" r="8.5" fill="hsl(${hue} 30% 92%)"/><path d="M8 48c2-11 9-16 16-16s14 5 16 16z" fill="hsl(${hue} 30% 92%)"/></svg>`,
+  );
+};
+
+const PROJECT_TILES: Record<string, [number, string]> = {
+  "10401": [215, "M14 30l10-14 10 14z"],
+  "10402": [150, "M12 18h24v14H12z"],
+  "10403": [28, "M24 12a12 12 0 1 0 0.01 0z"],
+  "10404": [290, "M12 24l12-12 12 12-12 12z"],
+};
+
+/** A drawn project picture: a coloured tile with a simple white shape. */
+const tileOf = (url: string) => {
+  const id = /avatar\/(\d+)/.exec(url)?.[1] ?? "";
+  const [hue, shape] = PROJECT_TILES[id] ?? [220, "M14 14h20v20H14z"];
+  return svgAddress(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="8" fill="hsl(${hue} 60% 50%)"/><path d="${shape}" fill="white" fill-opacity="0.9"/></svg>`,
+  );
+};
+
+const projectAvatar = (id: string) =>
+  `https://${SITE}/rest/api/3/universal_avatar/view/type/project/avatar/${id}?size=medium`;
 
 const EDON = person("u-edon", "Edon Ramos");
 const MAYA = person("u-maya", "Maya Chen");
@@ -30,6 +69,51 @@ const COLUMNS = [
 ] as const;
 
 const SPRINT = "Orbit Sprint 24";
+
+const EPICS = {
+  offline: { key: "ORB-150", summary: "Offline itineraries", color: "color_4" },
+  checkout: {
+    key: "ORB-151",
+    summary: "Checkout for every market",
+    color: "color_12",
+  },
+  alerts: {
+    key: "ORB-152",
+    summary: "Price alerts and reminders",
+    color: "color_6",
+  },
+  accounts: { key: "ORB-153", summary: "Traveller accounts", color: "color_8" },
+  polish: { key: "ORB-154", summary: "Release polish", color: null },
+} as const;
+
+type Epic = (typeof EPICS)[keyof typeof EPICS];
+
+/** Days from today, as Jira writes a due date. */
+const dayFromNow = (days: number) => {
+  const date = new Date(Date.now() + days * 86_400_000);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+const PLANS: Record<number, [Epic | null, number | null]> = {
+  212: [EPICS.offline, -6],
+  218: [EPICS.polish, 9],
+  224: [EPICS.checkout, null],
+  227: [EPICS.offline, -2],
+  205: [EPICS.checkout, 4],
+  209: [EPICS.alerts, -11],
+  215: [null, 12],
+  198: [EPICS.accounts, null],
+  201: [EPICS.checkout, 2],
+  184: [EPICS.offline, -3],
+  190: [EPICS.accounts, 20],
+  176: [EPICS.polish, -30],
+  179: [null, null],
+  231: [EPICS.offline, 6],
+  233: [EPICS.alerts, null],
+  236: [EPICS.accounts, -1],
+  238: [EPICS.checkout, 15],
+};
 
 type Row = [
   number,
@@ -159,6 +243,26 @@ const ROWS: Row[] = [
     null,
     120,
   ],
+  [
+    231,
+    "Boarding passes open from the lock screen",
+    0,
+    "Story",
+    "Medium",
+    EDON,
+    4,
+  ],
+  [
+    233,
+    "Quiet hours hold price alerts until the morning",
+    1,
+    "Task",
+    "Low",
+    MAYA,
+    26,
+  ],
+  [236, "Sign in with a passkey on the web", 2, "Story", "High", MAYA, 33],
+  [238, "Saved cards show their expiry month", 3, "Task", "Medium", EDON, 48],
 ];
 
 const issue = ([
@@ -172,6 +276,7 @@ const issue = ([
 ]: Row) => {
   const status = COLUMNS[column]!;
   const key = `ORB-${number}`;
+  const [epic, due] = PLANS[number] ?? [null, null];
   return {
     key,
     summary,
@@ -182,6 +287,8 @@ const issue = ([
     issueType,
     sprint: SPRINT,
     updated: iso(hours),
+    due: due === null ? null : dayFromNow(due),
+    parent: epic,
     url: `https://${SITE}/browse/${key}`,
     column,
   };
@@ -293,12 +400,47 @@ export const JIRA: Record<string, (params: Params) => unknown> = {
     { id: "10022", name: "Waiting on review", jql: `status = "In Review"` },
   ],
   projects: () => [
-    { key: "ORB", name: "Orbit" },
-    { key: "PAY", name: "Payments" },
+    { key: "ORB", name: "Orbit", avatarUrl: projectAvatar("10401") },
+    { key: "PAY", name: "Payments", avatarUrl: projectAvatar("10402") },
+    { key: "ATL", name: "Atlas Web", avatarUrl: projectAvatar("10403") },
+    { key: "SUP", name: "Support desk", avatarUrl: projectAvatar("10404") },
   ],
   boards: () => [
-    { id: 7, name: "Orbit board", kind: "scrum", project: "ORB" },
-    { id: 9, name: "Payments kanban", kind: "kanban", project: "PAY" },
+    {
+      id: 7,
+      name: "Orbit board",
+      kind: "scrum",
+      project: "ORB",
+      projectKey: "ORB",
+    },
+    {
+      id: 8,
+      name: "Orbit releases",
+      kind: "kanban",
+      project: "ORB",
+      projectKey: "ORB",
+    },
+    {
+      id: 9,
+      name: "Payments kanban",
+      kind: "kanban",
+      project: "PAY",
+      projectKey: "PAY",
+    },
+    {
+      id: 11,
+      name: "Atlas sprint board",
+      kind: "scrum",
+      project: "ATL",
+      projectKey: "ATL",
+    },
+    {
+      id: 12,
+      name: "Edon's board",
+      kind: "kanban",
+      project: "Edon Ramos",
+      projectKey: null,
+    },
   ],
   board: (params) => {
     const shown = byPeople(params);
@@ -324,7 +466,8 @@ export const JIRA: Record<string, (params: Params) => unknown> = {
   issue: ({ key }) => full(String(key)),
   assignable: () => PEOPLE,
   keys: () => [],
-  image: () => "",
+  image: ({ url }) => faceOf(String(url)),
+  siteImage: ({ url }) => tileOf(String(url)),
   moveIssue: () => null,
   transition: () => ({ status: null, transitions: [] }),
   assign: () => null,
