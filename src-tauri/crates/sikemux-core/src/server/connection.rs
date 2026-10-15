@@ -20,8 +20,8 @@ use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
 use super::{
-    agent, attachments, chat, harness, local_peer, remote, upgrade, window, workspace, Core,
-    CoreError, CoreResult,
+    agent, attachments, chat, harness, local_peer, messages, remote, upgrade, window, workspace,
+    Core, CoreError, CoreResult,
 };
 
 pub(crate) type ClientId = u64;
@@ -399,6 +399,7 @@ async fn read_requests(
                 agent::note_input(core, &target, bytes);
                 if let Some(agent) = target.agent.as_ref().filter(|_| agent::submits_line(bytes)) {
                     core.harness.questions.typed(agent.agent_id());
+                    messages::worked(core, agent.agent_id());
                 }
                 let reply_to = client.clone();
                 session::queue_input(
@@ -520,6 +521,7 @@ async fn run_requests(
             }
             Request::RegisterWindow => {
                 core.window.register(client.clone());
+                core.agents_changed();
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::HarnessAwaitingTrust { execution_id } => {
