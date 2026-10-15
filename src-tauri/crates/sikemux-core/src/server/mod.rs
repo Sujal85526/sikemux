@@ -979,7 +979,8 @@ pub(crate) async fn run_core(
     let listener = tokio::net::UnixListener::from_std(listener)?;
     remote::start(&core, &config).await;
     core.chats.resets.arm_saved(&core);
-    if config.data_dir.is_some() {
+    if let Some(data_dir) = config.data_dir.as_deref() {
+        crate::git_guard::shim::install(data_dir);
         tokio::spawn(workspace::refresh_launchers(core.clone()));
     }
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;

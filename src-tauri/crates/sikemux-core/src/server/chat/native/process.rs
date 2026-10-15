@@ -16,6 +16,7 @@ use tokio::net::unix::pipe;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 
+use crate::git_guard;
 use crate::protocol::ChatLaunch;
 
 /// How much of what the agent printed to its error stream is kept, to say why
@@ -119,12 +120,16 @@ impl Process {
     ) -> Result<(Self, Writer, Lines), String> {
         let mut command = sikemux_process::user_environment::command(&launch.program);
         command
+            .args(git_guard::shim::arguments(&launch.provider))
             .args(&launch.args)
             .args(args)
             .current_dir(&launch.cwd)
             .envs(sikemux_pty::user_shell::login_shell_locale())
             .envs(&launch.env)
             .envs(env)
+            .envs(git_guard::shim::environment(
+                launch.env.get("PATH").map(String::as_str),
+            ))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

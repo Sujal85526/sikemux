@@ -11,6 +11,8 @@ pub mod cli;
 #[cfg(unix)]
 pub mod client;
 pub mod frozen;
+#[cfg(unix)]
+pub mod git_guard;
 pub mod harness;
 #[cfg(unix)]
 pub mod join;

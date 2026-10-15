@@ -60,17 +60,29 @@ pub fn validate_direct_command(
     Ok(())
 }
 
+/// Runs `launch` in `shell`, as the person's interactive login shell would,
+/// with `path_first` put ahead on PATH again after their profile has run.
 pub fn configure_interactive_command(
     command: &mut CommandBuilder,
     shell: &str,
     launch: &PtyDirectCommand,
+    path_first: Option<&Path>,
 ) {
     let kind = detect_shell_kind(shell);
-    let invocation = std::iter::once(&launch.program)
+    let mut invocation = std::iter::once(&launch.program)
         .chain(launch.args.iter())
         .map(|value| quote_shell_word(value, kind))
         .collect::<Vec<_>>()
         .join(" ");
+    if let Some(folder) = path_first {
+        let folder = quote_shell_word(&folder.to_string_lossy(), kind);
+        let put_first = match kind {
+            Some(ShellKind::Fish) => format!("set -gx PATH {folder} $PATH; "),
+            Some(ShellKind::PowerShell) => format!("$env:PATH = {folder} + ':' + $env:PATH; "),
+            _ => format!("export PATH={folder}:\"$PATH\"; "),
+        };
+        invocation.insert_str(0, &put_first);
+    }
     #[cfg(unix)]
     command.args(["-l", "-i", "-c", &invocation]);
     #[cfg(windows)]
@@ -257,6 +269,7 @@ mod tests {
                 args: vec![argument.into()],
                 profile: None,
             },
+            None,
         );
         let pair = NativePtySystem::default()
             .openpty(PtySize {

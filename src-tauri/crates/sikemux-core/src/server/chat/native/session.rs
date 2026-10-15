@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::acp::account::{self, Failure, FailureKind, SignIn};
 use crate::acp::{permission, SessionEnd};
+use crate::git_guard;
 use crate::protocol::{ChatContext, ChatEventKind, ChatLaunch, ChatStart};
 
 use super::super::rebind::{
@@ -20,7 +21,6 @@ use super::super::rebind::{
     Rebind, Replay,
 };
 use super::super::{reset, stall_later, Asked, Chat, ChatCommand, Delivery, Respond};
-use super::git_guard;
 use super::process::{AgentRecord, Lines, Process, Released, Writer};
 
 /// What the person sent, for the agent to read in its own form.
@@ -242,7 +242,10 @@ impl Sink {
     /// cancelled.
     pub fn ask(&self, mut request: Value, reply: Value, respond: Respond) {
         let choices = permission::choices(&request);
-        let guarded = choices.command.as_deref().and_then(git_guard::refusal);
+        let guarded = choices
+            .command
+            .as_deref()
+            .and_then(|command| git_guard::refusal(command, &self.chat.launch.cwd));
         if let (Some(reject), Some(_)) = (choices.reject, guarded) {
             respond(Some(reject));
             return;

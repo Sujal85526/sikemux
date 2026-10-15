@@ -6,7 +6,6 @@
 mod acp;
 mod claude;
 mod codex;
-mod git_guard;
 mod json;
 mod muse;
 mod patch;

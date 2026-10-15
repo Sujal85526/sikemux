@@ -484,7 +484,7 @@ impl Reader {
             Some("can_use_tool") => self.can_use_tool(request_id, request),
             Some("hook_callback") => self
                 .control
-                .respond(&request_id, permission::hook_answer(&request)),
+                .respond(&request_id, json!({ "continue": true })),
             _ => self
                 .control
                 .refuse(&request_id, "Sikemux does not handle this request"),

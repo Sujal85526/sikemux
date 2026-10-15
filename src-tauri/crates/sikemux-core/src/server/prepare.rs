@@ -15,6 +15,7 @@ use sikemux_pty::task::{validate_task_request, TaskSpawnRequest};
 use sikemux_pty::user_shell::{configured_shell, login_shell_environment};
 use sikemux_pty::validate_pty_dimensions;
 
+use crate::git_guard::shim;
 use crate::protocol::{Continuation, LaunchIdentity, SessionKind, TaskSessionInfo, TerminalSpawn};
 
 use super::CoreResult;
@@ -80,7 +81,7 @@ pub(crate) fn prepare_terminal(
         rows,
         cwd,
         startup,
-        direct_command,
+        mut direct_command,
         context,
         env,
         continues,
@@ -97,8 +98,15 @@ pub(crate) fn prepare_terminal(
     }
     let shell = configured_shell();
     let mut cmd = CommandBuilder::new(&shell);
-    if let Some(command) = direct_command.as_ref() {
-        configure_interactive_command(&mut cmd, &shell, command);
+    if let Some(command) = direct_command.as_mut() {
+        let agent = context
+            .as_ref()
+            .and_then(|context| context.agent_type.as_deref());
+        let guarded = shim::arguments(agent.unwrap_or_default()).iter();
+        command
+            .args
+            .splice(0..0, guarded.map(|arg| (*arg).to_owned()));
+        configure_interactive_command(&mut cmd, &shell, command, shim::folder());
     }
     configure_pty_environment(
         &mut cmd,
@@ -113,7 +121,11 @@ pub(crate) fn prepare_terminal(
     owner.account_home = variable
         .and_then(|variable| env.get(variable))
         .map(|home| account_dir(home));
-    for (key, value) in env {
+    let guard = match direct_command {
+        Some(_) => shim::environment(env.get("PATH").map(String::as_str)),
+        None => Vec::new(),
+    };
+    for (key, value) in env.into_iter().chain(guard) {
         cmd.env(key, value);
     }
     let shell_integration = if shell_integration_requested(

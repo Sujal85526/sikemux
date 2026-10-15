@@ -1,29 +1,75 @@
 //! Git commands an agent may not run in a checkout other agents share, since
 //! each would take in or throw away their uncommitted work along with its own.
+//! In a linked worktree of its own an agent is alone, and may run them.
 
-/// Why `command`, a shell command line, may not run, if it may not.
-pub(crate) fn refusal(command: &str) -> Option<String> {
+pub mod shim;
+
+use std::path::Path;
+use std::process::{Command, Stdio};
+
+/// Why `command`, a shell command line run in `cwd`, may not run, if it may not.
+pub(crate) fn refusal(command: &str, cwd: &Path) -> Option<String> {
     segments(command).iter().find_map(|words| {
         let words = command_words(words)?;
         if let [shell, flag, script, ..] = words {
             if is_shell(shell) && flag.starts_with('-') && flag.ends_with('c') {
-                return refusal(script);
+                return refusal(script, cwd);
             }
         }
         let (first, args) = words.split_first()?;
         if base_name(first) != "git" {
             return None;
         }
-        let args = git_args(args);
-        let why = sweeping(args)?;
-        let shown = format!("git {}", args.join(" "));
-        Some(format!(
-            "Sikemux blocked `{shown}`: it {why}, and other agents share this checkout. Commit your own lines with the git_commit tool, and stage or restore files by path."
-        ))
+        let mut git = sikemux_process::user_environment::command("git");
+        git.current_dir(cwd);
+        refused(args, false, git)
     })
 }
 
-fn sweeping(args: &[String]) -> Option<&'static str> {
+/// Why `git` with `args` may not run, if it may not. `git` is the real git,
+/// started where the command runs, to find the repository with.
+/// `private_index` says the command stages into an index of its own rather
+/// than the checkout's.
+fn refused(args: &[String], private_index: bool, git: Command) -> Option<String> {
+    let subcommand = git_args(args);
+    let why = sweeping(subcommand, private_index)?;
+    let options = args
+        .get(..args.len() - subcommand.len())
+        .unwrap_or_default();
+    if in_linked_worktree(git, options) {
+        return None;
+    }
+    let shown = format!("git {}", subcommand.join(" "));
+    Some(format!(
+        "Sikemux refused `{shown}`: it {why}, and other agents work in this checkout too. Commit your own lines with the git_commit tool, and stage or restore files by path. In a git worktree of your own these commands are allowed."
+    ))
+}
+
+/// Whether `git`, given the global `options`, runs in a linked worktree,
+/// which has its own index and files, rather than in a repository's main
+/// checkout.
+fn in_linked_worktree(mut git: Command, options: &[String]) -> bool {
+    let output = git
+        .args(options)
+        .args([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-dir",
+            "--git-common-dir",
+        ])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output();
+    let Ok(output) = output else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut dirs = text.lines();
+    output.status.success()
+        && matches!((dirs.next(), dirs.next()), (Some(own), Some(common)) if own != common)
+}
+
+fn sweeping(args: &[String], private_index: bool) -> Option<&'static str> {
     let (sub, rest) = args.split_first()?;
     let everything = |paths: &[String]| {
         paths
@@ -44,6 +90,7 @@ fn sweeping(args: &[String]) -> Option<&'static str> {
     };
     let long = |name: &str| flags_before_paths(rest).any(|flag| flag == name);
     match sub.as_str() {
+        "add" if private_index => None,
         "add" if short('A', "") || short('u', "") || long("--all") || long("--update") => {
             Some("stages every change in the checkout")
         }
