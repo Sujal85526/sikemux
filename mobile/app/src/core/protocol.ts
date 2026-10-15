@@ -265,7 +265,11 @@ function readCore<T>(json: string): T {
   return JSON.parse(json, (_key, value) => (value === null ? undefined : value)) as T;
 }
 
-export const readView = (json: string) => readCore<Snapshot>(json);
+/** Hosts from before the inbox send none, which reads as an empty one. */
+export function readView(json: string): Snapshot {
+  const view = readCore<Omit<Snapshot, 'inbox'> & { inbox?: Inbox }>(json);
+  return { ...view, inbox: view.inbox ?? { items: [], working: 0 } };
+}
 
 function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
