@@ -10,6 +10,7 @@ import { TerminalPane } from "../terminal/TerminalPane";
 import { isResumableSession } from "../terminal/sessionResume";
 import { AgentIcon, IconAgent, IconMoreVertical, IconPanelRight, IconPlug, IconTerminal } from "../ui/Icons";
 import { useStore } from "../state/store";
+import { agentDisplay } from "../state/agentStatus";
 import { shownDeskPaneId } from "../state/selectors";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentLabel } from "../agents/AgentLabel";
@@ -90,20 +91,22 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const [view, setView] = useState<AgentView>(supportsGui && !isResumableSession(agent.ptyId) ? "gui" : "tui");
     const [switching, setSwitching] = useState(false);
     const [chatBusy, setChatBusy] = useState(false);
+    const working = useStore((state) => agentDisplay(state.agentActivity[agent.id]?.state).group === "working");
+    const busy = chatBusy || working;
     const [renaming, setRenaming] = useState(false);
     const { recovery, generation } = useTuiResume(agent.id);
     const cwd = agentCwd(agent, session);
 
     const switchView = useCallback(
         async (next: AgentView) => {
-            if (next === view || switching || (view === "gui" && chatBusy)) return;
+            if (next === view || switching || busy) return;
             setSwitching(true);
             if (view === "gui") await acpApi.stop(agent.id).catch(() => {});
             clearTuiRecovery(agent.id);
             setView(next);
             window.requestAnimationFrame(() => setSwitching(false));
         },
-        [agent.id, chatBusy, switching, view],
+        [agent.id, busy, switching, view],
     );
 
     /* The window layer stays mounted so a live agent keeps its process, so the
@@ -168,8 +171,8 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             <button
                                 type="button"
                                 aria-pressed={view === "gui"}
-                                disabled={!supportsGui || switching}
-                                title="Open the built-in agent chat"
+                                disabled={!supportsGui || switching || (view === "tui" && busy)}
+                                title={view === "tui" && busy ? "Wait for the agent to finish before opening GUI" : "Open the built-in agent chat"}
                                 onClick={() => void switchView("gui")}>
                                 <IconAgent size={13} />
                                 <span>GUI</span>
@@ -177,8 +180,8 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                             <button
                                 type="button"
                                 aria-pressed={view === "tui"}
-                                disabled={switching || (view === "gui" && chatBusy)}
-                                title={chatBusy ? "Stop the current turn before opening TUI" : "Open native agent TUI"}
+                                disabled={switching || (view === "gui" && busy)}
+                                title={view === "gui" && busy ? "Wait for the agent to finish before opening TUI" : "Open native agent TUI"}
                                 onClick={() => void switchView("tui")}>
                                 <IconTerminal size={13} />
                                 <span>TUI</span>
