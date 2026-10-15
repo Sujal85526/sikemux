@@ -150,10 +150,11 @@ const budgets = [
     // Main went past this budget on its own; this restores the room.
     // Agents messaging, asking and spawning each other added real chat UI: questions, the @ menu's agents and earlier chats.
     // The model picker's row of who pays for a chat's turns added the last 2 KB.
+    // Network failures with their Retry, and Retrying beside Reconnecting, added more.
     label: "ACP chat lazy chunk",
     pattern: /^(?:AgentSurface|chat)-.*\.js$/,
-    raw: 172_000,
-    gzip: 54_000,
+    raw: 176_000,
+    gzip: 55_000,
   },
   {
     // Shiki, its JavaScript regex engine and vscode-textmate, with no
@@ -229,10 +230,11 @@ const budgets = [
     // Main went past this budget on its own; this restores the room.
     // Agents messaging, asking and spawning each other added real chat UI and its styles.
     // The masked field a secret question is answered in added the last 1 KB.
+    // A network failure's own row and its Retry added a little more.
     label: "ACP chat CSS",
     pattern: /^(?:AgentSurface|chat)-.*\.css$/,
-    raw: 58_000,
-    gzip: 10_500,
+    raw: 59_000,
+    gzip: 10_700,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
