@@ -13,7 +13,9 @@ import {
   type BoardColumn,
   type ProjectBoard,
 } from '@mac/agents/agentBoard';
+import { kindLabel, messageRows, messageTone, outcomeLabel, type AgentMessageLog } from '@mac/agents/agentMessages';
 import type { AgentQuestion } from '@mac/agents/agentQuestions';
+import { formatAge } from '@mac/lib/format';
 import type { ProjectInfo, Snapshot } from '@/core/protocol';
 import { useHostQuestions } from '@/devices/questions';
 import { chatDisplay, folder } from '@/devices/words';
@@ -108,10 +110,10 @@ function OneBoard({
   if (read.problem) return <Problem text={read.problem} />;
   if (!read.board) return null;
   const cards = [...read.board.cards].sort((a, b) => b.updatedAt - a.updatedAt);
-  if (!cards.length) return <Text style={styles.empty}>{`No cards on ${scope.name}'s board.`}</Text>;
   const byId = new Map(cards.map((card) => [card.id, card]));
   return (
     <>
+      {cards.length ? null : <Text style={styles.empty}>{`No cards on ${scope.name}'s board.`}</Text>}
       {COLUMNS.map(([column, label]) => {
         const shown = cards.filter((card) => cardColumn(card, questions) === column);
         if (!shown.length) return null;
@@ -126,7 +128,54 @@ function OneBoard({
           </View>
         );
       })}
+      <BetweenAgents connection={connection} snapshot={snapshot} project={scope.path} />
     </>
+  );
+}
+
+const MESSAGES_SHOWN = 20;
+
+/** Who messaged whom among the project's agents, read again whenever the host logs another. */
+function BetweenAgents({ connection, snapshot, project }: { connection: ConnectionLike | undefined; snapshot: Snapshot; project: string }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const [logged, setLogged] = useState(project);
+  const latest = snapshot.inbox.agentMessages?.[logged] ?? 0;
+  const read = useCall<AgentMessageLog>(connection, 'agentMessages', { project, limit: MESSAGES_SHOWN * 5 }, String(latest));
+  const answered = read.board?.project;
+  if (answered && answered !== logged) setLogged(answered);
+  if (!read.board) return null;
+  const agentOf = (id: string) => {
+    const chat = snapshot.chats.find((known) => known.agentId === id);
+    const terminal = snapshot.sessions.find((session) => session.agentId === id);
+    return { name: chat?.name ?? terminal?.agentName, cli: chat?.provider ?? terminal?.agentType };
+  };
+  const rows = messageRows(read.board.entries, (id) => agentOf(id).name).slice(0, MESSAGES_SHOWN);
+  if (!rows.length) return null;
+  return (
+    <View>
+      <SectionLabel>Between agents</SectionLabel>
+      <Rows>
+        {rows.map((row) => {
+          const cli = row.from ? agentOf(row.from).cli : undefined;
+          const tone = messageTone(row.outcome);
+          return (
+            <Row
+              key={row.key}
+              mark={cli ? <AgentIcon provider={cli} size={20} /> : <Dot color={colors.rest} size={9} hollow />}
+              title={`${row.fromName} to ${row.toName}`}
+              detail={
+                <>
+                  {kindLabel(row.kind)} ·{' '}
+                  <Text style={tone === 'held' ? styles.held : tone === 'failed' ? styles.failed : undefined}>{outcomeLabel(row)}</Text>
+                </>
+              }
+              end={<Text style={styles.ago}>{formatAge(row.sentAt)}</Text>}
+            />
+          );
+        })}
+      </Rows>
+    </View>
   );
 }
 
@@ -272,5 +321,8 @@ const makeStyles = (colors: Palette) => {
     empty: { ...type.meta, textAlign: 'center', paddingTop: 40 },
     owner: { fontFamily: fonts.uiMedium, color: colors.secondary },
     key: { fontFamily: fonts.mono, fontSize: 11 },
+    held: { color: colors.warn },
+    failed: { color: colors.danger },
+    ago: { ...type.meta, fontVariant: ['tabular-nums'] },
   });
 };

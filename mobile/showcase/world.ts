@@ -403,3 +403,24 @@ export function permissionPayload(chat: DemoChat): Record<string, unknown> | und
 export function setupOf(chat: DemoChat) {
   return { configOptions: MODELS[chat.provider] ?? [] };
 }
+
+const MINUTE = 60_000;
+const logged = (ago: number, from: string, to: string, kind: string, outcome: string) => ({
+  at: Date.now() - ago * MINUTE,
+  from,
+  kind,
+  to,
+  outcome,
+});
+
+/** acme-shop's log of messages between its agents, newest first. */
+export const MESSAGES = [
+  logged(1, 'chat-dark-mode', 'chat-refunds', 'message', 'steered'),
+  logged(3, 'chat-login-check', 'chat-dark-mode', 'question', 'waiting'),
+  logged(6, 'chat-login', 'chat-refunds', 'answer', 'delivered'),
+  logged(9, 'chat-refunds', 'chat-dark-mode', 'report', 'newTurn'),
+  logged(14, 'chat-login', 'chat-refunds', 'answer', 'waiting'),
+  logged(22, 'chat-dark-mode', 'chat-login-check', 'message', 'dropped'),
+  logged(31, 'chat-dark-mode', 'chat-login-check', 'message', 'waiting'),
+  logged(52, 'chat-dark-mode', 'chat-login', 'message', 'refused'),
+];

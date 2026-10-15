@@ -29,6 +29,7 @@ on:
       - "src/agents/agentQuestions.ts"
       - "src/agents/catalog.ts"
       - "src/agents/agentBoard.ts"
+      - "src/agents/agentMessages.ts"
       - "src/agents/teams.ts"
       - "src/agents/generated/**"
       - "src/chat/**"

@@ -178,7 +178,12 @@ export type InboxItem = {
 };
 
 /** The host's inbox, ranked by the core. */
-export type Inbox = { items: InboxItem[]; working: number };
+export type Inbox = {
+  items: InboxItem[];
+  working: number;
+  /** When each project, by its path, last logged a message between its agents. */
+  agentMessages?: Record<string, number>;
+};
 
 /** What the `digest` call says happened since the person left. */
 export type Digest = { since?: number; away: boolean; finished: InboxItem[]; failed: InboxItem[]; waiting: InboxItem[] };
@@ -255,7 +260,10 @@ export function keepUnchanged(previous: Snapshot | undefined, next: Snapshot): S
 
 function keepInbox(previous: Inbox, next: Inbox): Inbox {
   const items = keepItems(previous.items, next.items, (item) => item.id);
-  return items === previous.items && previous.working === next.working ? previous : { items, working: next.working };
+  const agentMessages = same(previous.agentMessages, next.agentMessages) ? previous.agentMessages : next.agentMessages;
+  return items === previous.items && previous.working === next.working && agentMessages === previous.agentMessages
+    ? previous
+    : { items, working: next.working, agentMessages };
 }
 export const readHost = (json: string) => readCore<HostInfo>(json);
 export const readDigest = (json: string) => readCore<Digest>(json);

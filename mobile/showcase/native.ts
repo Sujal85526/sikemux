@@ -10,6 +10,7 @@ import {
   CORE,
   HOST,
   LAUNCHERS,
+  MESSAGES,
   PANE_PICTURE,
   PROJECTS,
   QUESTIONS,
@@ -236,6 +237,10 @@ class Connection {
       return JSON.stringify(board ?? { ...BOARDS[0], project, cards: [] });
     }
     if (method === 'questions') return JSON.stringify(QUESTIONS);
+    if (method === 'agentMessages') {
+      const { project } = JSON.parse(params) as { project: string };
+      return JSON.stringify({ project, entries: project === BOARDS[0].project ? MESSAGES : [] });
+    }
     if (method === 'digest') return JSON.stringify({ away: false, finished: [], failed: [], waiting: [] });
     throw new Error(`the showcase host does not know ${method}`);
   }
