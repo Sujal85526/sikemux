@@ -32,7 +32,14 @@ MCP server every agent is launched with.
   mentions in the composer, tabs and the rail all use the name.
 - **A tool call proves who is calling.** Each agent is launched with its own secret, and
   the core checks it on every harness call. An agent id the caller merely states is not
-  trusted.
+  trusted. The key the secrets come from lives only in the core's memory and passes to a
+  new core through a pipe on upgrade, so no agent can work out another's secret from a file.
+- **Only Sikemux's own window and notch act as the person.** The core checks the code
+  signature of the process on the other end of its socket. Answering questions and
+  permissions, adding board cards as the person, board settings and agent secrets need a
+  verified window or notch; an agent's shell may read but not act as the person. A build
+  not signed by Sikemux's team trusts the app and notch in its own bundle by path, as a dev
+  build does; a team-signed build never falls back to a path.
 - **Messages are text, labelled as coming from an agent.** A message can never answer a
   permission prompt or change configuration. Any agent may message any other, across
   projects, except Auto's reviewer: it is the one agent others cannot message, read or
@@ -40,7 +47,10 @@ MCP server every agent is launched with.
 - **Delivery steers first.** A busy agent that can steer reads the message at its next
   tool call; an idle one gets it as a new turn. Only an agent that can do neither, such as
   a terminal agent mid-turn, has it queued in the core, up to ten, and delivered when its
-  turn ends.
+  turn ends. A worker's report to its lead is never turned away; only its newest waits.
+  Two agents that keep messaging each other with no other work between them are held after
+  a few rounds, and the person's inbox names them. Each project keeps a bounded log of who
+  messaged whom and what became of it, never the text.
 - **A spawned agent is a full agent.** It opens in its own tab, takes its lead's account
   and permission mode (the lead may pick the CLI and model, never the mode), and is
   recorded with the agent that spawned it. When its turn ends, its final answer goes to its
@@ -48,8 +58,11 @@ MCP server every agent is launched with.
   agents per project.
 - **Questions go to the lead first.** An `ask` tool, which Claude's own `AskUserQuestion`
   routes into, sends a worker's question to its lead; the lead answers or passes it to the
-  person. A worker that is not blocked goes ahead on a stated assumption, and a card with an
-  open question or an unseen assumption does not merge.
+  person. Codex's and Muse's own questions go the same way. A lead's message closes only the
+  question it names as answering. A secret question goes straight to the person, and its
+  answer reaches the agent as a private file, never as text in a transcript or log. A worker
+  that is not blocked goes ahead on a stated assumption, and a card whose team has an open
+  question or an unseen assumption does not merge.
 - **Auto's merge needs a blind review beside the questions gate.** Once a card's checks pass,
   Auto starts a reviewer of its own on another CLI than the builder's, with no lead and no
   session to resume. It reads only the card, its acceptance criteria, which only the person
@@ -67,8 +80,10 @@ MCP server every agent is launched with.
 
 - Every launch path that hands an agent `sikemux-tools` also hands it its secret: terminal
   agents, chats the app starts and chats a device starts.
-- The core keeps per-agent names, parent links and queued messages, and they survive a
-  window reload and a core upgrade.
+- The core keeps per-agent names, parent links, queued messages and open questions on disk,
+  so they survive a window reload, a core upgrade, a crash and a restart.
+- Messages, questions and the board move on events and deadlines of their own, not a
+  polling tick.
 - The rail lists workers flat, right after their lead, joined by the lead's tree line.
 - Phones reach the same tools as `Call` methods (ADR 0010), never new wire requests.
 - A lead that is compacted or closed does not lose the plan: it lives on the board.
