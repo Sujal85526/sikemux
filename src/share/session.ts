@@ -151,6 +151,8 @@ export class ShareSession {
     private cursor: Cursor | null = null;
     private earlier: ShareSnapshot["earlier"] = "idle";
     private pages = 0;
+    /** Everything the chat on screen was built from, oldest first, played on to each earlier page. */
+    private held: ChatAction[] = [];
     private snap: ShareSnapshot;
 
     private socket: ShareSocket | null = null;
@@ -216,7 +218,9 @@ export class ShareSession {
                 return;
             }
             this.pages += 1;
-            const messages = earlierMessages(actionsOf(page.events), this.pages);
+            const earlier = { number: this.pages, actions: actionsOf(page.events) };
+            const messages = earlierMessages(earlier, this.held);
+            this.held = [...earlier.actions, ...this.held];
             this.replayed = new Set([...this.replayed, ...messages.map((message) => message.id)]);
             this.agent = withEarlier(this.agent, messages);
             this.cursor = page.olderBefore === null || page.olderBefore === undefined ? null : { feed: cursor.feed, before: page.olderBefore };
@@ -422,6 +426,7 @@ export class ShareSession {
         if (!this.pending.length) return;
         const batch = this.pending;
         this.pending = [];
+        this.held.push(...batch);
         this.agent = batch.reduce(chatReducer, this.agent);
         this.emit();
     };
@@ -448,7 +453,8 @@ export class ShareSession {
             return;
         }
         const start = recordOf(attachment.start);
-        let agent = actionsOf(attachment.replay).reduce(chatReducer, initialChatState);
+        this.held = actionsOf(attachment.replay);
+        let agent = this.held.reduce(chatReducer, initialChatState);
         agent = chatReducer(agent, {
             type: "ready",
             capabilities: recordOf(start?.capabilities) ?? {},
