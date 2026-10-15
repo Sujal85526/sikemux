@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 use crate::acp::account::{Failure, FailureKind};
 
 use super::super::super::feed;
+use super::super::super::reset::{WallClock, Zone};
 use super::super::super::states::{self, Held, Subagent, Task as TaskState};
 use super::super::super::Respond;
 use super::super::json::{self, text};
@@ -227,7 +228,7 @@ fn failure_of(message: &Value) -> Option<Failure> {
             kind: FailureKind::Limit,
             title: title("The Claude account has no available quota."),
             details: None,
-            resets_at: None,
+            resets_at: limit_resets_at(message, &said),
         });
     }
     let error = text(message, "error")?;
@@ -240,8 +241,102 @@ fn failure_of(message: &Value) -> Option<Failure> {
         kind,
         title: title("The model provider reported an error."),
         details: None,
-        resets_at: None,
+        resets_at: (kind == FailureKind::Limit)
+            .then(|| limit_resets_at(message, &said))
+            .flatten(),
     })
+}
+
+/// When the limit that stopped a turn resets, in Unix milliseconds, from the
+/// limit Claude Code attaches to the message, else from its text.
+fn limit_resets_at(message: &Value, said: &str) -> Option<u64> {
+    let Some(limit) = message.pointer("/api_error_params/rate_limit_info") else {
+        return resets_in_text(said);
+    };
+    let rejected = |status, at| {
+        (text(limit, status) == Some("rejected"))
+            .then(|| limit.get(at)?.as_u64())
+            .flatten()
+    };
+    let seconds = [
+        rejected("status", "resetsAt"),
+        rejected("overageStatus", "overageResetsAt"),
+    ];
+    seconds.into_iter().flatten().min()?.checked_mul(1000)
+}
+
+/// The reset time in a limit's text: Unix seconds after a `|`, or a clock
+/// such as "resets 3pm (Europe/London)" or "resets Oct 17, 2027, 3:30pm".
+fn resets_in_text(said: &str) -> Option<u64> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let epoch = said.trim().rsplit_once('|');
+    if let Some(seconds) = epoch.and_then(|(_, seconds)| seconds.parse::<u64>().ok()) {
+        return seconds.checked_mul(1000);
+    }
+    let (_, rest) = said.split_once("resets ")?;
+    let rest = rest.strip_prefix("at ").unwrap_or(rest);
+    let end = ["am", "pm"]
+        .iter()
+        .filter_map(|half| rest.find(half))
+        .min()?
+        + 2;
+    let (stamp, after) = rest.split_at(end);
+    let zone = match after
+        .strip_prefix(" (")
+        .and_then(|after| after.split_once(')'))
+    {
+        None => Zone::Host,
+        Some(("UTC", _)) => Zone::Utc,
+        Some((zone, _)) if host_zone().as_deref() == Some(zone) => Zone::Host,
+        Some(_) => return None,
+    };
+    let mut parts: Vec<&str> = stamp.split(", ").collect();
+    let clock = parts.pop()?;
+    let (clock, pm) = match clock.strip_suffix("pm") {
+        Some(clock) => (clock, true),
+        None => (clock.strip_suffix("am")?, false),
+    };
+    let (hour, minute) = clock.split_once(':').unwrap_or((clock, "0"));
+    let (hour, minute) = (hour.parse::<i32>().ok()?, minute.parse::<i32>().ok()?);
+    if !(1..=12).contains(&hour) || !(0..60).contains(&minute) {
+        return None;
+    }
+    let date = match parts.as_slice() {
+        [] => None,
+        [day] | [day, _] => {
+            let (month, day) = day.split_once(' ')?;
+            let month = MONTHS.iter().position(|name| *name == month)? as i32 + 1;
+            let day = day
+                .parse::<i32>()
+                .ok()
+                .filter(|day| (1..=31).contains(day))?;
+            let year = match parts.get(1) {
+                Some(year) => Some(year.parse::<i32>().ok()?),
+                None => None,
+            };
+            Some((year, month, day))
+        }
+        _ => return None,
+    };
+    let hour = hour % 12 + if pm { 12 } else { 0 };
+    WallClock {
+        zone,
+        date,
+        hour,
+        minute,
+    }
+    .unix_ms()
+}
+
+/// The IANA name of this host's time zone, as Claude Code labels its times.
+fn host_zone() -> Option<String> {
+    if let Ok(zone) = std::env::var("TZ") {
+        return Some(zone.trim_start_matches(':').to_owned());
+    }
+    let link = std::fs::read_link("/etc/localtime").ok()?;
+    Some(link.to_str()?.split_once("zoneinfo/")?.1.to_owned())
 }
 
 fn stop_reason(result: &Value) -> &'static str {
@@ -1611,6 +1706,52 @@ mod tests {
         let failure = failure_of(&message).unwrap();
         assert_eq!(failure.kind, FailureKind::Limit);
         assert_eq!(failure.title, "You've hit your limit · resets 3pm");
+    }
+
+    #[test]
+    fn a_usage_limit_says_when_it_resets() {
+        let now = crate::server::remote::unix_ms() / 1000;
+        let resets = |text: &str, params: Value| {
+            let message = json!({
+                "type": "assistant", "error": "rate_limit", "api_error_params": params,
+                "message": { "model": "<synthetic>", "content": [{ "type": "text", "text": text }] },
+            });
+            failure_of(&message).unwrap().resets_at
+        };
+        let reported = json!({ "rate_limit_info": {
+            "status": "rejected", "resetsAt": now + 3600, "rateLimitType": "five_hour",
+            "overageStatus": "rejected", "overageDisabledReason": "org_level_disabled",
+        } });
+        assert_eq!(
+            resets(
+                "You've hit your session limit · resets 3pm (America/Los_Angeles)",
+                reported
+            ),
+            Some((now + 3600) * 1000)
+        );
+
+        let text = |text: &str| resets(text, Value::Null);
+        assert_eq!(
+            text("You've hit your weekly limit · resets Oct 17, 2027, 3:30pm (UTC)"),
+            Some(1_823_787_000_000)
+        );
+        let three = now - now % 86_400 + 15 * 3600;
+        let next_three = if three > now { three } else { three + 86_400 };
+        assert_eq!(
+            text("You've hit your session limit · resets 3pm (UTC)"),
+            Some(next_three * 1000)
+        );
+        let local = text("You've hit your limit · resets 3pm").unwrap();
+        assert!(local > now * 1000 && local <= (now + 86_400) * 1000);
+        assert_eq!(
+            text("Claude AI usage limit reached|1823787000"),
+            Some(1_823_787_000_000)
+        );
+        assert_eq!(
+            text("You've hit your limit · resets 3pm (Mars/Olympus)"),
+            None
+        );
+        assert_eq!(text("Your org is out of usage · contact your admin"), None);
     }
 
     #[test]

@@ -399,6 +399,20 @@ async fn a_claude_account_out_of_usage_fails_the_turn_as_a_limit() {
         "You've hit your limit · resets 3pm"
     );
     assert!(!chat.text().contains("hit your limit"));
+    let in_an_hour = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_millis() as u64
+        + 3_600_000;
+    let resumes_at = |event: &ChatEvent| {
+        event.payload["updates"]
+            .as_array()?
+            .iter()
+            .find_map(|update| update.pointer("/update/resumesAt")?.as_u64())
+    };
+    let notice = chat.until(|event| resumes_at(event).is_some()).await;
+    let resumes_at = resumes_at(&notice).expect("time");
+    assert!(resumes_at.abs_diff(in_an_hour) < 30_000);
 }
 
 #[tokio::test(flavor = "multi_thread")]

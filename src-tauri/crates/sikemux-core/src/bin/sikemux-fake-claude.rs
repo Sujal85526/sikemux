@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -258,10 +258,17 @@ impl Claude {
                 self.finish(uuid, None);
             }
             "limit" => {
+                let resets_at = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    + 3600;
                 self.send(json!({
                     "type": "assistant",
                     "parent_tool_use_id": null,
                     "error": "rate_limit",
+                    "api_error": "usage_limit_reached",
+                    "api_error_params": { "rate_limit_info": { "status": "rejected", "resetsAt": resets_at, "rateLimitType": "five_hour" } },
                     "message": { "id": message_id, "model": "<synthetic>", "role": "assistant", "content": [{ "type": "text", "text": "You've hit your limit · resets 3pm" }] },
                 }));
                 self.finish(uuid, Some("You've hit your limit · resets 3pm"));

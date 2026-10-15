@@ -306,7 +306,8 @@ fn when(at: u64) -> String {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
-    let (Some(then), Some(now)) = (local(at), local(unix_ms())) else {
+    let (Some(then), Some(now)) = (calendar(at, Zone::Host), calendar(unix_ms(), Zone::Host))
+    else {
         return String::new();
     };
     let clock = format!("at {:02}:{:02}", then.tm_hour, then.tm_min);
@@ -320,11 +321,66 @@ fn when(at: u64) -> String {
     format!("on {} {month} {clock}", then.tm_mday)
 }
 
-fn local(at: u64) -> Option<libc::tm> {
+/// The zone a reset time an agent writes out is in.
+#[derive(Clone, Copy)]
+pub(super) enum Zone {
+    Host,
+    Utc,
+}
+
+/// A reset time as an agent writes it out, to the minute.
+pub(super) struct WallClock {
+    pub zone: Zone,
+    /// Year, month from 1 and day, when it names a day; the year defaults to this one.
+    pub date: Option<(Option<i32>, i32, i32)>,
+    pub hour: i32,
+    pub minute: i32,
+}
+
+impl WallClock {
+    /// In Unix milliseconds: on its day, else the next time the clock reads
+    /// it. `None` for a day already past.
+    pub(super) fn unix_ms(&self) -> Option<u64> {
+        let now = unix_ms();
+        match self.on_day(now, 0)? {
+            at if at > now => Some(at),
+            _ if self.date.is_some() => None,
+            _ => self.on_day(now, 1).filter(|at| *at > now),
+        }
+    }
+
+    fn on_day(&self, now: u64, days_later: i32) -> Option<u64> {
+        let mut tm = calendar(now, self.zone)?;
+        if let Some((year, month, day)) = self.date {
+            if let Some(year) = year {
+                tm.tm_year = year - 1900;
+            }
+            tm.tm_mon = month - 1;
+            tm.tm_mday = day;
+        }
+        tm.tm_mday += days_later;
+        (tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_isdst) = (self.hour, self.minute, 0, -1);
+        // SAFETY: `tm` is a live value for the length of the call.
+        let at = unsafe {
+            match self.zone {
+                Zone::Host => libc::mktime(&mut tm),
+                Zone::Utc => libc::timegm(&mut tm),
+            }
+        };
+        u64::try_from(at).ok()?.checked_mul(1000)
+    }
+}
+
+fn calendar(at: u64, zone: Zone) -> Option<libc::tm> {
     let seconds = (at / 1000) as libc::time_t;
     // SAFETY: `tm` is plain data, for which all zeroes is a valid value.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     // SAFETY: both pointers point at live values for the length of the call.
-    let filled = unsafe { !libc::localtime_r(&seconds, &mut tm).is_null() };
-    filled.then_some(tm)
+    let filled = unsafe {
+        match zone {
+            Zone::Host => libc::localtime_r(&seconds, &mut tm),
+            Zone::Utc => libc::gmtime_r(&seconds, &mut tm),
+        }
+    };
+    (!filled.is_null()).then_some(tm)
 }
