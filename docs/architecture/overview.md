@@ -74,6 +74,12 @@ never loads WebKit. [ADR 0006](./0006-background-core.md) records why.
   how it starts each agent (`server/workspace.rs`, `src/shell/RemoteWorkspaceBridge.tsx`),
   so a device can start a chat with the window closed. [ADR 0007](./0007-remote-access-over-iroh.md)
   records the design.
+- **Linked hosts.** Hosts on one account link with each other with the same join ticket,
+  allowed once by the other host's owner, and ask each other things over their own ALPN
+  (`server/hosts/`): an agent here starts workers there with `agent_spawn` and `host`,
+  messages, questions and reports cross the link, and a worker's commits come back to a
+  branch in its lead's checkout. [ADR 0013](./0013-hosts-link-to-run-agents-for-each-other.md)
+  records the design.
 
 ### The CLI broker
 

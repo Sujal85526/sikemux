@@ -97,6 +97,16 @@ MCP server every agent is launched with.
 - A reviewer and its checkout go when its review ends, when its card leaves Auto, or, after a
   restart that lost it, when Auto starts the review again on the same commit.
 
+## Notes
+
+- 2026-10-15: `agent_spawn` takes `host`, a host linked with this one
+  ([ADR 0013](./0013-hosts-link-to-run-agents-for-each-other.md)), and starts the worker there
+  on that host's own sign-in, in a checkout of its own of the lead's code. The worker is
+  addressed by its host and its agent id and shown as "Otter on studio". Messages, reports,
+  questions, `agent_read` and `agent_wait` work across the link under the same rules, the caps
+  count the team on every host, and the worker's commits come back to a branch in the lead's
+  checkout before each report.
+
 ## Alternatives considered
 
 - **A per-agent secret in the environment.** Shipped first and replaced: on macOS any
