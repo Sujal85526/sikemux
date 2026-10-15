@@ -213,30 +213,46 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
   const [away, setAway] = useState(false);
   const awayRef = useRef(false);
   const bottom = useBottomGap();
-  // A finished turn folds and shrinks the chat with no scroll, which can bring a reader to the end.
-  // Only a reader already away is checked: anyone at the end is kept there by the list.
+  // Only the reader's own scrolling takes them away from the end. Until it does, whatever grows or
+  // shrinks the chat keeps them at the end, however much arrives at once.
   const metrics = useRef({ offset: 0, content: 0, viewport: 0 });
+  const touching = useRef(false);
   const measureAway = () => {
     const { offset, content, viewport } = metrics.current;
     const now = content - offset - viewport > viewport * FOLLOW;
     awayRef.current = now;
     setAway(now);
   };
-  const onScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const remember = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
     metrics.current = {
       offset: nativeEvent.contentOffset.y,
       content: nativeEvent.contentSize.height,
       viewport: nativeEvent.layoutMeasurement.height,
     };
+  };
+  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    remember(event);
+    if (touching.current || awayRef.current) measureAway();
+  };
+  const startTouching = () => {
+    touching.current = true;
+  };
+  const stopTouching = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    remember(event);
     measureAway();
+    touching.current = false;
+  };
+  const keepAtEnd = () => {
+    if (awayRef.current) measureAway();
+    else if (!touching.current) list.current?.scrollToEnd({ animated: false });
   };
   const onContentSizeChange = (_width: number, height: number) => {
     metrics.current.content = height;
-    if (awayRef.current) measureAway();
+    keepAtEnd();
   };
   const onListLayout = ({ nativeEvent }: LayoutChangeEvent) => {
     metrics.current.viewport = nativeEvent.layout.height;
-    if (awayRef.current) measureAway();
+    keepAtEnd();
   };
   useEffect(() => {
     // The keyboard takes the bottom of the screen; someone reading the latest keeps reading it.
@@ -245,7 +261,11 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     });
     return () => shown.remove();
   }, []);
-  const toEnd = () => requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
+  const toEnd = () => {
+    awayRef.current = false;
+    setAway(false);
+    requestAnimationFrame(() => list.current?.scrollToEnd({ animated: true }));
+  };
   const activity = activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state.messages));
   const title = state.title ?? (info ? chatTitle(info) : agentLabel(provider));
   const watchOnly = access === 'watch';
@@ -426,15 +446,13 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                         </>
                       }
                       contentContainerStyle={styles.content}
-                      maintainVisibleContentPosition={{
-                        startRenderingFromBottom: true,
-                        autoscrollToBottomThreshold: FOLLOW,
-                        animateAutoScrollToBottom: false,
-                      }}
+                      maintainVisibleContentPosition={{ startRenderingFromBottom: true }}
                       onScroll={onScroll}
+                      onScrollBeginDrag={startTouching}
+                      onMomentumScrollBegin={startTouching}
                       // Throttled scroll events can miss where a drag or fling stops, leaving the arrow up at the end.
-                      onScrollEndDrag={onScroll}
-                      onMomentumScrollEnd={onScroll}
+                      onScrollEndDrag={stopTouching}
+                      onMomentumScrollEnd={stopTouching}
                       onContentSizeChange={onContentSizeChange}
                       onLayout={onListLayout}
                       scrollEventThrottle={100}
