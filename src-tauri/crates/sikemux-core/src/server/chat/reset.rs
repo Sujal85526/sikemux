@@ -269,7 +269,6 @@ async fn reset_from_usage(core: &Core, launch: &ChatLaunch) -> Option<u64> {
         .program()
         .await
         .ok()?;
-    usage::forget(provider, folder);
     usage::usage(provider, &program, folder)
         .await
         .ok()?

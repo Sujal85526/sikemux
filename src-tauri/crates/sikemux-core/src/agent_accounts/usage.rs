@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -99,13 +99,41 @@ fn rfc3339_ms(text: &str) -> Option<u64> {
     (ms >= 0.0).then_some(ms as u64)
 }
 
-/// Every lookup boots the provider's CLI, so a rail that polls gets the answer
-/// the last boot gave until it is old enough to be worth another.
+/// Every lookup boots the provider's CLI and asks the provider's usage
+/// endpoint, which refuses callers that ask often. So an answer is kept for a
+/// while, a failed one too, and a refusal for longer.
 const USAGE_TTL: Duration = Duration::from_secs(120);
+const FAILED_TTL: Duration = Duration::from_secs(60);
+const REFUSED_TTL: Duration = Duration::from_secs(600);
 
-fn usage_cache() -> &'static Mutex<HashMap<String, (Instant, Usage)>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Usage)>>> = OnceLock::new();
+type Lookup = Result<Usage, String>;
+/// When a lookup was kept, for how long, and what it answered.
+type Kept = (Instant, Duration, Lookup);
+
+fn usage_cache() -> &'static Mutex<HashMap<String, Kept>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Kept>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// One lookup at a time per account, so callers that ask together share it.
+fn in_flight(key: &str) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    locks.entry(key.to_owned()).or_default().clone()
+}
+
+fn remembered(key: &str) -> Option<Lookup> {
+    let mut cache = usage_cache().lock().ok()?;
+    cache.retain(|_, (stored, ttl, _)| stored.elapsed() < *ttl);
+    cache.get(key).map(|(_, _, lookup)| lookup.clone())
+}
+
+fn refused(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("429") || error.contains("rate limit") || error.contains("rate_limit")
 }
 
 /// The plan usage of one account, as its CLI last reported it.
@@ -115,22 +143,28 @@ pub async fn usage(
     config_path: Option<&str>,
 ) -> Result<Usage, String> {
     let key = key(provider, config_path);
-    let cached = usage_cache().lock().ok().and_then(|mut cache| {
-        cache.retain(|_, (stored, _)| stored.elapsed() < USAGE_TTL);
-        cache.get(&key).map(|(_, usage)| usage.clone())
-    });
-    if let Some(usage) = cached {
-        return Ok(usage);
+    if let Some(lookup) = remembered(&key) {
+        return lookup;
     }
-    let usage = match provider {
+    let lock = in_flight(&key);
+    let _turn = lock.lock().await;
+    if let Some(lookup) = remembered(&key) {
+        return lookup;
+    }
+    let lookup = match provider {
         "claude" => claude_usage(program, config_path).await,
         "codex" => codex_usage(program, config_path).await,
         _ => Err(format!("{provider} does not expose structured plan usage")),
-    }?;
+    };
+    let ttl = match &lookup {
+        Ok(_) => USAGE_TTL,
+        Err(error) if refused(error) => REFUSED_TTL,
+        Err(_) => FAILED_TTL,
+    };
     if let Ok(mut cache) = usage_cache().lock() {
-        cache.insert(key, (Instant::now(), usage.clone()));
+        cache.insert(key, (Instant::now(), ttl, lookup.clone()));
     }
-    Ok(usage)
+    lookup
 }
 
 /// Drops the usage remembered for one account, whose sign-in just changed.
