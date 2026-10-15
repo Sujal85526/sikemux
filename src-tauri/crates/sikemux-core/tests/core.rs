@@ -727,7 +727,7 @@ fn serve_core_for_ensure_running() {
     if let Some(socket) = std::env::var_os(SERVE_ENV) {
         init_env();
         let _ = server::run(ServerConfig {
-            idle_exit: Duration::from_millis(500),
+            idle_exit: Duration::from_secs(10),
             ..ServerConfig::new(socket.into())
         });
     }
