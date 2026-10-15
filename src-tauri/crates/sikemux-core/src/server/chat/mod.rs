@@ -433,10 +433,12 @@ impl Chat {
         if !self.turn_running() && !self.held.load(Ordering::Acquire) {
             return;
         }
-        let Some((tool_call_id, changes)) = self.edits.note(update) else {
+        let Some(core) = self.core.upgrade() else {
             return;
         };
-        if let Some(core) = self.core.upgrade() {
+        core.collisions
+            .saw(self.agent_id(), &self.launch.cwd, update);
+        if let Some((tool_call_id, changes)) = self.edits.note(update) {
             core.edits.record(self, tool_call_id, changes);
         }
     }

@@ -7,6 +7,7 @@ mod board;
 mod callers;
 mod calls;
 mod chat;
+mod collisions;
 mod connection;
 mod display;
 mod edits;
@@ -306,6 +307,7 @@ pub(crate) struct Core {
     pub(crate) names: names::Names,
     pub(crate) boards: board::Boards,
     pub(crate) edits: edits::Edits,
+    pub(crate) collisions: collisions::Collisions,
     pub(crate) notify: notify::Notifier,
     pub(crate) inbox: inbox::Inbox,
     /// Hosts linked with this one, and the agents of teams shared with them.
@@ -363,6 +365,7 @@ impl Core {
             names,
             boards: board::Boards::new(data_dir),
             edits: edits::Edits::new(data_dir, me.clone()),
+            collisions: collisions::Collisions::new(me.clone()),
             notify: notify::Notifier::default(),
             inbox: inbox::Inbox::default(),
             hosts,
@@ -1021,6 +1024,11 @@ pub(crate) async fn run_core(
             core.clone(),
             |core| &core.boards.wake,
             board::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.collisions.wake,
+            collisions::settle,
         )),
         tokio::spawn(wake::serve(
             core.clone(),

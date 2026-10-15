@@ -1547,6 +1547,22 @@ pub(crate) async fn person_settings(core: &Arc<Core>, params: Value) -> Result<V
     .map_err(|error| error.to_string())
 }
 
+/// The command that proves a change sound in `project`, when the person set
+/// one in the board's settings.
+pub(crate) fn check_command(core: &Core, project: &str) -> Option<String> {
+    core.boards
+        .lock()
+        .boards
+        .get(project)
+        .and_then(|board| board.settings.check.clone())
+}
+
+/// Runs the project's check command in `dir`: whether it passed, and the end
+/// of what it wrote.
+pub(crate) fn run_check(dir: &Path, command: &str) -> Result<(bool, String), String> {
+    git::check(dir, command)
+}
+
 /// The person has Auto try a card it gave back to them again. Answers with
 /// the board.
 pub(crate) async fn person_retry(core: &Arc<Core>, params: Value) -> Result<Value, String> {

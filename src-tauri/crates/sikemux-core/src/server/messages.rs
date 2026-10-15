@@ -37,6 +37,7 @@ const AUTO: &str = "auto";
 const HOSTS: &str = "hosts";
 const HOSTS_NOTE: &str =
     "Sent by Sikemux about a teammate on another host, not by the person or another agent.";
+const SIKEMUX: &str = "sikemux";
 /// The same text to the same agent again within this long is dropped.
 const REPEAT_WINDOW_MS: u64 = 2 * 60 * 1000;
 /// Two agents answering each other forever stop here.
@@ -74,6 +75,8 @@ pub(crate) enum Kind {
     Report,
     Question,
     Answer,
+    /// A note from Sikemux itself, such as two agents changing the same lines.
+    Notice,
 }
 
 struct Letter {
@@ -1219,6 +1222,19 @@ pub(crate) async fn answer(
     deliver(core, &target, letter).await
 }
 
+/// The agent `to`, unless it has stopped or is gone.
+async fn running(core: &Arc<Core>, to: String) -> Result<Listed, String> {
+    let core = core.clone();
+    blocking(move || {
+        listed(&core)
+            .into_iter()
+            .find(|agent| agent.agent_id == to && agent.reach != Reach::Stopped)
+            .ok_or_else(|| "that agent is not running".into())
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
 /// Hands an agent a note from Sikemux's board about its cards. Fails when the
 /// agent has stopped or is gone.
 pub(crate) async fn from_board(
@@ -1227,17 +1243,7 @@ pub(crate) async fn from_board(
     text: String,
     note: String,
 ) -> Result<Value, String> {
-    let target = {
-        let core = core.clone();
-        blocking(move || {
-            listed(&core)
-                .into_iter()
-                .find(|agent| agent.agent_id == to && agent.reach != Reach::Stopped)
-                .ok_or_else(|| "that agent is not running".into())
-        })
-        .await
-        .map_err(|error| error.to_string())?
-    };
+    let target = running(core, to).await?;
     let letter = Letter {
         kind: Kind::Message,
         from_id: BOARD.to_owned(),
@@ -1246,6 +1252,27 @@ pub(crate) async fn from_board(
         text,
         at: unix_ms(),
         note: Some(note),
+        answers: None,
+    };
+    deliver(core, &target, letter).await
+}
+
+/// Hands an agent a note from Sikemux itself, about work it shares with
+/// other agents. Fails when the agent has stopped or is gone.
+pub(crate) async fn from_sikemux(
+    core: &Arc<Core>,
+    to: String,
+    text: String,
+) -> Result<Value, String> {
+    let target = running(core, to).await?;
+    let letter = Letter {
+        kind: Kind::Notice,
+        from_id: SIKEMUX.to_owned(),
+        from_name: "Sikemux".to_owned(),
+        cli: "sikemux".to_owned(),
+        text,
+        at: unix_ms(),
+        note: Some("Sent by Sikemux itself, not by the person or another agent.".to_owned()),
         answers: None,
     };
     deliver(core, &target, letter).await
@@ -1273,17 +1300,7 @@ pub(crate) fn auto_task(text: String) -> String {
 
 /// Auto tells an agent of its own what its card needs next.
 pub(crate) async fn from_auto(core: &Arc<Core>, to: String, text: String) -> Result<Value, String> {
-    let target = {
-        let core = core.clone();
-        blocking(move || {
-            listed(&core)
-                .into_iter()
-                .find(|agent| agent.agent_id == to && agent.reach != Reach::Stopped)
-                .ok_or_else(|| "that agent is not running".into())
-        })
-        .await
-        .map_err(|error| error.to_string())?
-    };
+    let target = running(core, to).await?;
     deliver(core, &target, auto_letter(text)).await
 }
 

@@ -5844,6 +5844,7 @@ dependencies = [
  "hex",
  "iroh",
  "libc",
+ "notify",
  "portable-pty",
  "rayon",
  "reqwest",

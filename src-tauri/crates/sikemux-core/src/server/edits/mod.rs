@@ -21,8 +21,8 @@ use super::chat::Chat;
 use super::names::project_of;
 use super::remote::unix_ms;
 use super::Core;
-pub(crate) use lines::{hunk, Lines};
-pub(crate) use owners::{commit_trailers, owners, owners_at, Moved, Owners};
+pub(crate) use lines::{changed, hunk, replaced, Lines, Replaced};
+pub(crate) use owners::{authors, before, commit_trailers, git, owners, owners_at, Moved, Owners};
 
 const FOLDER: &str = "edits";
 const MAX_PER_PROJECT: usize = 5000;
@@ -254,6 +254,21 @@ impl Edits {
         })
     }
 
+    /// The edits in a project to `path`, oldest first, up to but not
+    /// including `until` when given.
+    pub(crate) fn of_file(&self, project: &str, path: &str, until: Option<&Edit>) -> Vec<Edit> {
+        let mut edits = self.matching(project, |edit| edit.path == path);
+        if let Some(until) = until {
+            let at = edits.iter().position(|edit| {
+                edit.at == until.at
+                    && edit.agent_id == until.agent_id
+                    && edit.tool_call_id == until.tool_call_id
+            });
+            edits.truncate(at.unwrap_or(edits.len()));
+        }
+        edits
+    }
+
     /// The edits in a project to any of `paths`, oldest first.
     fn touching(&self, project: &str, paths: &HashSet<String>) -> Vec<Edit> {
         self.matching(project, |edit| paths.contains(&edit.path))
@@ -316,30 +331,32 @@ impl Store {
             let Some(core) = core.upgrade() else { return };
             let projects = core.workspaces.project_paths();
             let mut batch: HashMap<String, Vec<Edit>> = HashMap::new();
-            for done in std::iter::once(first).chain(queue.try_iter()) {
+            for mut done in std::iter::once(first).chain(queue.try_iter()) {
                 let named = core.names.get(&done.agent_id);
                 let project = match &named {
                     Some(named) => named.project.clone(),
                     None => project_of(&done.cwd, &projects),
                 };
+                core.collisions
+                    .wrote(&core, &done.agent_id, &done.cwd, &mut done.changes);
                 batch
                     .entry(project)
                     .or_default()
                     .extend(edits(done, named.map(|named| named.name)));
             }
-            drop(core);
             for (project, edits) in batch {
-                self.append(&project, edits);
+                self.append(&project, &edits);
+                core.collisions.landed(&core, &project, &edits);
             }
         }
     }
 
-    fn append(&self, project: &str, edits: Vec<Edit>) {
+    fn append(&self, project: &str, edits: &[Edit]) {
         let mut logs = self.lock();
         let log = self.log(&mut logs, project);
-        let lines = json_lines(&edits);
+        let lines = json_lines(edits);
         log.lines_on_disk += edits.len();
-        log.edits.extend(edits);
+        log.edits.extend(edits.iter().cloned());
         log.trim();
         let Some(file) = self.file(project) else {
             return;
@@ -413,7 +430,7 @@ fn read_text(path: &Path) -> Option<String> {
         .and_then(|_| std::fs::read_to_string(path).ok())
 }
 
-fn line_count(text: &str) -> u64 {
+pub(crate) fn line_count(text: &str) -> u64 {
     let breaks = text.matches('\n').count() as u64;
     breaks + u64::from(!text.is_empty() && !text.ends_with('\n'))
 }

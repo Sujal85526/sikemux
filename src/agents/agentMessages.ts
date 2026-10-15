@@ -1,5 +1,5 @@
-/** What a message between agents was: a message, a worker's report to its lead, a question or its answer. */
-export type MessageKind = "message" | "report" | "question" | "answer";
+/** What a message between agents was: a message, a worker's report to its lead, a question, its answer, or a note from Sikemux itself. */
+export type MessageKind = "message" | "report" | "question" | "answer" | "notice";
 
 /** What became of a message, as the core logs it. */
 export type MessageOutcome = "steered" | "newTurn" | "typed" | "waiting" | "delivered" | "returned" | "repeat" | "refused" | "dropped";
@@ -7,7 +7,7 @@ export type MessageOutcome = "steered" | "newTurn" | "typed" | "waiting" | "deli
 /** One line of a project's log: a message sent, or what later became of it. Never its text. */
 export interface LoggedMessage {
     at: number;
-    /** The sender's agent id, `person`, `board` or `auto`; unknown for one that came back unread. */
+    /** The sender's agent id, `person`, `board`, `auto` or `sikemux`; unknown for one that came back unread. */
     from?: string | null;
     /** What the sender was called then. */
     fromName?: string | null;
@@ -44,7 +44,7 @@ export type MessageTone = "held" | "failed" | null;
 const STILL_GOING: ReadonlySet<MessageOutcome> = new Set(["typed", "waiting", "returned"]);
 const LATER: ReadonlySet<MessageOutcome> = new Set(["delivered", "returned", "dropped"]);
 
-const SENDERS: Readonly<Record<string, string>> = { person: "You", board: "Board", auto: "Auto" };
+const SENDERS: Readonly<Record<string, string>> = { person: "You", board: "Board", auto: "Auto", sikemux: "Sikemux" };
 
 const OUTCOMES: Readonly<Record<MessageOutcome, string>> = {
     steered: "Read mid-turn",
@@ -63,6 +63,7 @@ const KINDS: Readonly<Record<MessageKind, string>> = {
     report: "Report",
     question: "Question",
     answer: "Answer",
+    notice: "Note",
 };
 
 export function messageTone(outcome: MessageOutcome): MessageTone {

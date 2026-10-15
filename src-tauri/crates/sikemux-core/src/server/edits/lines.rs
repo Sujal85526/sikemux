@@ -59,6 +59,68 @@ pub(crate) fn changed(old: &str, new: &str, first: u64) -> Lines {
     blocks(ops, first + prefix as u64)
 }
 
+/// A run of the old text's lines and the lines that stand in its place in the
+/// new one, both counted from 0. Either may be empty.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Replaced {
+    pub old: std::ops::Range<usize>,
+    pub new: std::ops::Range<usize>,
+}
+
+/// Each run of `old` that `new` replaces, in order.
+pub(crate) fn replaced<T: AsRef<str>>(old: &[T], new: &[T]) -> Vec<Replaced> {
+    let old: Vec<&str> = old.iter().map(AsRef::as_ref).collect();
+    let new: Vec<&str> = new.iter().map(AsRef::as_ref).collect();
+    let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+    let suffix = old[prefix..]
+        .iter()
+        .rev()
+        .zip(new[prefix..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let (a, b) = (
+        &old[prefix..old.len() - suffix],
+        &new[prefix..new.len() - suffix],
+    );
+    let ops = diff(a, b).unwrap_or_else(|| {
+        std::iter::repeat_n(Op::Removed, a.len())
+            .chain(std::iter::repeat_n(Op::Added, b.len()))
+            .collect()
+    });
+    let mut out = Vec::new();
+    let mut open: Option<Replaced> = None;
+    let (mut at_old, mut at_new) = (prefix, prefix);
+    for op in ops {
+        match op {
+            Op::Same => {
+                out.extend(open.take());
+                at_old += 1;
+                at_new += 1;
+            }
+            Op::Removed => {
+                open.get_or_insert(Replaced {
+                    old: at_old..at_old,
+                    new: at_new..at_new,
+                })
+                .old
+                .end += 1;
+                at_old += 1;
+            }
+            Op::Added => {
+                open.get_or_insert(Replaced {
+                    old: at_old..at_old,
+                    new: at_new..at_new,
+                })
+                .new
+                .end += 1;
+                at_new += 1;
+            }
+        }
+    }
+    out.extend(open);
+    out
+}
+
 /// The lines a unified diff hunk changed, given where it starts in the new
 /// file and its lines, each marked ` `, `+` or `-`.
 pub(crate) fn hunk<'a>(new_start: u64, lines: impl IntoIterator<Item = &'a str>) -> Lines {

@@ -43,8 +43,9 @@ pub(crate) enum Kind {
     Question,
     /// An agent in a terminal waits for the person to type.
     Input,
-    /// Auto handed the card back, or Sikemux holds the messages two agents
-    /// keep sending each other, for the reason in `detail`.
+    /// Auto handed the card back, Sikemux holds the messages two agents
+    /// keep sending each other, two agents keep changing the same lines, or
+    /// the project's check keeps failing, for the reason in `detail`.
     Held,
     /// The agent went on with an assumption the person may correct.
     Assumption,
@@ -159,6 +160,9 @@ pub(crate) struct View {
     /// When each project last logged a message between its agents, so a client
     /// showing that log reads it again.
     pub agent_messages: BTreeMap<String, u64>,
+    /// Agents that just changed lines another agent had uncommitted, or a file
+    /// another holds a claim on, by agent id.
+    pub collisions: BTreeMap<String, super::collisions::Mark>,
     /// Agents on linked hosts working with agents here, each shown under its
     /// lead.
     pub remote_agents: Vec<RemoteAgent>,
@@ -639,6 +643,49 @@ fn needs(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Vec<Item> {
         );
         items.push(item);
     }
+    for pair in core.collisions.pairs() {
+        let (agent, other) = &pair.agents;
+        let other_name = core.names.name(other).unwrap_or_else(|| other.clone());
+        let mut item = Item::new(
+            format!("collide:{agent}:{other}"),
+            Kind::Held,
+            format!("Keeps changing the same lines as {other_name}"),
+            pair.since,
+        )
+        .by(agent, find(agent));
+        item.detail = Some(format!(
+            "They collided {} times in ten minutes, last in {}. Have one of them take the file, or tell them how to split it.",
+            pair.times, pair.path
+        ));
+        items.push(item);
+    }
+    for failing in core.collisions.failing() {
+        let names: Vec<String> = failing
+            .agents
+            .iter()
+            .map(|agent| core.names.name(agent).unwrap_or_else(|| agent.clone()))
+            .collect();
+        let mut item = Item::new(
+            format!("check:{}", failing.project),
+            Kind::Held,
+            format!(
+                "The project's check keeps failing after {}'s commits",
+                names.join(", ")
+            ),
+            failing.since,
+        );
+        if let Some(agent) = failing.agents.last() {
+            item = item.by(agent, find(agent));
+        }
+        item.project = Some(failing.project.clone());
+        item.detail = failing
+            .output
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .map(|line| clip(line, MAX_LINE_CHARS));
+        items.push(item);
+    }
     for session in sessions {
         let Some(agent_id) = &session.agent_id else {
             continue;
@@ -699,6 +746,7 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         working,
         away: core.notify.absence().1,
         agent_messages: core.harness.mailbox.log.latest(),
+        collisions: core.collisions.marks(),
         remote_agents: remote_agents(core),
     }
 }

@@ -126,6 +126,9 @@ pub(crate) fn commit(
         match moved {
             Ok(_) => {
                 let note = share(&diff.top, &changes, &blobs).err();
+                let paths: Vec<String> = changes.iter().map(|change| change.path.clone()).collect();
+                core.collisions
+                    .committed(core, agent_id, &diff.top, &paths, &commit, &message);
                 return Ok(Committed {
                     commit,
                     branch,

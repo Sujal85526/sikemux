@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use super::{line_count, read_text, Edit};
+use super::{line_count, read_text, Edit, Lines};
 use crate::server::names::project_of;
 use crate::server::Core;
 
@@ -539,25 +539,7 @@ impl Replay {
                 return;
             }
         }
-        let mut sorted = edit.lines.clone();
-        sorted.sort_unstable();
-        let mut shift = 0i64;
-        let blocks: Vec<Block> = sorted
-            .into_iter()
-            .map(|[start, count, removed]| {
-                let old = (start as i64 - shift).max(1) as u64;
-                shift += count as i64 - removed as i64;
-                Block {
-                    old,
-                    new: Hunk {
-                        start,
-                        count,
-                        removed,
-                    },
-                    shift,
-                }
-            })
-            .collect();
+        let blocks = blocks(&edit.lines);
         let mut over = vec![None; blocks.len()];
         let mut lines = Vec::with_capacity(self.lines.len());
         for line in self.lines.drain(..) {
@@ -609,6 +591,69 @@ impl Replay {
             .collect();
         (runs(lines), removed)
     }
+}
+
+/// An edit's parts in order, each with where it stood in the file before it.
+fn blocks(lines: &Lines) -> Vec<Block> {
+    let mut sorted = lines.clone();
+    sorted.sort_unstable();
+    let mut shift = 0i64;
+    sorted
+        .into_iter()
+        .map(|[start, count, removed]| {
+            let old = (start as i64 - shift).max(1) as u64;
+            shift += count as i64 - removed as i64;
+            Block {
+                old,
+                new: Hunk {
+                    start,
+                    count,
+                    removed,
+                },
+                shift,
+            }
+        })
+        .collect()
+}
+
+/// A line the record says an agent wrote.
+pub(crate) struct Authored {
+    pub line: u64,
+    pub agent_id: String,
+}
+
+/// Who wrote each line the record knows of in a file after `edits`, its
+/// edits oldest first, and how many lines the file had then, when known.
+pub(crate) fn authors(edits: &[Edit]) -> (Vec<Authored>, Option<u64>) {
+    let mut agents = Agents::default();
+    let mut replay = Replay::default();
+    for edit in edits {
+        let author = agents.of(edit);
+        replay.apply(edit, author);
+    }
+    let lines = replay
+        .lines
+        .iter()
+        .map(|line| Authored {
+            line: line.at,
+            agent_id: agents.latest[line.author].agent_id.clone(),
+        })
+        .collect();
+    (lines, replay.total)
+}
+
+/// Each part of an edit as `[start, count, removed]` in the file after it,
+/// with the first line it replaced in the file before it, counted from 1.
+pub(crate) fn before(lines: &Lines) -> Vec<(u64, [u64; 3])> {
+    blocks(lines)
+        .into_iter()
+        .map(|block| {
+            (
+                block.old,
+                [block.new.start, block.new.count, block.new.removed],
+            )
+        })
+        .collect()
 }
 
 /// Where `line` moves to through an edit's `blocks`, or the block that
@@ -741,7 +786,7 @@ fn header(text: &str) -> Option<Hunk> {
     })
 }
 
-pub(super) fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     run(dir, args, None, None).map(|out| String::from_utf8_lossy(&out).into_owned())
 }
 

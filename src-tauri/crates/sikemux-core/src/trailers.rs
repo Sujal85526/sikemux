@@ -34,6 +34,16 @@ pub fn agents(message: &str) -> Vec<String> {
         .collect()
 }
 
+/// The ids of the agents a commit message's trailers list.
+pub fn agent_ids(message: &str) -> Vec<String> {
+    last_paragraph(message.trim_end())
+        .lines()
+        .filter(|line| line.starts_with(KEY))
+        .filter_map(|line| line.rsplit_once(", chat ")?.1.strip_suffix(')'))
+        .map(str::to_owned)
+        .collect()
+}
+
 fn last_paragraph(message: &str) -> &str {
     message.rsplit("\n\n").next().unwrap_or_default()
 }
