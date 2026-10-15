@@ -110,6 +110,20 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                         <span>{site.replace(/\.atlassian\.net$/, "")}</span>
                     </div>
                 )}
+                <label className="jira-jql">
+                    <IconSearch size={13} className="jira-jql-mark" />
+                    <input
+                        value={jql}
+                        onChange={(event) => setJql(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" && jql.trim()) show({ kind: "jql", jql: jql.trim() });
+                        }}
+                        placeholder="Search"
+                        title="Words to find, or JQL such as project = ABC"
+                        aria-label="Search issues by words or JQL"
+                        spellCheck={false}
+                    />
+                </label>
                 <div className="jira-lists">
                     <div className="jira-heading">Your work</div>
                     {MY_WORK.map(([list, label, Mark]) => listButton(list, label, Mark))}
@@ -128,19 +142,6 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                         {filters.data?.map((filter) => listButton({ kind: "filter", ...filter }, filter.name, IconStar, filter.jql, filter.id))}
                     </div>
                 )}
-                <label className="jira-jql">
-                    <span className="jira-heading">Search</span>
-                    <IconSearch size={13} className="jira-jql-mark" />
-                    <input
-                        value={jql}
-                        onChange={(event) => setJql(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter" && jql.trim()) show({ kind: "jql", jql: jql.trim() });
-                        }}
-                        placeholder="Words, or JQL like project = ABC"
-                        spellCheck={false}
-                    />
-                </label>
                 <button
                     type="button"
                     className="jira-signout"

@@ -160,6 +160,10 @@
     font-family: var(--mono);
 }
 
+.jira-jql input::placeholder {
+    font-family: var(--ui);
+}
+
 .jira-jql input:focus,
 .jira-assign input:focus,
 .jira-compose textarea:focus,
