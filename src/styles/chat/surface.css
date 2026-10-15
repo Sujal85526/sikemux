@@ -173,7 +173,6 @@
 }
 
 .agent-desk-open[aria-pressed="true"] {
-    border-color: var(--border-selected);
     background: linear-gradient(var(--surface-selected), var(--surface-selected)), color-mix(in srgb, var(--void) 62%, transparent);
     color: var(--acc);
 }
