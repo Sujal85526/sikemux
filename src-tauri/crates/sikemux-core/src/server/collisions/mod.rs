@@ -1190,7 +1190,7 @@ impl Collisions {
         let writer_id = writer.map(|(agent, _)| agent).unwrap_or_default();
         let owned: HashMap<u64, &str> = lines
             .iter()
-            .filter(|line| line.agent_id != writer_id && !working.contains_key(&line.agent_id))
+            .filter(|line| line.agent_id != writer_id)
             .map(|line| (line.line, line.agent_id.as_str()))
             .collect();
         if owned.is_empty() {
@@ -1225,7 +1225,11 @@ impl Collisions {
                 .map(|(_, start, end)| (*start, *end))
                 .collect();
             if !touched.is_empty() && core.names.get(owner).is_some() {
-                let labels: Vec<String> = working.values().cloned().collect();
+                let labels: Vec<String> = working
+                    .iter()
+                    .filter(|(agent, _)| *agent != owner)
+                    .map(|(_, label)| label.clone())
+                    .collect();
                 self.overlapped(&project, &path, &writer_id, &labels, owner, &touched);
             }
         }
