@@ -17,6 +17,8 @@ export interface AnswerLetter {
     cli: string;
     question: string;
     text: string;
+    /** The person's answer is a secret the agent reads from a file, so `text` only says where. */
+    secret: boolean;
 }
 
 export type AgentLetter = AgentMessageLetter | AnswerLetter;
@@ -48,7 +50,14 @@ export function agentLetters(text: string): AgentLetter[] | null {
         const unclosed = body.replace(new RegExp(`&lt;/${tag}`, "g"), `</${tag}`);
         letters.push(
             tag === "question-answer"
-                ? { kind: "answer", asker: found.asker ?? "", cli: found.cli ?? "", question: found.question ?? "", text: unclosed }
+                ? {
+                      kind: "answer",
+                      asker: found.asker ?? "",
+                      cli: found.cli ?? "",
+                      question: found.question ?? "",
+                      text: unclosed,
+                      secret: found.secret === "true",
+                  }
                 : { kind: "message", name: found.from ?? "", agentId: found["agent-id"] ?? "", cli: found.cli ?? "", text: unclosed },
         );
         return "";

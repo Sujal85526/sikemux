@@ -267,6 +267,10 @@ export function AgentChatPane({
     const questions = useChatQuestions(agent.id, state.messages, setComposerError);
     const focusComposer = () => paneRef.current?.querySelector<HTMLTextAreaElement>(".chat-composer textarea")?.focus();
     const writeAnswer = (question: AgentQuestion) => {
+        if (question.secret) {
+            paneRef.current?.querySelector<HTMLInputElement>(".chat-ask-secret input")?.focus();
+            return;
+        }
         questions.write(question);
         window.requestAnimationFrame(focusComposer);
     };

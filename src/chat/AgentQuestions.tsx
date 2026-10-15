@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { AgentMark } from "../agents/AgentMark";
+import { SECRET_ANSWERED } from "../agents/agentQuestions";
+import { IconLock } from "../ui/Icons";
 import type { AnswerLetter } from "./agentLetters";
 
 /** Who is asking, above the question itself. */
@@ -13,7 +15,7 @@ export function AskedBy({ cli, ticket, children }: { cli: string; ticket?: strin
     );
 }
 
-/** A question as it reads once answered: its words, and the answer in one line. */
+/** A question as it reads once answered: its words, and the answer in one line, or only that it was answered when the answer is a secret. */
 export function AnsweredQuestion({ letter }: { letter: AnswerLetter }) {
     return (
         <>
@@ -21,9 +23,16 @@ export function AnsweredQuestion({ letter }: { letter: AnswerLetter }) {
                 <b>{letter.asker}</b> asked you
             </AskedBy>
             <div className="chat-ask-text">{letter.question}</div>
-            <div className="chat-ask-answered">
-                <span>You answered:</span> <span className="chat-ask-answer">{letter.text}</span>
-            </div>
+            {letter.secret ? (
+                <div className="chat-ask-answered secret">
+                    <IconLock size={12} />
+                    <span>{SECRET_ANSWERED}</span>
+                </div>
+            ) : (
+                <div className="chat-ask-answered">
+                    <span>You answered:</span> <span className="chat-ask-answer">{letter.text}</span>
+                </div>
+            )}
         </>
     );
 }

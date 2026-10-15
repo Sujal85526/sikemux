@@ -17,7 +17,7 @@ export interface ChatQuestions {
     answered: { question: AgentQuestion; answer: string }[];
     /** The question whose answer is on its way. */
     busy: string | null;
-    /** The question whatever is sent from the composer answers. */
+    /** The question whatever is sent from the composer answers; never a secret one, which has its own masked field. */
     composing: AgentQuestion | null;
     /** The composer answers the question because the person chose to write the answer. */
     writing: boolean;
@@ -51,8 +51,8 @@ export function useChatQuestions(agentId: string, messages: readonly ChatMessage
         return shown.filter(({ question }) => !arrived.has(question.asked));
     }, [messages, sent]);
 
-    const writing = unanswered.find((question) => question.id === writingId) ?? null;
-    const composing = writing ?? open.find((question) => !dismissed.has(question.id)) ?? null;
+    const writing = unanswered.find((question) => question.id === writingId && !question.secret) ?? null;
+    const composing = writing ?? open.find((question) => !question.secret && !dismissed.has(question.id)) ?? null;
 
     const answer = useCallback(
         async (question: AgentQuestion, given: QuestionAnswer, shown: string | null) => {

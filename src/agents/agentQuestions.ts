@@ -19,6 +19,8 @@ export interface AgentQuestion {
     /** The asker waits for the answer; otherwise it goes on with `assumption`. */
     readonly blocked: boolean;
     readonly assumption: string | null;
+    /** The answer is a secret, such as a password: typed into a masked field, never the composer, and never shown again. */
+    readonly secret: boolean;
     readonly at: number;
     /** The lead it waits on, while it has not reached the person. */
     readonly lead: string | null;
@@ -31,6 +33,13 @@ export interface AgentQuestion {
 }
 
 export type QuestionAnswer = { readonly answer: string } | { readonly choice: number } | { readonly fine: true };
+
+/** Beside the field a secret is typed into. */
+export const secretNote = (asker: string): string =>
+    `Kept private. ${asker} reads it from a file only your account can open, and it never shows in the chat.`;
+
+/** A secret's answer once sent, in place of its text. */
+export const SECRET_ANSWERED = "Answered, kept private";
 
 export const asksPerson = (question: AgentQuestion): boolean => question.lead === null;
 

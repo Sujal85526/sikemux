@@ -1,12 +1,49 @@
-import { useEffect, useRef, type RefObject } from "react";
-import { viaNote, type AgentQuestion } from "../agents/agentQuestions";
-import { IconCheck } from "../ui/Icons";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { secretNote, viaNote, type AgentQuestion } from "../agents/agentQuestions";
+import { IconCheck, IconLock } from "../ui/Icons";
 import { AnsweredQuestion, AskedBy } from "./AgentQuestions";
 import type { ChatQuestions } from "./useChatQuestions";
 
+/** The answer to a secret question, typed into a masked field that keeps nothing once it is sent. */
+function SecretAnswer({ question, busy, onSend }: { question: AgentQuestion; busy: boolean; onSend: (text: string) => Promise<boolean> }) {
+    const [text, setText] = useState("");
+    return (
+        <form
+            className="chat-ask-secret"
+            onSubmit={(event) => {
+                event.preventDefault();
+                if (text) void onSend(text).then((sent) => sent && setText(""));
+            }}>
+            <div className="chat-ask-secret-field">
+                <input
+                    type="password"
+                    name={`secret-${question.id}`}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    aria-label={`Private answer to ${question.name}`}
+                    placeholder="Type the answer"
+                    value={text}
+                    disabled={busy}
+                    onChange={(event) => setText(event.target.value)}
+                />
+                <button type="submit" disabled={busy || !text}>
+                    Send
+                </button>
+            </div>
+            <div className="chat-ask-private">
+                <IconLock size={12} />
+                <span>{secretNote(question.name)}</span>
+            </div>
+        </form>
+    );
+}
+
 /**
  * A question an agent put to the person: its words as prose, then the answers it offered as a numbered list. "Something
- * else…" hands over to the composer, which answers it with whatever is sent.
+ * else…" hands over to the composer, which answers it with whatever is sent. A secret is typed into its own masked field
+ * instead, so it never reaches the composer's drafts or history.
  */
 function OpenQuestion({
     question,
@@ -14,6 +51,7 @@ function OpenQuestion({
     writing,
     onChoose,
     onSomethingElse,
+    onSecret,
 }: {
     question: AgentQuestion;
     busy: boolean;
@@ -21,6 +59,7 @@ function OpenQuestion({
     writing: boolean;
     onChoose: (choice: number) => void;
     onSomethingElse: () => void;
+    onSecret: (text: string) => Promise<boolean>;
 }) {
     const via = viaNote(question);
     return (
@@ -30,20 +69,29 @@ function OpenQuestion({
                     <b>{question.name}</b> asks you{via && ` · ${via}`}
                 </AskedBy>
                 <div className="chat-ask-text">{question.text}</div>
-                <div className="chat-ask-options" role="group" aria-label={`Answer ${question.name}`}>
-                    {question.choices.map((choice, index) => (
-                        <button key={index} type="button" className="chat-ask-option" disabled={busy} onClick={() => onChoose(index)}>
-                            <span className="chat-ask-key">{index + 1}</span>
-                            <span>{choice.label}</span>
-                            {choice.detail && <span className="chat-ask-why">{choice.detail}</span>}
-                        </button>
-                    ))}
-                    <button type="button" className={`chat-ask-option other${writing ? " writing" : ""}`} disabled={busy} onClick={onSomethingElse}>
-                        <span className="chat-ask-key">{question.choices.length + 1}</span>
-                        <span>Something else…</span>
-                        {writing && <span className="chat-ask-why">answering below</span>}
-                    </button>
-                </div>
+                {(question.choices.length > 0 || !question.secret) && (
+                    <div className="chat-ask-options" role="group" aria-label={`Answer ${question.name}`}>
+                        {question.choices.map((choice, index) => (
+                            <button key={index} type="button" className="chat-ask-option" disabled={busy} onClick={() => onChoose(index)}>
+                                <span className="chat-ask-key">{index + 1}</span>
+                                <span>{choice.label}</span>
+                                {choice.detail && <span className="chat-ask-why">{choice.detail}</span>}
+                            </button>
+                        ))}
+                        {!question.secret && (
+                            <button
+                                type="button"
+                                className={`chat-ask-option other${writing ? " writing" : ""}`}
+                                disabled={busy}
+                                onClick={onSomethingElse}>
+                                <span className="chat-ask-key">{question.choices.length + 1}</span>
+                                <span>Something else…</span>
+                                {writing && <span className="chat-ask-why">answering below</span>}
+                            </button>
+                        )}
+                    </div>
+                )}
+                {question.secret && <SecretAnswer question={question} busy={busy} onSend={onSecret} />}
             </div>
         </article>
     );
@@ -110,7 +158,14 @@ export default function QuestionRows({
                 <article key={question.id} className="chat-message agent-question">
                     <div className="chat-message-content">
                         <AnsweredQuestion
-                            letter={{ kind: "answer", asker: question.name, cli: question.cli, question: question.text, text: answer }}
+                            letter={{
+                                kind: "answer",
+                                asker: question.name,
+                                cli: question.cli,
+                                question: question.text,
+                                text: answer,
+                                secret: question.secret,
+                            }}
                         />
                     </div>
                 </article>
@@ -123,6 +178,7 @@ export default function QuestionRows({
                     writing={questions.writing && questions.composing?.id === question.id}
                     onChoose={(choice) => questions.choose(question, choice)}
                     onSomethingElse={() => onWrite(question)}
+                    onSecret={(text) => questions.answer(question, { answer: text }, "")}
                 />
             ))}
             {questions.assumed.map((question) => (
