@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use sikemux_core::client::{probe, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
-    encode_control, read_frame_sync, BuildIdentity, ChatAttachment, ChatEvent, ChatEventKind,
-    ChatLaunch, ClientMessage, Event, Request, PROTOCOL, PROTOCOL_VERSION,
+    encode_control, read_frame_sync, BuildIdentity, ChatAccount, ChatAttachment, ChatEvent,
+    ChatEventKind, ChatLaunch, ClientMessage, Event, Request, PROTOCOL, PROTOCOL_VERSION,
 };
 use sikemux_core::server::{self, ServerConfig, ServerError};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -413,6 +413,39 @@ async fn a_claude_account_out_of_usage_fails_the_turn_as_a_limit() {
     let notice = chat.until(|event| resumes_at(event).is_some()).await;
     let resumes_at = resumes_at(&notice).expect("time");
     assert!(resumes_at.abs_diff(in_an_hour) < 30_000);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_claude_prompt_stopped_by_a_limit_is_answered_on_the_account_it_moves_to() {
+    let config = tempfile::tempdir().expect("config");
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect().await;
+    let mut launch = claude_launch("claude-l", config.path());
+    launch
+        .env
+        .insert("FAKE_CLAUDE_OUT_OF_USAGE".into(), "1".into());
+    client.acp_start(launch).await.expect("start");
+    prompt(&client, "claude-l", &message_id(), "hello there").await;
+    let error = chat.until_kind(ChatEventKind::Error).await;
+    assert_eq!(error.payload["failure"]["kind"], "limit");
+
+    let spare = ChatAccount {
+        id: "spare".into(),
+        label: "Spare".into(),
+        env: BTreeMap::from([
+            (
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                config.path().to_string_lossy().into_owned(),
+            ),
+            ("FAKE_CLAUDE_OUT_OF_USAGE".to_owned(), "0".to_owned()),
+        ]),
+    };
+    client
+        .acp_switch_account("claude-l".into(), spare)
+        .await
+        .expect("switch");
+    chat.until_kind(ChatEventKind::TurnCompleted).await;
+    assert_eq!(chat.text(), "echo: hello there");
 }
 
 #[tokio::test(flavor = "multi_thread")]

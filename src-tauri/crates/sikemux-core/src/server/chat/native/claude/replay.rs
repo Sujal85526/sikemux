@@ -696,6 +696,17 @@ fn finish_messages(records: Vec<Value>) -> Vec<Value> {
         .collect()
 }
 
+/// The ids of the messages the transcript holds as sent by the person.
+pub fn user_message_ids(records: &[Value]) -> impl Iterator<Item = String> + '_ {
+    records
+        .iter()
+        .filter(|record| {
+            str_field(record, "type") == Some("user") && record.get("toolUseResult").is_none()
+        })
+        .filter_map(|record| str_field(record, "uuid"))
+        .map(str::to_owned)
+}
+
 /// The model of the last top-level non-synthetic assistant message, for the model picker.
 pub fn resumed_model(records: &[Value]) -> Option<String> {
     records.iter().rev().find_map(|record| {

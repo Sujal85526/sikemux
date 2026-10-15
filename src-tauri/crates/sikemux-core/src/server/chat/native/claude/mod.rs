@@ -342,11 +342,12 @@ impl Backend for Claude {
         // Claude takes a moment to start, so the saved chat is read and
         // replayed while it does.
         let replaying = launch.resume_id.is_some().then(|| {
-            let (dir, id, cwd, sink) = (
+            let (dir, id, cwd, sink, shared) = (
                 config_dir(launch),
                 session_id.clone(),
                 launch.cwd.clone(),
                 sink.clone(),
+                shared.clone(),
             );
             tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
                 let loaded = || sink.update(&id, json!({ "sessionUpdate": "history_loaded" }));
@@ -355,6 +356,11 @@ impl Backend for Claude {
                     return Ok(None);
                 };
                 let records = replay::with_subagents(&path, replay::read_chain(&path)?);
+                // Claude Code drops a message under an id its transcript already
+                // has, so a prompt sent again after a restart needs a new one.
+                if let Ok(mut shared) = shared.lock() {
+                    shared.sent.extend(replay::user_message_ids(&records));
+                }
                 for (session, update) in replay::replay(&records, &id, &cwd) {
                     sink.update(&session, update);
                 }

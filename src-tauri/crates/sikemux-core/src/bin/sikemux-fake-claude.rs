@@ -13,6 +13,10 @@
 //! - `limit` fails the way Claude Code does when the account is out of usage;
 //! - anything else is echoed back.
 //!
+//! With `FAKE_CLAUDE_OUT_OF_USAGE=1` every prompt fails as `limit` does. A
+//! message under an id the transcript already has is dropped, as Claude Code
+//! drops it.
+//!
 //! A model change is answered the way Claude Code does, with a message saying
 //! so. `FAKE_CLAUDE_SETTINGS_MODEL` names the model its settings choose.
 
@@ -174,7 +178,9 @@ impl Claude {
         self.send(json!({ "type": "command_lifecycle", "command_uuid": uuid, "state": "started" }));
         let message_id = format!("msg-{uuid}");
         let mut words = text.split_whitespace();
-        match words.next().unwrap_or_default() {
+        let out_of_usage = std::env::var("FAKE_CLAUDE_OUT_OF_USAGE").as_deref() == Ok("1");
+        let verb = words.next().unwrap_or_default();
+        match if out_of_usage { "limit" } else { verb } {
             "stream" => {
                 let count: usize = words.next().and_then(|n| n.parse().ok()).unwrap_or(1);
                 self.send(json!({
@@ -389,6 +395,9 @@ fn main() {
             }
             Some("user") => {
                 let uuid = message["uuid"].as_str().unwrap_or_default().to_owned();
+                if claude.records().iter().any(|record| record["uuid"] == uuid) {
+                    continue;
+                }
                 let text: String = message["message"]["content"]
                     .as_array()
                     .map(|blocks| {
