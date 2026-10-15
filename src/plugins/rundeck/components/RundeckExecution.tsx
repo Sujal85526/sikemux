@@ -9,6 +9,7 @@ import { rndExecutionsR, rndJobDetailR, useBranchOptions } from "../resources";
 import { useWatchingRun, watchRun } from "../runWatch";
 import { branchOf, displayStatus, duration, formatTime, isLiveStatus } from "../shape";
 import { executionProgress } from "./executionProgress";
+import { statusKind } from "./branchStyle";
 import { useNow } from "../../../plugin-api/hooks";
 import { formatDuration } from "../../../plugin-api/format";
 import { reusableOptions } from "./options";
@@ -156,6 +157,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
             <div className="rnd-exec-top">
                 {steps.length > 0 && (
                     <div className="rnd-progress">
+                        <span className={`rnd-progress-pct ${statusKind(rawStatus)}`}>{progress ? `${progress.percent}%` : "—"}</span>
                         <div
                             className="rnd-progress-track"
                             role="progressbar"

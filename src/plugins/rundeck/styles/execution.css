@@ -4,15 +4,33 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    padding: 0 var(--space-5) var(--space-3);
+    margin: 0 var(--space-5) var(--space-3);
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: var(--rnd-tint);
 }
 .rnd-progress {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-1h) var(--space-3);
 }
+.rnd-progress-pct {
+    grid-row: span 2;
+    min-width: 64px;
+    font-size: 26px;
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-display);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--text-primary);
+}
+.rnd-progress-pct.failed {
+    color: var(--danger);
+}
 .rnd-progress-labels {
+    grid-column: 2;
     display: flex;
     gap: 2px;
     min-width: 0;
