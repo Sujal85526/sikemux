@@ -89,6 +89,7 @@ pub(crate) async fn call(
         }
         "shares" => answer(share::list(&core)),
         "pairing" => answer(remote::pairing(&core)),
+        "linkHost" => answer(super::hosts::link_host(&core, parse(params)?).await?),
         "answerPairing" => answer(remote::answer_pairing(&core, parse(params)?)?),
         "changeDevice" => answer(remote::change_device(&core, parse(params)?)?),
         "questions" => answer(questions::views(&core)),
@@ -272,11 +273,17 @@ async fn rename_agent(core: &Arc<Core>, params: RenameAgentParams) -> CoreResult
     .await
 }
 
-/// The names of the agents running here, each with the agent that started
-/// it, so a device can list workers after their lead.
+/// The names of the agents running here and of the workers they started on
+/// linked hosts, each with the agent that started it, so a device can list
+/// workers after their lead.
 async fn agent_names(core: &Arc<Core>) -> CoreResult<Vec<AgentName>> {
     let core = core.clone();
-    blocking(move || Ok(core.names.of(&core.running_agents()))).await
+    blocking(move || {
+        let mut agents = core.running_agents();
+        agents.extend(core.hosts.team.ids());
+        Ok(core.names.of(&agents))
+    })
+    .await
 }
 
 /// The most agents the app may say it holds.

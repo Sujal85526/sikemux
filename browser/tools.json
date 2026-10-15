@@ -1455,6 +1455,11 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
         }
       },
       "required": [

@@ -19,8 +19,9 @@ use crate::protocol::{Event, WindowCall};
 use super::chat;
 use super::connection::blocking;
 use super::follow::{self, TerminalAnswer};
+use super::hosts::spawn::{self as elsewhere, Hired};
 use super::messages;
-use super::names::{self, Worker};
+use super::names::{self, Adopted, AgentName, Worker};
 use super::saved::{self, Saved};
 use super::workspace::{own_launch, Lead, Paid};
 use super::Core;
@@ -119,7 +120,11 @@ struct Started {
 }
 
 /// How the calling agent runs and where, for its worker to do the same.
-fn lead_of(core: &Core, lead_id: &str, project: &str) -> Result<(Lead, PathBuf), String> {
+pub(crate) fn lead_of(
+    core: &Core,
+    lead_id: &str,
+    project: &str,
+) -> Result<(Lead, PathBuf), String> {
     let run = core.workspaces.run_of(lead_id);
     if let Some(chat) = core.chats.get(lead_id) {
         let launch = chat.current_now();
@@ -153,10 +158,101 @@ fn lead_of(core: &Core, lead_id: &str, project: &str) -> Result<(Lead, PathBuf),
     ))
 }
 
+/// Names a worker for its lead, one spawn at a time.
+pub(crate) fn hire(core: &Core, worker: Worker<'_>) -> Result<AgentName, String> {
+    let _one_at_a_time = core.harness.spawning.one_at_a_time();
+    core.names.hire(worker, running(core))
+}
+
+/// A worker here for a lead on a linked host, as that host named it.
+pub(crate) struct ForHost {
+    pub agent_id: String,
+    pub name: String,
+    pub lead_id: String,
+    /// The lead's name with its host's, as the worker addresses it.
+    pub lead_name: String,
+    pub lead_cli: String,
+    /// The lead's permission mode, which bounds the worker's.
+    pub mode: Option<String>,
+    pub provider: String,
+    pub model: Option<String>,
+    pub reports: bool,
+    pub cwd: PathBuf,
+    pub prompt: String,
+}
+
+/// Starts a worker for a lead on a linked host, on this host's own sign-in
+/// for its CLI, and hands it its task once it is ready.
+pub(crate) fn start_for_host(core: &Arc<Core>, plan: ForHost) -> Result<Value, String> {
+    let _one_at_a_time = core.harness.spawning.one_at_a_time();
+    let lead = Lead {
+        provider: String::new(),
+        launch: None,
+        launcher: None,
+        permission_mode: plan.mode.clone(),
+    };
+    let (mut launch, launcher) = core.workspaces.worker_launch(
+        &lead,
+        &plan.provider,
+        &plan.cwd,
+        plan.model.clone(),
+        Paid::By(None),
+    )?;
+    if let Some(mode) = plan
+        .mode
+        .as_ref()
+        .filter(|_| plan.lead_cli == plan.provider)
+    {
+        launch.permission_mode = mode.clone();
+    }
+    let project = names::project_of(&launch.cwd, &core.workspaces.project_paths());
+    let named = core.names.adopt(
+        Adopted {
+            agent_id: &plan.agent_id,
+            name: &plan.name,
+            project,
+            parent: Some(&plan.lead_id),
+            provider: &plan.provider,
+            reports: plan.reports,
+            depth: 0,
+        },
+        running(core),
+    );
+    own_launch(core, &mut launch, &plan.agent_id);
+    let model = launch.model.clone();
+    let chat = chat::begin_worker(core, launch, &plan.lead_id, launcher).map_err(|error| {
+        core.names.forget(&plan.agent_id);
+        error.to_string()
+    })?;
+    core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
+    core.publish_device_view();
+    let answer = json!({
+        "agentId": plan.agent_id,
+        "name": named.name,
+        "cli": plan.provider,
+        "model": model,
+    });
+    let started = Started {
+        agent_id: plan.agent_id,
+        name: named.name,
+        provider: plan.provider,
+        model,
+        paid_by: None,
+        lead_name: plan.lead_name,
+        lead_cli: plan.lead_cli,
+        reports: plan.reports,
+        chat,
+    };
+    let core = core.clone();
+    tokio::spawn(async move { hand_task(&core, started, plan.prompt).await });
+    Ok(answer)
+}
+
 fn start(
     core: &Arc<Core>,
     request: &HarnessRequest,
     resume: Option<&Saved>,
+    hired: Option<&Hired>,
 ) -> Result<Opened, String> {
     let lead_id = request
         .agent_id
@@ -199,19 +295,39 @@ fn start(
         saved::same_account(&provider, &launch, saved)?;
     }
     launch.resume_id = resume.map(|saved| saved.session_id.clone());
-    let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
     let project = names::project_of(&launch.cwd, &core.workspaces.project_paths());
-    let named = core.names.hire(
-        Worker {
-            agent_id: &agent_id,
-            lead: &lead_id,
-            project: Some(project),
-            provider: &provider,
-            session: resume.map(|saved| saved.session_id.as_str()),
-            reports,
-        },
-        running(core),
-    )?;
+    let (agent_id, named) = match hired {
+        Some(hired) => {
+            let named = core.names.adopt(
+                Adopted {
+                    agent_id: &hired.agent_id,
+                    name: &hired.name,
+                    project,
+                    parent: Some(&lead_id),
+                    provider: &provider,
+                    reports,
+                    depth: 0,
+                },
+                running(core),
+            );
+            (hired.agent_id.clone(), named)
+        }
+        None => {
+            let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
+            let named = core.names.hire(
+                Worker {
+                    agent_id: &agent_id,
+                    lead: &lead_id,
+                    project: Some(project),
+                    provider: &provider,
+                    session: resume.map(|saved| saved.session_id.as_str()),
+                    reports,
+                },
+                running(core),
+            )?;
+            (agent_id, named)
+        }
+    };
     own_launch(core, &mut launch, &agent_id);
     let model = launch.model.clone();
     let paid_by = launch.env.get(ROUTED_ENV).cloned();
@@ -252,6 +368,9 @@ pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<
         }
         _ => return Err("prompt must be the new agent's task, as nonempty text".into()),
     };
+    if let Some(host) = text_param(&request.params, "host", 200)? {
+        return elsewhere::spawn(core, request, host, prompt).await;
+    }
     let resume = text_param(&request.params, "resume", MAX_SESSION_ID_CHARS)?.map(str::to_owned);
     match request.params.get("mode") {
         None | Some(Value::Null) => {}
@@ -281,11 +400,29 @@ pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<
         }
         None => None,
     };
+    let hired = match (&saved, &request.agent_id) {
+        (None, Some(lead)) => {
+            let provider = text_param(&request.params, "cli", 64)?
+                .map(|cli| cli.trim().to_lowercase())
+                .or_else(|| core.chats.get(lead).map(|chat| chat.provider().to_owned()))
+                .unwrap_or_default();
+            elsewhere::hire_elsewhere(core, lead, &provider, reports_back(&request.params)?).await?
+        }
+        _ => None,
+    };
     let opened = {
-        let (core, request, resumed) = (core.clone(), request.clone(), saved.clone());
-        blocking(move || start(&core, &request, resumed.as_ref()).map_err(Into::into))
-            .await
-            .map_err(|error| error.to_string())?
+        let (owner, request, resumed) = (core.clone(), request.clone(), saved.clone());
+        let named = hired.clone();
+        blocking(move || {
+            start(&owner, &request, resumed.as_ref(), named.as_ref()).map_err(Into::into)
+        })
+        .await
+        .map_err(|error| {
+            if let Some(hired) = &hired {
+                elsewhere::never_started(core, hired);
+            }
+            error.to_string()
+        })?
     };
     let started = match (opened, &saved) {
         (Opened::New(started), _) => started,
@@ -415,6 +552,9 @@ fn plan_terminal(core: &Core, request: &HarnessRequest) -> Result<Opening, Strin
     let reports = reports_back(params)?;
     if !core.window.is_open() {
         return Err(super::window::not_open("start an agent in a terminal"));
+    }
+    if super::hosts::route::lead_host(core, &lead_id).is_some() {
+        return Err("your team's lead runs on another host, so the agents you start run as chats; leave out mode".into());
     }
     let _one_at_a_time = core.harness.spawning.one_at_a_time();
     let (lead, _) = lead_of(core, &lead_id, &request.project)?;
@@ -609,6 +749,7 @@ pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: Ending) {
             }
         };
         let text = report(&core, &worker, ending, answer);
+        elsewhere::send_commits(&core, &worker).await;
         messages::report(&core, worker, lead, text).await;
     });
 }

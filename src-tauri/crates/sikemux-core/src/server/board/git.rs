@@ -8,7 +8,7 @@ use crate::server::{edits, Core};
 
 const QUICK: Duration = Duration::from_secs(60);
 /// Pushing and fetching wait on the network, and a commit on its hooks.
-const SLOW: Duration = Duration::from_secs(5 * 60);
+pub(crate) const SLOW: Duration = Duration::from_secs(5 * 60);
 const CHECK: Duration = Duration::from_secs(30 * 60);
 const OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 /// How much of a failure's output a note or a fix request carries.
@@ -16,19 +16,36 @@ const TAIL_CHARS: usize = 3000;
 const SLUG_MAX: usize = 40;
 const BRANCH_PREFIX: &str = "sikemux/";
 
-fn run(dir: &Path, program: &str, args: &[&str], timeout: Duration) -> Result<Output, String> {
+fn run(
+    dir: &Path,
+    program: &str,
+    args: &[&str],
+    envs: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<Output, String> {
     let mut command = sikemux_process::user_environment::command(program);
     command
         .args(args)
         .current_dir(dir)
+        .envs(envs.iter().copied())
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_EDITOR", "true");
     sikemux_process::run(&mut command, None, timeout, OUTPUT_LIMIT, None)
         .map_err(|error| format!("{program} did not run: {error}"))
 }
 
-fn git_in(dir: &Path, args: &[&str], timeout: Duration) -> Result<String, String> {
-    let output = run(dir, "git", args, timeout)?;
+pub(crate) fn git_in(dir: &Path, args: &[&str], timeout: Duration) -> Result<String, String> {
+    git_with(dir, args, &[], timeout)
+}
+
+/// [`git_in`] with `envs` set for git.
+pub(crate) fn git_with(
+    dir: &Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<String, String> {
+    let output = run(dir, "git", args, envs, timeout)?;
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned());
     }
@@ -44,7 +61,7 @@ fn git_in(dir: &Path, args: &[&str], timeout: Duration) -> Result<String, String
     ))
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     git_in(dir, args, QUICK)
 }
 
@@ -83,7 +100,7 @@ pub(super) struct Tree {
 }
 
 /// A few words of `text`, kebab-cased, to name a branch and folder after.
-pub(super) fn slug(text: &str) -> String {
+pub(crate) fn slug(text: &str) -> String {
     let mut slug = String::new();
     for word in text
         .to_lowercase()
@@ -107,7 +124,7 @@ pub(super) fn slug(text: &str) -> String {
     }
 }
 
-fn branch_exists(repo: &Path, branch: &str) -> bool {
+pub(crate) fn branch_exists(repo: &Path, branch: &str) -> bool {
     git(
         repo,
         &[
@@ -143,7 +160,7 @@ fn base_branch(repo: &Path) -> Result<String, String> {
 }
 
 /// Where `project` sits inside the repository at `repo`.
-fn inside(project: &Path, repo: &Path) -> PathBuf {
+pub(crate) fn inside(project: &Path, repo: &Path) -> PathBuf {
     project
         .canonicalize()
         .ok()
@@ -153,7 +170,7 @@ fn inside(project: &Path, repo: &Path) -> PathBuf {
 }
 
 /// The folder beside the repository that Auto's checkouts go in.
-fn worktrees_folder(repo: &Path) -> PathBuf {
+pub(crate) fn worktrees_folder(repo: &Path) -> PathBuf {
     let name = repo
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -286,7 +303,7 @@ pub(super) fn rebase(tree: &Path, base: &str) -> Result<bool, String> {
 /// Runs the project's check command in the worktree. Whether it passed, and
 /// the end of what it wrote.
 pub(super) fn check(cwd: &Path, command: &str) -> Result<(bool, String), String> {
-    let output = run(cwd, "/bin/sh", &["-c", command], CHECK)?;
+    let output = run(cwd, "/bin/sh", &["-c", command], &[], CHECK)?;
     Ok((output.status.success(), said(&output)))
 }
 

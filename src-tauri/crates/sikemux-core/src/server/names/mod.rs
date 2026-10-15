@@ -47,6 +47,10 @@ struct Entry {
     /// The provider's own session.
     #[serde(default)]
     session_id: Option<String>,
+    /// How many leads above it run on other hosts, for an agent whose own
+    /// lead runs on another host.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    above: usize,
     /// When it was named, in Unix milliseconds.
     at: u64,
     /// It has been open since it was named, so closing lets its name go.
@@ -110,9 +114,24 @@ pub(crate) struct Starting<'a> {
     pub resume_id: Option<&'a str>,
 }
 
+/// An agent named on a linked host: a lead there whose worker runs here, or a
+/// worker here that its lead's host named.
+pub(crate) struct Adopted<'a> {
+    pub agent_id: &'a str,
+    pub name: &'a str,
+    pub project: String,
+    pub parent: Option<&'a str>,
+    pub provider: &'a str,
+    pub reports: bool,
+    /// How far below the person's own agent its lead's host has it.
+    pub depth: usize,
+}
+
 pub(crate) struct Names {
     book: Mutex<Book>,
     path: Option<PathBuf>,
+    /// Agents running on linked hosts, which keep their names while they do.
+    pinned: Mutex<HashSet<String>>,
 }
 
 impl Names {
@@ -122,6 +141,7 @@ impl Names {
         Self {
             book: Mutex::new(book),
             path,
+            pinned: Mutex::new(HashSet::new()),
         }
     }
 
@@ -129,6 +149,85 @@ impl Names {
         self.book
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The agents running here with those running on linked hosts.
+    fn open_with(&self, mut running: HashSet<String>) -> HashSet<String> {
+        running.extend(
+            self.pinned
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .cloned(),
+        );
+        running
+    }
+
+    /// The agents on linked hosts this host knows, whose names it keeps.
+    pub(crate) fn pin(&self, agent_ids: HashSet<String>) {
+        *self
+            .pinned
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = agent_ids;
+    }
+
+    /// How many agents up the chain of leads the person's own agent is.
+    pub(crate) fn depth(&self, agent_id: &str) -> usize {
+        self.lock().depth(agent_id)
+    }
+
+    /// Takes in an agent named on a linked host, under that name unless an
+    /// open agent of its project here has it. `running` holds the agents
+    /// running here.
+    pub(crate) fn adopt(&self, adopted: Adopted<'_>, running: HashSet<String>) -> AgentName {
+        let mut book = self.lock();
+        let open = book.open(self.open_with(running));
+        book.release(&open);
+        book.remove(|entry| entry.agent_id == adopted.agent_id);
+        let taken = book.agents.iter().any(|entry| {
+            entry.project == adopted.project
+                && open.contains(&entry.agent_id)
+                && same(&entry.name, adopted.name)
+        });
+        let name = match valid_name(adopted.name) {
+            Ok(name) if !taken => name,
+            _ => book.fresh(&adopted.project, adopted.agent_id, &open),
+        };
+        book.remove(|entry| {
+            entry.project == adopted.project
+                && !open.contains(&entry.agent_id)
+                && same(&entry.name, &name)
+        });
+        let above = match adopted.parent {
+            Some(_) => 0,
+            None => adopted.depth,
+        };
+        let entry = Entry {
+            agent_id: adopted.agent_id.to_owned(),
+            name,
+            project: adopted.project,
+            parent: adopted.parent.map(str::to_owned),
+            quiet: !adopted.reports,
+            blind: false,
+            provider: Some(adopted.provider.to_owned()),
+            session_id: None,
+            above,
+            at: unix_ms(),
+            seen: false,
+        };
+        let named = entry.view();
+        book.agents.push(entry);
+        self.save(&book);
+        named
+    }
+
+    /// Calls an agent what the host it runs on calls it.
+    pub(crate) fn set_name(&self, agent_id: &str, name: &str) {
+        let mut book = self.lock();
+        if let Some(entry) = book.entry_mut(agent_id).filter(|entry| entry.name != name) {
+            entry.name = name.to_owned();
+            self.save(&book);
+        }
     }
 
     pub(crate) fn name(&self, agent_id: &str) -> Option<String> {
@@ -166,7 +265,7 @@ impl Names {
         running: HashSet<String>,
     ) -> (AgentName, bool) {
         let mut book = self.lock();
-        let open = book.open(running);
+        let open = book.open(self.open_with(running));
         let (named, mut changed) = book.give(starting, &open);
         changed |= book.release(&open);
         if changed {
@@ -183,7 +282,7 @@ impl Names {
         running: HashSet<String>,
     ) -> Result<AgentName, String> {
         let mut book = self.lock();
-        let open = book.open(running);
+        let open = book.open(self.open_with(running));
         book.release(&open);
         let lead = book
             .agents
@@ -231,6 +330,7 @@ impl Names {
             blind: false,
             provider: Some(worker.provider.to_owned()),
             session_id: worker.session.map(str::to_owned),
+            above: 0,
             at: unix_ms(),
             seen: false,
         };
@@ -312,7 +412,7 @@ impl Names {
             return;
         }
         book.in_app = Some(agent_ids);
-        let open = book.open(running);
+        let open = book.open(self.open_with(running));
         book.release(&open);
         self.save(&book);
     }
@@ -348,7 +448,7 @@ impl Names {
     ) -> Result<AgentName, String> {
         let name = valid_name(name)?;
         let mut book = self.lock();
-        let open = book.open(running);
+        let open = book.open(self.open_with(running));
         book.release(&open);
         let project = book
             .entry_mut(agent_id)
@@ -463,7 +563,12 @@ impl Book {
             }
             current = parent;
         }
-        depth
+        let above = self
+            .agents
+            .iter()
+            .find(|entry| entry.agent_id == current)
+            .map_or(0, |entry| entry.above);
+        depth + above
     }
 
     fn entry_mut(&mut self, agent_id: &str) -> Option<&mut Entry> {
@@ -520,6 +625,7 @@ impl Book {
             blind: false,
             provider: provider.map(str::to_owned),
             session_id: resume_id.map(str::to_owned),
+            above: 0,
             at: unix_ms(),
             seen: false,
         };
@@ -606,6 +712,10 @@ impl Book {
         });
         removed || seen
     }
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 fn same(a: &str, b: &str) -> bool {

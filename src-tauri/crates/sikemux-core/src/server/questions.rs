@@ -90,6 +90,14 @@ struct Question {
     secret: bool,
     at: u64,
     stage: Stage,
+    /// The linked host it was put to the person on, where its asker's team
+    /// is led from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    relayed: Option<String>,
+    /// The linked host its asker runs on, when it is put to the person here
+    /// for an agent there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    from_host: Option<String>,
 }
 
 impl Question {
@@ -120,7 +128,7 @@ impl Question {
     }
 
     fn asks_person(&self) -> bool {
-        matches!(self.stage, Stage::Person { .. })
+        matches!(self.stage, Stage::Person { .. }) && self.relayed.is_none()
     }
 
     fn lead_id(&self) -> Option<&str> {
@@ -443,7 +451,9 @@ fn choices(value: Option<&Value>) -> Result<Vec<Choice>, String> {
 }
 
 fn running(core: &Core, agent_id: &str) -> bool {
-    core.chats.get(agent_id).is_some() || core.agent_session(agent_id).is_some()
+    core.chats.get(agent_id).is_some()
+        || core.agent_session(agent_id).is_some()
+        || core.hosts.team.get(agent_id).is_some()
 }
 
 /// Whether the person closed the agent, so its questions go with it.
@@ -463,6 +473,9 @@ fn reachable(core: &Core, agent_id: &str) -> bool {
 fn busy(core: &Core, agent_id: &str) -> bool {
     if let Some(chat) = core.chats.get(agent_id) {
         return chat.turn_running();
+    }
+    if let Some(foreign) = core.hosts.team.get(agent_id) {
+        return foreign.status == crate::protocol::AgentStatus::Working;
     }
     core.agent_session(agent_id)
         .and_then(|session| session.agent.as_ref().map(|agent| !agent.idle()))
@@ -540,6 +553,8 @@ fn open(
             blocked: asked.blocked,
             assumption: asked.assumption,
             at,
+            relayed: None,
+            from_host: None,
         })
         .collect();
     let mut state = core.harness.questions.lock();
@@ -642,6 +657,10 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
         .ok_or("question must be what you want to know, as nonempty text")?;
     let choices = choices(params.get("choices"))?;
     if let Some(worker) = text_param(params, "for", 200)? {
+        if let Some(foreign) = foreign_worker(core, &agent_id, &worker) {
+            let choices = serde_json::to_value(&choices).map_err(|error| error.to_string())?;
+            return super::hosts::route::pass_on(core, &agent_id, &foreign, text, choices).await;
+        }
         return pass_on(core, &agent_id, &worker, text, choices);
     }
     let blocked = match params.get("blocked") {
@@ -703,6 +722,27 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
         },
         "note": sent_note(&question),
     }))
+}
+
+/// The worker of `lead` on a linked host that `worker` names, by its id or
+/// name.
+fn foreign_worker(core: &Core, lead: &str, worker: &str) -> Option<super::hosts::team::Foreign> {
+    let wanted = worker.trim().trim_start_matches('@');
+    let wanted = wanted.split([' ', '@']).next().unwrap_or(wanted);
+    core.hosts.team.all().into_iter().find(|foreign| {
+        foreign.parent.as_deref() == Some(lead)
+            && (foreign.agent_id == wanted || foreign.name.eq_ignore_ascii_case(wanted))
+    })
+}
+
+/// A lead on a linked host passes on to the person a question its worker
+/// here asked it.
+pub(crate) fn pass_on_from(core: &Core, lead: &str, params: &Value) -> Result<Value, String> {
+    let worker = params["worker"].as_str().unwrap_or_default();
+    let text = text_param(params, "text", MAX_QUESTION_BYTES)?
+        .ok_or("the question must be nonempty text")?;
+    let choices = choices(params.get("choices"))?;
+    pass_on(core, lead, worker, text, choices)
 }
 
 /// A lead passes a question its agent asked it on to the person.
@@ -835,7 +875,7 @@ fn with_tickets(core: &Core, open: Vec<Question>) -> Vec<Value> {
         .collect()
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AnswerParams {
     id: String,
@@ -864,6 +904,11 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
         (question, text)
     };
     let (question, text) = question;
+    if let Some(host) = &question.from_host {
+        let params = serde_json::to_value(&params).map_err(|error| error.to_string())?;
+        super::hosts::route::relay_answer(core, host, params);
+        return Ok(json!({ "answered": true }));
+    }
     let Some(mut text) = text else {
         return Ok(json!({ "answered": true }));
     };
@@ -1013,12 +1058,19 @@ pub(crate) fn settle(core: &Arc<Core>) {
     let now = unix_ms();
     let mut withdrawn = Vec::new();
     let mut next = None;
+    let mut closed = Vec::new();
     {
         let mut state = core.harness.questions.lock();
         let before = state.open.len();
-        state
-            .open
-            .retain(|question| !gone.contains(&question.agent_id));
+        state.open.retain(|question| {
+            let keep = !gone.contains(&question.agent_id);
+            if !keep {
+                if let Some(host) = &question.relayed {
+                    closed.push((host.clone(), question.id.clone()));
+                }
+            }
+            keep
+        });
         let mut changed = state.open.len() != before;
         for question in &mut state.open {
             let Stage::Lead {
@@ -1059,11 +1111,136 @@ pub(crate) fn settle(core: &Arc<Core>) {
     for (lead, question) in withdrawn {
         messages::withdraw(core, &lead, &question);
     }
+    for (host, id) in closed {
+        super::hosts::route::relay_closed(core, &host, &id);
+    }
+    relay(core);
     if let Some(next) = next {
         core.harness.questions.wake.at(next);
     }
     tell_phones(core);
     tell_window(core);
+}
+
+/// Puts each question now for the person, whose asker's team is led from a
+/// linked host, to the person there instead.
+fn relay(core: &Core) {
+    let candidates: Vec<String> = core
+        .harness
+        .questions
+        .lock()
+        .open
+        .iter()
+        .filter(|question| {
+            matches!(question.stage, Stage::Person { .. })
+                && question.relayed.is_none()
+                && question.from_host.is_none()
+        })
+        .map(|question| question.agent_id.clone())
+        .collect();
+    if candidates.is_empty() {
+        return;
+    }
+    let hosts: HashMap<String, String> = candidates
+        .into_iter()
+        .filter_map(|agent_id| {
+            let host = super::hosts::route::lead_host(core, &agent_id)?;
+            Some((agent_id, host))
+        })
+        .collect();
+    if hosts.is_empty() {
+        return;
+    }
+    let mut relayed = Vec::new();
+    {
+        let mut state = core.harness.questions.lock();
+        for question in &mut state.open {
+            let Some(host) = hosts.get(&question.agent_id) else {
+                continue;
+            };
+            if !matches!(question.stage, Stage::Person { .. }) || question.relayed.is_some() {
+                continue;
+            }
+            question.relayed = Some(host.clone());
+            relayed.push((host.clone(), question.clone()));
+        }
+        if !relayed.is_empty() {
+            core.harness.questions.changed(&mut state);
+        }
+    }
+    for (host, question) in relayed {
+        super::hosts::route::relay_question(
+            core,
+            &host,
+            serde_json::to_value(&question).unwrap_or_default(),
+        );
+    }
+}
+
+/// A question an agent on a linked host asked, which waits on the person
+/// here, where its team is led from.
+pub(crate) fn relayed_here(core: &Core, host: &str, params: Value) -> Result<Value, String> {
+    let mut question: Question =
+        serde_json::from_value(params).map_err(|error| error.to_string())?;
+    let foreign = core
+        .hosts
+        .team
+        .get(&question.agent_id)
+        .filter(|foreign| foreign.host == host)
+        .ok_or("that agent is not one of a team this host shares with yours")?;
+    if question.text.len() > MAX_QUESTION_BYTES || question.choices.len() > MAX_CHOICES {
+        return Err("that question is larger than this host takes".into());
+    }
+    question.name = format!("{} on {}", foreign.name, super::hosts::name_of(core, host));
+    question.project = foreign.project;
+    question.relayed = None;
+    question.from_host = Some(host.to_owned());
+    question.stage = match question.stage {
+        Stage::Person { lead, passed } => Stage::Person { lead, passed },
+        Stage::Lead { .. } => Stage::Person {
+            lead: None,
+            passed: false,
+        },
+    };
+    let mut state = core.harness.questions.lock();
+    state.open.retain(|open| open.id != question.id);
+    state.open.push(question);
+    core.harness.questions.changed(&mut state);
+    Ok(Value::Null)
+}
+
+/// The person on the linked host this question was put to answered it.
+pub(crate) async fn answer_relayed(
+    core: &Arc<Core>,
+    host: &str,
+    params: Value,
+) -> Result<Value, String> {
+    let params: AnswerParams = serde_json::from_value(params).map_err(|error| error.to_string())?;
+    let relayed_there = core
+        .harness
+        .questions
+        .lock()
+        .open
+        .iter()
+        .any(|question| question.id == params.id && question.relayed.as_deref() == Some(host));
+    if !relayed_there {
+        return Ok(json!({ "answered": false }));
+    }
+    answer(core, params).await
+}
+
+/// A question an agent on a linked host asked no longer waits on the person.
+pub(crate) fn closed_elsewhere(core: &Core, host: &str, params: Value) -> Result<Value, String> {
+    let id = params["id"].as_str().unwrap_or_default();
+    let mut state = core.harness.questions.lock();
+    let before = state.open.len();
+    state
+        .open
+        .retain(|question| !(question.id == id && question.from_host.as_deref() == Some(host)));
+    if state.open.len() != before {
+        core.harness.questions.changed(&mut state);
+    }
+    Ok(Value::Null)
 }
 
 /// Tells phones of each question that now waits on the person, and of each

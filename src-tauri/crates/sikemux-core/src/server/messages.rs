@@ -33,6 +33,10 @@ const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_WAITING: usize = 10;
 const BOARD: &str = "board";
 const AUTO: &str = "auto";
+/// Notes about teammates on linked hosts come from here.
+const HOSTS: &str = "hosts";
+const HOSTS_NOTE: &str =
+    "Sent by Sikemux about a teammate on another host, not by the person or another agent.";
 /// The same text to the same agent again within this long is dropped.
 const REPEAT_WINDOW_MS: u64 = 2 * 60 * 1000;
 /// Two agents answering each other forever stop here.
@@ -86,6 +90,8 @@ struct Letter {
 }
 
 /// A question the person answered, and the agent that asked it.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Answered {
     pub question: String,
     pub asker: String,
@@ -93,6 +99,42 @@ pub(crate) struct Answered {
     /// The answer is a secret the agent reads from a file, so the app shows
     /// that it was answered and never the text.
     pub secret: bool,
+}
+
+/// A letter as it crosses to the host its agent runs on, which hands it on.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Carried {
+    pub to: String,
+    pub kind: Kind,
+    pub from_id: String,
+    pub from_name: String,
+    pub cli: String,
+    pub text: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    /// The person's answer to a question, copied to the lead it went to first.
+    #[serde(default)]
+    pub answered: Option<Answered>,
+    /// The id of the question of its own that a lead answers.
+    #[serde(default)]
+    pub question: Option<String>,
+}
+
+impl Letter {
+    fn carried(&self, to: &str, question: Option<String>) -> Carried {
+        Carried {
+            to: to.to_owned(),
+            kind: self.kind,
+            from_id: self.from_id.clone(),
+            from_name: self.from_name.clone(),
+            cli: self.cli.clone(),
+            text: self.text.clone(),
+            note: self.note.clone(),
+            answered: self.answers.clone(),
+            question,
+        }
+    }
 }
 
 /// The messages still waiting, as each agent reads them, kept in the data
@@ -588,6 +630,8 @@ pub(crate) enum Reach {
     Asleep,
     Terminal,
     Stopped,
+    /// Through the linked host it runs on.
+    Remote,
 }
 
 #[derive(Clone)]
@@ -681,7 +725,27 @@ pub(crate) fn listed(core: &Core) -> Vec<Listed> {
         });
     }
     agents.sort_by_key(|agent| agent.rank);
+    agents.extend(core.hosts.team.all().into_iter().map(|foreign| Listed {
+        name: Some(foreign.name),
+        project: foreign.project,
+        cli: foreign.cli,
+        title: None,
+        status: foreign.status,
+        parent: foreign.parent,
+        active_at: foreign.active_at,
+        rank: u32::MAX,
+        reach: Reach::Remote,
+        agent_id: foreign.agent_id,
+    }));
     agents
+}
+
+/// The host an agent on a linked host runs on, as this host calls it.
+fn host_of(core: &Core, agent: &Listed) -> Option<String> {
+    (agent.reach == Reach::Remote)
+        .then(|| core.hosts.team.get(&agent.agent_id))
+        .flatten()
+        .map(|foreign| super::hosts::name_of(core, &foreign.host))
 }
 
 fn since(at: Option<u64>, now: u64) -> Option<String> {
@@ -741,12 +805,23 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             .iter()
             .filter(|agent| all || agent.project == project)
             .map(|agent| {
+                let host = host_of(&core, agent);
+                let reachable = core
+                    .hosts
+                    .team
+                    .get(&agent.agent_id)
+                    .is_none_or(|foreign| core.hosts.reachable(&foreign.host));
+                let status = if reachable {
+                    status_word(agent.standing(&core))
+                } else {
+                    "out of reach"
+                };
                 let mut row = json!({
                     "name": agent.name,
                     "agentId": agent.agent_id,
                     "cli": agent.cli,
                     "title": agent.title,
-                    "status": status_word(agent.standing(&core)),
+                    "status": status,
                     "lastActive": since(agent.active_at, now),
                     "canMessage": agent.reach != Reach::Stopped
                         && agent.agent_id != caller
@@ -765,6 +840,9 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                 }
                 if agent.agent_id == caller {
                     fields.insert("you".into(), true.into());
+                }
+                if let Some(host) = host {
+                    fields.insert("host".into(), host.into());
                 }
                 if all {
                     fields.insert("project".into(), agent.project.clone().into());
@@ -794,6 +872,7 @@ fn message_text(params: &Value) -> Result<String, String> {
 /// The agent `to` names: an agent id, or a name, preferring the caller's
 /// project.
 pub(crate) fn resolve(
+    core: &Core,
     agents: &[Listed],
     to: &str,
     project: &str,
@@ -803,11 +882,15 @@ pub(crate) fn resolve(
     if let Some(agent) = agents.iter().find(|agent| agent.agent_id == wanted) {
         return Ok(agent.clone());
     }
+    let (wanted, on) = on_host(wanted);
     let named = |agent: &&Listed| {
         agent
             .name
             .as_deref()
             .is_some_and(|name| name.eq_ignore_ascii_case(wanted))
+            && on.is_none_or(|on| {
+                host_of(core, agent).is_some_and(|host| host.eq_ignore_ascii_case(on))
+            })
     };
     let (yours, called): (Vec<&Listed>, Vec<&Listed>) = agents
         .iter()
@@ -829,10 +912,26 @@ pub(crate) fn resolve(
         (_, many) => Err(format!(
             "More than one agent is called {wanted}: {}. Pass the agent id instead",
             many.iter()
-                .map(|agent| format!("{} in {}", agent.agent_id, agent.project))
+                .map(|agent| match host_of(core, agent) {
+                    Some(host) => format!("{} on {host}", agent.agent_id),
+                    None => format!("{} in {}", agent.agent_id, agent.project),
+                })
                 .collect::<Vec<_>>()
                 .join(", ")
         )),
+    }
+}
+
+/// An agent's name and the host it is said to run on, as in "Otter on
+/// studio" or "Otter@studio".
+fn on_host(wanted: &str) -> (&str, Option<&str>) {
+    if let Some((name, host)) = wanted.split_once('@') {
+        return (name.trim(), Some(host.trim()));
+    }
+    let lower = wanted.to_ascii_lowercase();
+    match lower.find(" on ") {
+        Some(at) => (wanted[..at].trim(), Some(wanted[at + 4..].trim())),
+        None => (wanted, None),
     }
 }
 
@@ -856,7 +955,7 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         blocking(move || {
             let project = caller_project(&core, &request);
             let agents = listed(&core);
-            let target = resolve(&agents, &to, &project, &from)?;
+            let target = resolve(&core, &agents, &to, &project, &from)?;
             if target.agent_id == from {
                 return Err("That agent is you".into());
             }
@@ -873,7 +972,7 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                 return Err(why.into());
             }
             let mut letter = letter_from(&agents, Kind::Message, from, text, None);
-            if let Some(id) = &answers {
+            if let Some(id) = answers.as_ref().filter(|_| target.reach != Reach::Remote) {
                 let name = target.name.as_deref().unwrap_or(&target.agent_id);
                 let asked = core
                     .harness
@@ -892,6 +991,9 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         .map_err(|error| error.to_string())?
     };
     let from = letter.from_id.clone();
+    if target.reach == Reach::Remote {
+        return carry(core, &target, letter, answers).await;
+    }
     let sent = deliver(core, &target, letter).await?;
     if let Some(id) = answers {
         core.harness
@@ -899,6 +1001,141 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             .lead_answered(&from, &target.agent_id, &id);
     }
     Ok(sent)
+}
+
+/// Sends a letter to its agent on a linked host, noting it here as sent so
+/// two agents that keep messaging each other across hosts are held too.
+async fn carry(
+    core: &Arc<Core>,
+    target: &Listed,
+    letter: Letter,
+    question: Option<String>,
+) -> Result<Value, String> {
+    core.harness.mailbox.note_sent(&letter, &target.agent_id);
+    let queued = Queued {
+        text: String::new(),
+        origin: Some(Origin {
+            from: letter.from_id.clone(),
+            kind: letter.kind,
+        }),
+    };
+    let sent = super::hosts::route::deliver(
+        core,
+        &target.agent_id,
+        letter.carried(&target.agent_id, question),
+    )
+    .await;
+    let outcome = match &sent {
+        Ok(answer) => match answer["delivery"].as_str() {
+            Some("steered") => Outcome::Steered,
+            Some("newTurn") => Outcome::NewTurn,
+            Some("repeat") => Outcome::Repeat,
+            _ => Outcome::Waiting,
+        },
+        Err(_) => Outcome::Refused,
+    };
+    log(core, &target.agent_id, [&queued], outcome);
+    sent
+}
+
+/// A letter a linked host carried here for one of this host's agents, sent
+/// by an agent of a team the two hosts share, on `host`, or the person's
+/// answer to a question that went to a lead here first. `landed` names the
+/// branch the sender's latest commits came back on, for its report to say.
+pub(crate) async fn from_host(
+    core: &Arc<Core>,
+    host: Option<&str>,
+    carried: Carried,
+    landed: Option<(String, usize)>,
+) -> Result<Value, String> {
+    let to = carried.to.clone();
+    let target = {
+        let core = core.clone();
+        blocking(move || {
+            listed(&core)
+                .into_iter()
+                .find(|agent| agent.agent_id == to && agent.reach != Reach::Remote)
+                .ok_or_else(|| "that agent is not on this host".into())
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
+    let name = target
+        .name
+        .clone()
+        .unwrap_or_else(|| target.agent_id.clone());
+    blind_between(core, &carried.from_id, &target.agent_id, &name)?;
+    let mut letter = Letter {
+        kind: carried.kind,
+        from_id: carried.from_id.clone(),
+        from_name: match host {
+            Some(host) => format!("{} on {host}", carried.from_name),
+            None => carried.from_name,
+        },
+        cli: carried.cli,
+        text: carried.text,
+        at: unix_ms(),
+        note: carried.note,
+        answers: carried.answered,
+    };
+    if let Some((branch, count)) = landed {
+        letter.text.push_str(&format!(
+            "\n\nIts commits came back to the branch {branch} in your checkout: {count} on top of the commit you started it from, the first holding your uncommitted changes as they were then. Merge what you want of them."
+        ));
+    }
+    if let Some(id) = &carried.question {
+        let asked = core
+            .harness
+            .questions
+            .asked_of(&letter.from_id, &target.agent_id, id)
+            .ok_or_else(|| format!("{name} has no open question {id} that it asked you; it was answered already, or leave out answers to send this as a plain message"))?;
+        letter.kind = Kind::Answer;
+        letter.note = Some(format!(
+            "Sent by {}, your lead in Sikemux, not by the person, answering the question you asked: {asked}",
+            letter.from_name
+        ));
+    }
+    let from = letter.from_id.clone();
+    let sent = deliver(core, &target, letter).await?;
+    if let Some(id) = carried.question {
+        core.harness
+            .questions
+            .lead_answered(&from, &target.agent_id, &id);
+    }
+    Ok(sent)
+}
+
+/// Tells an agent here something about a teammate on another host. Fails
+/// when the agent has stopped or is gone.
+pub(crate) async fn from_hosts(
+    core: &Arc<Core>,
+    to: String,
+    text: String,
+) -> Result<Value, String> {
+    let target = {
+        let core = core.clone();
+        blocking(move || {
+            listed(&core)
+                .into_iter()
+                .find(|agent| {
+                    agent.agent_id == to && !matches!(agent.reach, Reach::Stopped | Reach::Remote)
+                })
+                .ok_or_else(|| "that agent is not running".into())
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
+    let letter = Letter {
+        kind: Kind::Message,
+        from_id: HOSTS.to_owned(),
+        from_name: "Sikemux".to_owned(),
+        cli: "sikemux".to_owned(),
+        text,
+        at: unix_ms(),
+        note: Some(HOSTS_NOTE.to_owned()),
+        answers: None,
+    };
+    deliver(core, &target, letter).await
 }
 
 /// Refuses any contact between a reviewer Auto started blind and another
@@ -1141,6 +1378,9 @@ pub(crate) async fn report_as(
 }
 
 async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Value, String> {
+    if target.reach == Reach::Remote {
+        return carry(core, target, letter, None).await;
+    }
     let queued = Queued {
         text: wrapped(&letter),
         origin: Some(Origin {
@@ -1215,6 +1455,7 @@ async fn handed(
                 "{name} has stopped; it gets messages again once the person opens it"
             ))
         }
+        Reach::Remote => return Err(format!("{name} runs on another host")),
     }
     mailbox.note_sent(&letter, &target.agent_id);
     if letter.from_id != BOARD {
@@ -1416,6 +1657,7 @@ pub(crate) fn used_tool(core: &Core, agent_id: &str, tool: &str) {
         .any(|messaging| tool.ends_with(messaging))
     {
         worked(core, agent_id);
+        super::hosts::route::worked(core, agent_id);
     }
 }
 

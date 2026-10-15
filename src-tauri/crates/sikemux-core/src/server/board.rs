@@ -29,7 +29,7 @@ mod auto;
 mod blind;
 mod codehost;
 mod finish;
-mod git;
+pub(crate) mod git;
 mod review;
 mod tickets;
 

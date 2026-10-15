@@ -9,7 +9,9 @@ use std::sync::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::protocol::{AgentGroup, ChatInfo, PermissionChoices, SessionId, SessionInfo};
+use crate::protocol::{
+    AgentGroup, AgentStatus, ChatInfo, PermissionChoices, SessionId, SessionInfo,
+};
 
 use super::board::{self, Summary, Waits};
 use super::notify::clip;
@@ -141,6 +143,9 @@ pub(crate) struct Item {
     pub url: Option<String>,
     pub handoff: Option<Handoff>,
     pub recordings: Vec<Recording>,
+    /// The linked host the agent runs on, when it is not this one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -154,6 +159,48 @@ pub(crate) struct View {
     /// When each project last logged a message between its agents, so a client
     /// showing that log reads it again.
     pub agent_messages: BTreeMap<String, u64>,
+    /// Agents on linked hosts working with agents here, each shown under its
+    /// lead.
+    pub remote_agents: Vec<RemoteAgent>,
+}
+
+/// An agent on a linked host that works with agents here.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoteAgent {
+    pub agent_id: String,
+    pub name: String,
+    /// What this host calls the host it runs on.
+    pub host: String,
+    pub host_id: String,
+    pub cli: String,
+    pub status: AgentStatus,
+    /// The agent here that started it, for a worker.
+    pub lead: Option<String>,
+    pub project: String,
+    /// Its host answers now.
+    pub reachable: bool,
+}
+
+/// The workers agents here started on linked hosts.
+fn remote_agents(core: &Core) -> Vec<RemoteAgent> {
+    core.hosts
+        .team
+        .all()
+        .into_iter()
+        .filter(|foreign| foreign.role == super::hosts::team::Role::Worker)
+        .map(|foreign| RemoteAgent {
+            host: super::hosts::name_of(core, &foreign.host),
+            reachable: core.hosts.reachable(&foreign.host),
+            host_id: foreign.host,
+            agent_id: foreign.agent_id,
+            name: foreign.name,
+            cli: foreign.cli,
+            status: foreign.status,
+            lead: foreign.parent,
+            project: foreign.project,
+        })
+        .collect()
 }
 
 /// What happened while the person was away.
@@ -330,6 +377,8 @@ struct Agent {
     session: Option<SessionId>,
     group: AgentGroup,
     at: u64,
+    /// The linked host it runs on, when it is not this one.
+    host: Option<String>,
 }
 
 fn agents(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Agent> {
@@ -346,6 +395,7 @@ fn agents(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Agen
             session: None,
             group: chat.group,
             at: chat.active_at.unwrap_or(0),
+            host: None,
         })
         .collect();
     for session in sessions {
@@ -364,6 +414,7 @@ fn agents(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Agen
             session: Some(session.id),
             group,
             at: session.active_at.unwrap_or(0),
+            host: None,
         });
     }
     for agent in &mut agents {
@@ -371,6 +422,17 @@ fn agents(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Agen
             agent.at = core.seen.started_at(&agent.id).unwrap_or(agent.at);
         }
     }
+    agents.extend(core.hosts.team.all().into_iter().map(|foreign| Agent {
+        host: Some(super::hosts::name_of(core, &foreign.host)),
+        id: foreign.agent_id,
+        name: Some(foreign.name),
+        cli: Some(foreign.cli),
+        project: Some(foreign.project),
+        title: None,
+        session: None,
+        group: AgentGroup::Idle,
+        at: foreign.active_at.unwrap_or(0),
+    }));
     agents
 }
 
@@ -386,6 +448,7 @@ fn gone_agent(core: &Core, agent_id: &str) -> Agent {
         session: None,
         group: AgentGroup::Idle,
         at: core.seen.active_at(agent_id).unwrap_or(0),
+        host: None,
     }
 }
 
@@ -413,12 +476,14 @@ impl Item {
             url: None,
             handoff: None,
             recordings: Vec::new(),
+            host: None,
         }
     }
 
     fn by(mut self, agent_id: &str, agent: Option<&Agent>) -> Self {
         self.agent_id = Some(agent_id.to_owned());
         if let Some(agent) = agent {
+            self.host = agent.host.clone();
             self.name = agent.name.clone();
             self.cli = agent.cli.clone();
             self.project = agent.project.clone();
@@ -634,6 +699,7 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         working,
         away: core.notify.absence().1,
         agent_messages: core.harness.mailbox.log.latest(),
+        remote_agents: remote_agents(core),
     }
 }
 

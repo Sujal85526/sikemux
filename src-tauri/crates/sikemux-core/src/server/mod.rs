@@ -15,6 +15,7 @@ mod follow;
 mod handover;
 mod harness;
 mod host;
+mod hosts;
 mod inbox;
 mod join;
 mod kept;
@@ -307,6 +308,8 @@ pub(crate) struct Core {
     pub(crate) edits: edits::Edits,
     pub(crate) notify: notify::Notifier,
     pub(crate) inbox: inbox::Inbox,
+    /// Hosts linked with this one, and the agents of teams shared with them.
+    pub(crate) hosts: hosts::Hosts,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
 }
@@ -326,6 +329,8 @@ impl Core {
         let detection = ManifestRegistry::bundled()
             .map_err(|error| ServerError::Manifests(error.to_string()))?;
         let names = names::Names::new(data_dir);
+        let hosts = hosts::Hosts::new(data_dir);
+        names.pin(hosts.team.ids());
         let harness = harness::Harness::new(data_dir, |agent_id| names.get(agent_id).is_some());
         Ok(Arc::new_cyclic(|me| Self {
             me: me.clone(),
@@ -360,6 +365,7 @@ impl Core {
             edits: edits::Edits::new(data_dir, me.clone()),
             notify: notify::Notifier::default(),
             inbox: inbox::Inbox::default(),
+            hosts,
             device_view: Mutex::new(Vec::new()),
         }))
     }
@@ -1020,6 +1026,11 @@ pub(crate) async fn run_core(
             core.clone(),
             |core| &core.workspaces.wake,
             |core| core.agents_changed(),
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.hosts.wake,
+            hosts::settle,
         )),
         tokio::spawn(notify::run(core.clone())),
         tokio::spawn(network_watch::run(core.clone())),

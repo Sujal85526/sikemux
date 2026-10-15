@@ -828,11 +828,14 @@ worktree of your own they are allowed.
 need the person first; `allProjects: true` lists every project's. Each comes
 with its `name`, `agentId`, `cli`, `title`, `status` (working, waiting on the
 person, done, idle, asleep, stopped or starting), `lastActive`, `startedBy`
-when another agent started it, and `canMessage`. `you: true` marks you.
+when another agent started it, and `canMessage`. `you: true` marks you. An
+agent of your team on another host, below, comes with `host` too, and its
+`status` is `out of reach` while that host does not answer.
 
 ### Sending a message
 
-`agent_send` takes `to`, a name such as `Otter` or an `agentId`, and `text`, at
+`agent_send` takes `to`, a name such as `Otter`, `Otter on studio` for one on
+another host, or an `agentId`, and `text`, at
 most 64 KB (65,536 bytes); put anything longer in a file and send its path. A name means the
 agent of that name in your project before one elsewhere. The message reaches
 the agent as text marked as yours, never as the person's, so it cannot approve
@@ -896,8 +899,31 @@ lookup your own subagents can do.
 
 Limits: an agent you started may start agents of its own, but one of theirs
 may not; one agent has at most six of its own open, and a project at most
-eight that agents started. A refusal says which limit it hit. When the person
-closes a lead, Sikemux asks them whether to stop its agents or keep them.
+eight that agents started, counting those on other hosts. A refusal says which
+limit it hit. When the person closes a lead, Sikemux asks them whether to stop
+its agents or keep them.
+
+### Starting an agent on another host
+
+The person may link this host with others on their account, in Settings,
+Devices. `agent_spawn` with `host`, the name a linked host goes by here, starts
+the agent there, on that host's own sign-in for `cli`, never yours; a refusal
+lists the linked hosts. It runs as a chat, so leave out `mode`, `resume` and
+`provider`. It works in a checkout of its own of your project there, on a
+branch of its own cut from your commit, with your uncommitted changes, new
+files too, committed on top as its first commit; your folder must be in a git
+repository. Its name comes with the host's, such as `Otter on studio`, which
+`agent_send`, `agent_read`, `agent_wait` and `ask`'s `for` take, as they take
+its `agentId`.
+
+Everything above works across the link: its reports, its questions, which go
+to you and then to the person here, and your messages. Each time its turn
+ends, its new commits come back first, onto a branch in your checkout named
+for the host and it, such as `sikemux/studio/otter`, and its report names the
+branch. Merge what you want of it yourself; Sikemux never merges it. While the
+host does not answer, what you send it waits and goes once it is back, and you
+hear when it has been out of reach for a few minutes and when it is back. If
+the person removes the link, you hear that too.
 
 ### Finding and resuming an earlier session
 

@@ -78,6 +78,27 @@ struct Stored {
     /// the account this host is signed in to may answer for its owner.
     #[serde(default)]
     joined_through: BTreeMap<String, String>,
+    /// Hosts on the account linked with this one, whose agents may start
+    /// and reach agents here and the other way round.
+    #[serde(default)]
+    links: Vec<LinkedHost>,
+}
+
+/// Another host this one is linked with.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LinkedHost {
+    /// Its key.
+    pub id: String,
+    /// What this host calls it, which agents address it by.
+    pub name: String,
+    pub platform: String,
+    pub linked_at: u64,
+    #[serde(default)]
+    pub last_seen: Option<u64>,
+    /// Where it was last reached directly, beside the relays.
+    #[serde(default)]
+    pub addresses: Vec<String>,
 }
 
 /// A chat this host shares, and the key its link holds.
@@ -124,6 +145,7 @@ struct Removal {
 impl Stored {
     /// Drops a device and everything kept for it, answering with the device.
     fn forget(&mut self, id: &str) -> Option<DeviceInfo> {
+        self.links.retain(|link| link.id != id);
         self.notifications.remove(id);
         self.joined_through.remove(id);
         let index = self.devices.iter().position(|device| device.id == id)?;
@@ -154,6 +176,8 @@ struct Running {
 struct Pending {
     device: PendingDevice,
     account: String,
+    /// Where a host asking to link was reached; none for a phone.
+    host: Option<Vec<String>>,
     answer: oneshot::Sender<Option<DeviceAccess>>,
 }
 
@@ -286,6 +310,7 @@ impl Remote {
             pending: inner
                 .pending
                 .iter()
+                .filter(|pending| pending.host.is_none())
                 .map(|pending| pending.device.clone())
                 .collect(),
             owner: inner.stored.owner.clone(),
@@ -488,19 +513,109 @@ impl Remote {
             .map(|secret| secret.public().to_string())
     }
 
-    /// Waits for someone to answer `device`, which came with a ticket from `account`.
+    /// Waits for someone to answer `device`, which came with a ticket from
+    /// `account`: a phone, or a host asking to link, reached at `host`.
     pub(super) fn ask(
         &self,
         device: PendingDevice,
         account: String,
+        host: Option<Vec<String>>,
     ) -> oneshot::Receiver<Option<DeviceAccess>> {
         let (answer, answered) = oneshot::channel();
         self.lock().pending.push(Pending {
             device,
             account,
+            host,
             answer,
         });
         answered
+    }
+
+    /// The hosts asking to link with this one.
+    pub(crate) fn pending_links(&self) -> Vec<PendingDevice> {
+        self.lock()
+            .pending
+            .iter()
+            .filter(|pending| pending.host.is_some())
+            .map(|pending| pending.device.clone())
+            .collect()
+    }
+
+    pub(crate) fn links(&self) -> Vec<LinkedHost> {
+        let inner = self.lock();
+        if !inner.stored.enabled {
+            return Vec::new();
+        }
+        inner.stored.links.clone()
+    }
+
+    /// The linked host with this key, while remote access is on.
+    pub(crate) fn link(&self, id: &str) -> Option<LinkedHost> {
+        let inner = self.lock();
+        if !inner.stored.enabled {
+            return None;
+        }
+        inner
+            .stored
+            .links
+            .iter()
+            .find(|link| link.id == id)
+            .cloned()
+    }
+
+    /// Keeps a host this one is now linked with, replacing what it knew of it.
+    pub(crate) fn add_link(&self, link: LinkedHost) -> CoreResult<()> {
+        self.change(|stored| {
+            stored.forget(&link.id);
+            stored.links.push(link);
+            Ok(())
+        })
+    }
+
+    /// Forgets a linked host, and whether it was one.
+    pub(crate) fn forget_link(&self, id: &str) -> bool {
+        let forgotten = self.change(|stored| {
+            let before = stored.links.len();
+            stored.links.retain(|link| link.id != id);
+            Ok(stored.links.len() != before)
+        });
+        forgotten.unwrap_or_else(|error| {
+            eprintln!("sikemux core: could not save forgetting a host: {error}");
+            false
+        })
+    }
+
+    /// Notes that a linked host was reached, and where.
+    pub(crate) fn link_seen(&self, id: &str, addresses: Option<Vec<String>>) {
+        let mut inner = self.lock();
+        let Some(link) = inner.stored.links.iter_mut().find(|link| link.id == id) else {
+            return;
+        };
+        link.last_seen = Some(unix_ms());
+        if let Some(addresses) = addresses.filter(|addresses| !addresses.is_empty()) {
+            link.addresses = addresses;
+        }
+        if let Err(error) = self.save(&inner) {
+            eprintln!("sikemux core: could not save when a host was last seen: {error}");
+        }
+    }
+
+    /// The endpoint remote access listens on, while it does.
+    pub(crate) fn endpoint(&self) -> Option<Endpoint> {
+        self.lock()
+            .running
+            .as_ref()
+            .map(|running| running.endpoint.clone())
+    }
+
+    /// The relays this host listens on, which a linked host listens on too.
+    /// None while it listens only on loopback.
+    pub(crate) fn relays(&self) -> Vec<Relay> {
+        let inner = self.lock();
+        if inner.direct_only {
+            return Vec::new();
+        }
+        inner.relays.clone()
     }
 
     /// Adds an allowed device before telling it, so the answer the app gets
@@ -515,7 +630,21 @@ impl Remote {
                 .ok_or_else(|| CoreError::from("that device is no longer waiting"))?;
             inner.pending.remove(index)
         };
-        if let Some(access) = access {
+        if let (Some(_), Some(addresses)) = (access, pending.host.clone()) {
+            let device = &pending.device;
+            let added = LinkedHost {
+                id: device.device_id.clone(),
+                name: device.name.clone(),
+                platform: device.platform.clone(),
+                linked_at: unix_ms(),
+                last_seen: Some(unix_ms()),
+                addresses,
+            };
+            if let Err(error) = self.add_link(added) {
+                let _ = pending.answer.send(None);
+                return Err(error);
+            }
+        } else if let Some(access) = access {
             let device = &pending.device;
             let added = DeviceInfo {
                 id: device.device_id.clone(),
@@ -546,10 +675,9 @@ impl Remote {
         for device in devices {
             let waiting = {
                 let mut inner = self.lock();
-                let index = inner
-                    .pending
-                    .iter()
-                    .position(|pending| pending.device.device_id == device.id);
+                let index = inner.pending.iter().position(|pending| {
+                    pending.host.is_none() && pending.device.device_id == device.id
+                });
                 index.map(|index| inner.pending.remove(index))
             };
             let owner = self.lock().stored.owner.clone();
@@ -952,7 +1080,11 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
     };
     let endpoint = builder
         .secret_key(secret)
-        .alpns(vec![CORE_ALPN.to_vec(), JOIN_ALPN.to_vec()])
+        .alpns(vec![
+            CORE_ALPN.to_vec(),
+            JOIN_ALPN.to_vec(),
+            super::hosts::LINK_ALPN.to_vec(),
+        ])
         .bind()
         .await
         .map_err(|error| CoreError::from(format!("remote access did not start: {error}")))?;
@@ -963,6 +1095,8 @@ async fn listen(core: &Arc<Core>) -> CoreResult<()> {
         return Ok(());
     }
     inner.running = Some(Running { endpoint, accept });
+    drop(inner);
+    core.hosts.wake.now();
     Ok(())
 }
 
@@ -975,6 +1109,7 @@ fn halt(core: &Core) -> Option<Endpoint> {
         inner.running.take()
     };
     core.close_device_clients(None);
+    super::hosts::halt(core);
     running.map(|running| {
         running.accept.abort();
         running.endpoint
@@ -1236,9 +1371,13 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
         }
     }
     let last = events.iter().map(|event| event.id).max().unwrap_or(0);
+    let mut unlinked = Vec::new();
     let forgotten = core.remote.change(|stored| {
         let mut forgotten = Vec::new();
         for (key, reason, at) in &revoked {
+            if stored.links.iter().any(|link| link.id == *key) {
+                unlinked.push(key.clone());
+            }
             if let Some(device) = stored.forget(key) {
                 forgotten.push((device, *reason));
             }
@@ -1274,6 +1413,9 @@ fn apply_events(core: &Core, events: &[AccountEvent]) {
             device.id.get(..8).unwrap_or(&device.id),
             revoke_reason(*reason)
         );
+    }
+    for host in unlinked {
+        super::hosts::unlinked(core, &host, "it was removed from your account");
     }
     if let Some(reason) = released {
         let_go(core, reason);
@@ -1313,20 +1455,27 @@ fn let_go(core: &Core, reason: Option<RevokeReason>) {
 }
 
 pub(crate) fn revoke(core: &Core, id: &str) -> CoreResult<RemoteStatus> {
-    core.remote.change(|stored| {
+    let linked = core.remote.change(|stored| {
+        let linked = stored.links.iter().any(|link| link.id == id);
         stored.forget(id);
-        Ok(())
+        Ok(linked)
     })?;
+    if linked {
+        super::hosts::unlink(core, id);
+    }
     core.close_device_clients(Some(id));
     Ok(announce(core))
 }
 
-/// Who waits to join this host and who is paired, for the owner's devices.
+/// Who waits to join this host and who is paired, and the hosts linked with
+/// it or asking to be, for the owner's devices.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Pairing {
     pending: Vec<PendingDevice>,
     devices: Vec<DeviceInfo>,
+    links: Vec<super::hosts::LinkView>,
+    pending_links: Vec<PendingDevice>,
 }
 
 pub(crate) fn pairing(core: &Core) -> Pairing {
@@ -1334,6 +1483,8 @@ pub(crate) fn pairing(core: &Core) -> Pairing {
     Pairing {
         pending: status.pending,
         devices: status.devices,
+        links: super::hosts::views(core),
+        pending_links: core.remote.pending_links(),
     }
 }
 
@@ -1393,6 +1544,10 @@ async fn serve_device(core: Arc<Core>, incoming: Incoming) {
         super::join::serve(core, connection).await;
         return;
     }
+    if connection.alpn() == super::hosts::LINK_ALPN {
+        super::hosts::serve(core, connection).await;
+        return;
+    }
     let id = connection.remote_id().to_string();
     if core.remote.standing_of(&id).is_none() {
         connection.close(
@@ -1447,6 +1602,7 @@ mod tests {
             revoked: BTreeMap::new(),
             shares: Vec::new(),
             joined_through: BTreeMap::new(),
+            links: Vec::new(),
             devices: vec![DeviceInfo {
                 id: SecretKey::generate().public().to_string(),
                 name: "Phone".into(),
@@ -1552,6 +1708,7 @@ mod tests {
                 expires_at: unix_ms() + 120_000,
             },
             "user_2abc".into(),
+            None,
         );
         let events = [
             event(4, "device.revoked", Some(&gone.id), "client", "removed"),

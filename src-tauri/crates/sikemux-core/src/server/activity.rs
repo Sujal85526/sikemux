@@ -89,5 +89,6 @@ impl Core {
             self.harness
                 .note_agent(&named.project, happened.kind(), agent_id);
         }
+        super::hosts::route::happened(self, agent_id, happened);
     }
 }

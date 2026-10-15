@@ -65,7 +65,7 @@ impl Happened {
         }
     }
 
-    fn of(kind: &str) -> Option<Self> {
+    pub(crate) fn of(kind: &str) -> Option<Self> {
         HAPPENINGS
             .into_iter()
             .find(|happened| happened.kind() == kind)
@@ -573,42 +573,86 @@ pub(crate) async fn read(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         .ok_or("agent_read needs the calling agent's id")?;
     let agent = agent_param(&request.params)?;
     let cursor = cursor_param(&request.params)?.map(str::to_owned);
-    let (core, request) = (core.clone(), request.clone());
-    blocking(move || {
-        let project = messages::caller_project(&core, &request);
-        let target = messages::resolve(&messages::listed(&core), &agent, &project, &caller)?;
-        if target.agent_id == caller {
-            return Err("That agent is you".into());
-        }
-        let name = target.name.clone().unwrap_or_else(|| target.agent_id.clone());
-        messages::blind_between(&core, &caller, &target.agent_id, &name)?;
-        let mut answer = if core.chats.get(&target.agent_id).is_some() {
-            read_chat(&core, &target, cursor.as_deref())?
-        } else {
-            match target.reach {
-                Reach::Terminal => read_terminal(&core, &target, cursor.as_deref())?,
-                Reach::Asleep => json!({
-                    "turns": [],
-                    "note": format!("{name} is asleep, so Sikemux has nothing of it to read until it runs again. A message with agent_send wakes it."),
-                }),
-                Reach::Chat | Reach::Stopped => json!({
-                    "turns": [],
-                    "note": format!("{name} has stopped, so Sikemux has nothing of it to read."),
-                }),
+    let target = {
+        let (core, request, caller) = (core.clone(), request.clone(), caller.clone());
+        blocking(move || {
+            let project = messages::caller_project(&core, &request);
+            let target =
+                messages::resolve(&core, &messages::listed(&core), &agent, &project, &caller)?;
+            if target.agent_id == caller {
+                return Err("That agent is you".into());
             }
-        };
-        let fields = answer.as_object_mut().expect("an answer is an object");
-        fields.insert("name".into(), name.into());
-        fields.insert("agentId".into(), target.agent_id.clone().into());
-        fields.insert("cli".into(), target.cli.clone().into());
-        fields.insert(
-            "status".into(),
-            messages::status_word(target.standing(&core)).into(),
-        );
-        Ok(answer)
+            let name = target
+                .name
+                .clone()
+                .unwrap_or_else(|| target.agent_id.clone());
+            messages::blind_between(&core, &caller, &target.agent_id, &name)?;
+            Ok(target)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    };
+    if target.reach == Reach::Remote {
+        return super::hosts::route::read(core, &caller, &target.agent_id, cursor).await;
+    }
+    let core = core.clone();
+    blocking(move || read_target(&core, &target, cursor.as_deref()).map_err(Into::into))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// What an agent of a team on a linked host reads of `agent_id`, an agent here.
+pub(crate) async fn read_here(
+    core: &Arc<Core>,
+    agent_id: String,
+    cursor: Option<String>,
+) -> Result<Value, String> {
+    let core = core.clone();
+    blocking(move || {
+        let target = messages::listed(&core)
+            .into_iter()
+            .find(|agent| agent.agent_id == agent_id && agent.reach != Reach::Remote)
+            .ok_or("that agent is not on this host")?;
+        if core.names.is_blind(&target.agent_id) {
+            return Err(
+                "that agent reviews a card blind for Auto, so no agent may reach it".into(),
+            );
+        }
+        read_target(&core, &target, cursor.as_deref()).map_err(Into::into)
     })
     .await
     .map_err(|error| error.to_string())
+}
+
+fn read_target(core: &Core, target: &Listed, cursor: Option<&str>) -> Result<Value, String> {
+    let name = target
+        .name
+        .clone()
+        .unwrap_or_else(|| target.agent_id.clone());
+    let mut answer = if core.chats.get(&target.agent_id).is_some() {
+        read_chat(core, target, cursor)?
+    } else {
+        match target.reach {
+            Reach::Terminal => read_terminal(core, target, cursor)?,
+            Reach::Asleep => json!({
+                "turns": [],
+                "note": format!("{name} is asleep, so Sikemux has nothing of it to read until it runs again. A message with agent_send wakes it."),
+            }),
+            Reach::Chat | Reach::Stopped | Reach::Remote => json!({
+                "turns": [],
+                "note": format!("{name} has stopped, so Sikemux has nothing of it to read."),
+            }),
+        }
+    };
+    let fields = answer.as_object_mut().expect("an answer is an object");
+    fields.insert("name".into(), name.into());
+    fields.insert("agentId".into(), target.agent_id.clone().into());
+    fields.insert("cli".into(), target.cli.clone().into());
+    fields.insert(
+        "status".into(),
+        messages::status_word(target.standing(core)).into(),
+    );
+    Ok(answer)
 }
 
 /// An agent a wait is on. `status` is `None` once it is gone.
@@ -651,7 +695,7 @@ fn waited(
     let agents = messages::listed(core);
     let mut found: Vec<Waited> = Vec::new();
     for agent in wanted {
-        let waited = match messages::resolve(&agents, agent, &project, caller) {
+        let waited = match messages::resolve(core, &agents, agent, &project, caller) {
             Ok(target) => Waited {
                 status: Some(target.standing(core)),
                 name: target.name.unwrap_or_else(|| target.agent_id.clone()),

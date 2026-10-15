@@ -10,7 +10,14 @@
 //!   cancel;
 //! - `exit CODE` ends the process at once;
 //! - `who` says which account the process runs as;
+//! - `run COMMAND` runs a shell command in the session's folder and says what
+//!   it printed;
+//! - `tool METHOD JSON` calls one of Sikemux's agent tools, as the agent, and
+//!   says the answer;
 //! - anything else is echoed back.
+//!
+//! A message wrapped as one from another agent is read from its first line
+//! inside the wrapping.
 //!
 //! The account is `FAKE_ACP_ACCOUNT`. An account named in `FAKE_ACP_LIMITED`
 //! has run out of usage, and every turn on it fails the way Claude's adapter
@@ -31,8 +38,17 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+/// What a session was started with.
+#[derive(Clone, Default)]
+struct Session {
+    cwd: Option<PathBuf>,
+    /// The file naming the tool endpoint Sikemux handed the session.
+    endpoint: Option<PathBuf>,
+}
+
 struct Agent {
     out: Mutex<std::io::Stdout>,
+    sessions: Mutex<HashMap<String, Session>>,
     waiting: Mutex<HashMap<String, Sender<Value>>>,
     cancelled: AtomicBool,
     next_request: AtomicU64,
@@ -148,8 +164,104 @@ fn prompt_text(params: &Value) -> String {
         .to_owned()
 }
 
+/// Runs `command` in the session's folder, answering what it printed.
+fn run_command(session: &Session, command: &str) -> String {
+    let mut shell = sikemux_process::user_environment::command("/bin/sh");
+    shell.args(["-c", command]);
+    if let Some(cwd) = &session.cwd {
+        shell.current_dir(cwd);
+    }
+    match shell.output() {
+        Ok(output) => format!(
+            "ran with status {}: {}{}",
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+        Err(error) => format!("did not run: {error}"),
+    }
+}
+
+/// Calls one of Sikemux's agent tools over the endpoint the session names.
+fn call_tool(session: &Session, method: &str, params: &str) -> String {
+    use sikemux_core::cli::auth::new_nonce;
+    use sikemux_core::cli::protocol::{
+        CliClientCommand, CliClientHello, CliEndpointDescriptor, CliServerResponse, HarnessRequest,
+        CLI_PROTOCOL_VERSION,
+    };
+    let call = || -> Result<String, String> {
+        let endpoint = session.endpoint.as_ref().ok_or("no tool endpoint")?;
+        let descriptor: CliEndpointDescriptor =
+            serde_json::from_slice(&std::fs::read(endpoint).map_err(|error| error.to_string())?)
+                .map_err(|error| error.to_string())?;
+        let params: Value = serde_json::from_str(params).map_err(|error| error.to_string())?;
+        let stream = std::net::TcpStream::connect(("127.0.0.1", descriptor.port))
+            .map_err(|error| error.to_string())?;
+        let mut reader = std::io::BufReader::new(stream);
+        let mut send = |message: Value| -> Result<CliServerResponse, String> {
+            let mut line = serde_json::to_vec(&message).map_err(|error| error.to_string())?;
+            line.push(b'\n');
+            reader
+                .get_mut()
+                .write_all(&line)
+                .map_err(|error| error.to_string())?;
+            let mut answer = String::new();
+            reader
+                .read_line(&mut answer)
+                .map_err(|error| error.to_string())?;
+            serde_json::from_str(&answer).map_err(|error| error.to_string())
+        };
+        let hello = CliClientHello::Hello {
+            protocol: CLI_PROTOCOL_VERSION,
+            nonce: new_nonce(),
+        };
+        send(serde_json::to_value(hello).map_err(|error| error.to_string())?)?;
+        let command = CliClientCommand::Harness {
+            protocol: CLI_PROTOCOL_VERSION,
+            token: descriptor.token,
+            request: HarnessRequest {
+                id: format!("fake-{}", std::process::id()),
+                project: session
+                    .cwd
+                    .as_ref()
+                    .map(|cwd| cwd.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                agent_id: None,
+                method: method.to_owned(),
+                params,
+            },
+        };
+        match send(serde_json::to_value(command).map_err(|error| error.to_string())?)? {
+            CliServerResponse::Result { value } => Ok(value.to_string()),
+            CliServerResponse::Error { message } => Err(message),
+            other => Err(format!("{other:?}")),
+        }
+    };
+    match call() {
+        Ok(answer) => format!("tool answered: {answer}"),
+        Err(error) => format!("tool failed: {error}"),
+    }
+}
+
+/// The line of `text` that says what to do: its first, or the first inside
+/// a message from another agent.
+fn command_line(text: &str) -> &str {
+    let mut lines = text.lines().map(str::trim);
+    match lines.next() {
+        Some(first) if first.starts_with('<') => lines.next().unwrap_or(text),
+        _ => text,
+    }
+}
+
 fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
-    let mut words = text.split_whitespace();
+    let session = agent
+        .sessions
+        .lock()
+        .ok()
+        .and_then(|sessions| sessions.get(session_id).cloned())
+        .unwrap_or_default();
+    let line = command_line(text);
+    let mut words = line.split_whitespace();
     let command = words.next().unwrap_or_default();
     let argument = words.next().and_then(|word| word.parse::<u64>().ok());
     let mut said = String::new();
@@ -239,6 +351,17 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
             say(&format!("account {}", agent.account));
             "end_turn"
         }
+        "run" => {
+            let command = line.trim_start().trim_start_matches("run").trim();
+            say(&run_command(&session, command));
+            "end_turn"
+        }
+        "tool" => {
+            let rest = line.trim_start().trim_start_matches("tool").trim();
+            let (method, params) = rest.split_once(' ').unwrap_or((rest, "{}"));
+            say(&call_tool(&session, method, params.trim()));
+            "end_turn"
+        }
         _ => {
             say(&format!("echo: {text}"));
             "end_turn"
@@ -290,6 +413,22 @@ fn handle(agent: &Arc<Agent>, message: Value, sessions: &AtomicU64) {
                 std::process::id(),
                 sessions.fetch_add(1, Ordering::Relaxed)
             );
+            let endpoint = params["mcpServers"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|server| server["env"].as_array().cloned().unwrap_or_default())
+                .find(|variable| variable["name"] == "SIKEMUX_CLI_ENDPOINT")
+                .and_then(|variable| variable["value"].as_str().map(PathBuf::from));
+            if let Ok(mut known) = agent.sessions.lock() {
+                known.insert(
+                    session_id.clone(),
+                    Session {
+                        cwd: params["cwd"].as_str().map(PathBuf::from),
+                        endpoint,
+                    },
+                );
+            }
             agent.reply(
                 &id,
                 json!({ "sessionId": session_id, "configOptions": agent.config() }),
@@ -387,6 +526,7 @@ fn main() {
     };
     let agent = Arc::new(Agent {
         out: Mutex::new(std::io::stdout()),
+        sessions: Mutex::new(HashMap::new()),
         waiting: Mutex::new(HashMap::new()),
         cancelled: AtomicBool::new(false),
         next_request: AtomicU64::new(1),
