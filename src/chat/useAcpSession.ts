@@ -9,7 +9,7 @@ import { noteSignedOut } from "../agents/statusRefresh";
 import { swallow } from "../state/toast";
 import type { FoldMemory } from "./longText";
 import { chatActions } from "./acpEvents";
-import { earlierMessages, PAGE_TURNS } from "./earlier";
+import { earlierMessages, PAGE_TURNS, reachesSubagent } from "./earlier";
 import { effectiveMode as permissionModeOf } from "../agents/agentLaunch";
 import { afterSessionEnd, sessionEndOf, type Recovery } from "./sessionRecovery";
 import { claimChat } from "./chatClaims";
@@ -18,7 +18,7 @@ import type { ChatAction, ChatState } from "./types";
 const UPDATE_FLUSH_FALLBACK_MS = 250;
 
 /* Where paging back through a chat the core sent only the end of goes next,
-   and everything shown since, which an earlier page's subagents play on into. */
+   and what subagents said since, which an earlier page's subagents play on into. */
 type History = { cursor: { feed: string; before: number } | null; pages: number; held: ChatAction[] };
 
 export type EarlierTurns = "none" | "idle" | "loading" | "failed";
@@ -170,7 +170,8 @@ export function useAcpSession({
             if (event.kind === "turn_started" && sessionIdRef.current && agentRef.current.resumeId !== sessionIdRef.current)
                 cmd.attachAgentSession(agent.id, sessionIdRef.current);
             const actions = chatActions(event);
-            historyRef.current?.held.push(...actions);
+            const history = historyRef.current;
+            if (history) for (const action of actions) if (reachesSubagent(action, sessionIdRef.current)) history.held.push(action);
             for (const action of actions) {
                 if (action.type === "session_update") {
                     const { update } = action;
@@ -206,8 +207,10 @@ export function useAcpSession({
                 if (!mounted) return;
                 let response: AcpStartResponse;
                 let appliedMode: AgentPermissionMode;
-                if (attached.status === "live" && attached.olderBefore !== null && historyRef.current) {
-                    historyRef.current.cursor = { feed: attached.feed, before: attached.olderBefore };
+                const history = historyRef.current;
+                if (attached.status === "live" && attached.olderBefore !== null && history) {
+                    history.cursor = { feed: attached.feed, before: attached.olderBefore };
+                    history.held = history.held.filter((action) => reachesSubagent(action, attached.start.sessionId));
                     setEarlier("idle");
                 } else historyRef.current = null;
                 if (attached.status === "live") {
@@ -324,7 +327,7 @@ export function useAcpSession({
                     return;
                 }
                 history.cursor = { feed: cursor.feed, before: page.olderBefore };
-                history.held = [...actions, ...history.held];
+                history.held.unshift(...actions.filter((action) => reachesSubagent(action, sessionIdRef.current)));
                 setEarlier("idle");
             },
             () => {

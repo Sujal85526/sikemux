@@ -23,6 +23,14 @@ export function earlierMessages(page: EarlierPage, later: readonly ChatAction[])
     return after.messages.filter((message) => ids.has(message.id)).map((message) => ({ ...message, id: `earlier-${page.number}-${message.id}` }));
 }
 
+/**
+ * Whether `action` can still change a subagent an earlier page started: anything said in a
+ * session other than the chat's own, `chatSession`, or of a subagent by its id.
+ */
+export function reachesSubagent(action: ChatAction, chatSession: string | null): boolean {
+    return action.type === "session_update" && (action.sessionId !== chatSession || typeof action.update.subagentSessionId === "string");
+}
+
 /** Puts turns from before what a remote view holds above it. */
 export function withEarlier(state: ChatState, messages: ChatMessage[]): ChatState {
     return chatReducer(state, { type: "earlier", messages });
