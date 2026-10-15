@@ -16,8 +16,6 @@ with `browser_navigate`, not in their own browser. Desk tabs run WebKit, the
 same engine as Sikemux and Safari, so check pages there, not in a headless
 Chromium.
 
-To show a chart, table, diagram or mockup in your reply, read the `pages` topic.
-
 Read this page first. For one area in depth, call `guide` with a `topic`
 from the list below.
 
@@ -25,8 +23,8 @@ from the list below.
 
 - `workspace_inspect` comes first. It returns the open project, the tasks in
   `sikemux.json`, the runs you already started and an event cursor. Task ids
-  come from there; do not guess one. Its `ports` lists the TCP ports the
-  project's terminals, tasks and agents listen on, preview first.
+  come from there; do not guess one. Its `ports` lists the ports the
+  project's terminals, tasks and agents listen on.
 - `task_start` takes an `idempotencyKey` you choose and either a `taskId` or a
   `command`. Reusing a key returns the original run, so pick one key per
   attempt and reuse it when a call fails or you are unsure it landed. Use
@@ -48,26 +46,23 @@ from the list below.
   rather than with sleeps or screenshots.
 - Every state says whether the tab is `visible` to the person; never tell
   them a hidden page is on their screen.
-- Other agents may be changing the same checkout. Commit with `git_commit`,
-  which takes only the lines you wrote and leaves theirs uncommitted; there
-  Sikemux refuses `git add -A`, `commit -a`, `stash`, `reset --hard` and the
-  like. In a git worktree of your own they are allowed.
-- Plugin tools (`github_*`, `bitbucket_*`, `gitlab_*`, `jira_*`, `signoz_*`,
-  `slack_*`, `rundeck_*`, `aws_*`) are listed only when they can work here:
-  signed in, and for a code host a remote of this project on it. If one is
-  missing, ask the person to sign in from its pane and restart you.
+- Other agents may share this checkout: commit with `git_commit`, and see
+  `agents` for the git commands refused here.
+- Plugin tools (`github_*`, `jira_*`, `slack_*` and the rest) are listed only
+  when signed in, and for a code host when this project has a remote on it.
+  If one is missing, ask the person to sign in from its pane and restart you.
 
 ## Topics
 
 Pass one of these as `topic`:
 
 - `config` — writing or fixing `sikemux.json`, and `configStatus`
-- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, reloads
+- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping
 - `output` — `task_read` paging, `plain`, `tail`, `search`, and `events_wait`
 - `ui` — `ui_open` for files, diffs, terminals and the preview
 - `pages` — charts, tables, diagrams and mockups in your reply
-- `browser-reading` — page state, report modes, element numbers and lines, `browser_find`, frames
-- `browser-input` — clicking, typing, `browser_act`, keys, drag, upload, scrolling, dialogs
+- `browser-reading` — page state, report modes, element numbers, `browser_find`, frames
+- `browser-input` — clicking, typing, `browser_act`, keys, drag, upload, dialogs
 - `browser-pages` — navigating, reloading, waiting, local files, viewports, tabs
 - `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
 - `browser-debugging` — network, console, `app_console`, `browser_evaluate`
@@ -75,9 +70,9 @@ Pass one of these as `topic`:
 - `databases` — the `db_*` tools and SQL
 - `aws` — the `aws_*` tools, profiles and expired sign-ins
 - `skills` — skills every agent in Sikemux gets
-- `agents` — names, `@`, messages
+- `agents` — names, `@`, messages, committing
 - `board` — the project's cards: adding, claiming, finishing
-- `shell` — the `sikemux tool` CLI for scripts and tasks
+- `shell` — the `sikemux tool` CLI
 
 ## config: Writing sikemux.json
 
@@ -817,6 +812,15 @@ When a message names `@Otter`, it means the agent called Otter, not the person
 or a file. The message carries a note about each agent it names: its agent
 id, its CLI, whether it is working, idle or waiting on the person, and what it
 is working on.
+
+### Committing in a shared checkout
+
+`git_commit` commits only the lines you wrote, leaving other agents' changes
+and the files on disk as they are. `paths` also takes changes no agent wrote in
+those files or folders, unless another agent changed them too. It returns the
+commit, its files and what was left. In the shared checkout Sikemux refuses
+`git add -A`, `commit -a`, `stash`, `reset --hard` and the like; in a git
+worktree of your own they are allowed.
 
 ### Listing agents
 

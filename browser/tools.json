@@ -212,7 +212,7 @@
       "name": "browser_press",
       "row": {"verb": "press", "kind": "edit", "icon": "keyboard", "target": ["{key}"]},
       "method": "browser.press",
-      "description": "Press a key or chord, such as Enter, ArrowDown or Meta+a.",
+      "description": "Press a key or chord, such as Enter or Meta+a.",
       "properties": {
         "key": {
           "type": "string",
@@ -432,7 +432,7 @@
       "name": "browser_scroll",
       "row": {"verb": "scroll", "kind": "read", "icon": "mouse", "target": ["to “{text}”", "to {selector}", "to element {index}", "to the {to}", "{deltaY}px"]},
       "method": "browser.scroll",
-      "description": "Scroll to an element, by deltaY, or to the top or bottom.",
+      "description": "Scroll to an element, by deltaY, or to an end.",
       "properties": {
         "deltaY": {
           "type": "number"
@@ -547,7 +547,7 @@
       "row": {"verb": "shot", "kind": "read", "icon": "camera", "target": ["{selector}", "“{text}”", "element {index}"]},
       "method": "browser.screenshot",
       "answer": "screenshot",
-      "description": "Capture the tab, the whole page, or with element numbers.",
+      "description": "Capture the tab or the whole page.",
       "properties": {
         "fullPage": {
           "type": "boolean"
@@ -1160,7 +1160,7 @@
       "name": "workspace_inspect",
       "row": {"verb": "inspect", "kind": "read", "icon": "folder", "target": ["the workspace"]},
       "method": "workspace.inspect",
-      "description": "The open project: tasks, runs and listening ports.",
+      "description": "The open project: tasks, runs and ports.",
       "properties": {},
       "required": []
     },
@@ -1277,7 +1277,7 @@
       "name": "ui_open",
       "row": {"verb": "show", "kind": "read", "icon": "window", "target": ["{path}:{line}", "{path}", "{kind}"]},
       "method": "ui.open",
-      "description": "Open a project file, diff, task terminal or the preview.",
+      "description": "Open a file, diff, task terminal or the preview.",
       "properties": {
         "kind": {
           "enum": [
@@ -1720,7 +1720,7 @@
       "row": {"verb": "review", "kind": "think", "icon": "eye", "target": ["the change"]},
       "method": "review.verdict",
       "offered": "reviewer",
-      "description": "Give your verdict on the change Auto asked you to review: approve it to merge, or say what must change.",
+      "description": "Approve the change you are reviewing, or say what must change.",
       "properties": {
         "approve": {
           "type": "boolean"
@@ -1761,7 +1761,7 @@
       "name": "git_commit",
       "row": {"verb": "commit", "kind": "edit", "icon": "pull-request", "target": ["{message}"]},
       "method": "git.commit",
-      "description": "Commit only the lines you wrote in this checkout, leaving other agents' changes and the files on disk as they are. paths adds changes no agent wrote in those files or folders, unless another agent changed them too. Returns the commit, its files and what was left.",
+      "description": "Commit only the lines you wrote.",
       "properties": {
         "message": {
           "type": "string",
@@ -1786,7 +1786,7 @@
       "name": "skills",
       "row": {"verb": "skills", "kind": "edit", "icon": "book", "target": ["{action} {name}", "{action} from {source}", "{action}"]},
       "method": "skills.manage",
-      "description": "Manage the skills every agent in Sikemux gets.",
+      "description": "Manage the skills every agent gets.",
       "properties": {
         "action": {
           "type": "string",
