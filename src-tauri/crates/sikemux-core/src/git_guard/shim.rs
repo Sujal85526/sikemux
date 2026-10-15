@@ -231,7 +231,10 @@ fn run(args: Vec<OsString>) -> i32 {
     }
     let mut command = sikemux_process::user_environment::command(&git);
     let subcommand = super::git_args(&words);
-    if subcommand.first().is_some_and(|sub| sub == "commit") {
+    if subcommand
+        .first()
+        .is_some_and(|sub| sub == "commit" || sub == "merge")
+    {
         let options = &words[..words.len() - subcommand.len()];
         footer::prepare(&mut command, &git, options, &subcommand[1..]);
     }

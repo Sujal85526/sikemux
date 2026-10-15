@@ -1,12 +1,12 @@
-//! How an agent's own `git commit` gets the footer naming the agents whose
-//! lines it holds. The shim runs the commit with hooks of ours in front of the
+//! How an agent's own `git commit` or `git merge` gets the footer naming the
+//! agents whose lines it holds. The shim runs it with hooks of ours in front of the
 //! repository's: they run its hooks as before, then ask the core for the
 //! footer once git has settled what the commit holds, and add it to the
 //! message. What the commit holds is git's business alone.
 //!
 //! The footer goes in at `prepare-commit-msg`, which runs even with
-//! `--no-verify`, and again at `commit-msg` when the message had nothing to
-//! put it under before the editor ran.
+//! `--no-verify`, or at `commit-msg` when the message had nothing to put it
+//! under before the editor ran.
 
 use std::ffi::OsString;
 use std::os::unix::fs::PermissionsExt;
@@ -25,16 +25,19 @@ pub(super) const LINK: &str = "sikemux-commit-footer";
 pub(super) const HOOKS: &str = "SIKEMUX_AGENT_HOOKS";
 /// Where the repository's own hooks are, for ours to run them.
 const REPO_HOOKS: &str = "SIKEMUX_REPO_HOOKS";
+/// How many `GIT_CONFIG_COUNT` settings there were before ours, for our hooks
+/// to put back so no git their hooks run takes our hooks too.
+const CONFIG_COUNT: &str = "SIKEMUX_CONFIG_COUNT";
 const AMEND: &str = "SIKEMUX_COMMIT_AMEND";
 const OURS: [&str; 2] = ["prepare-commit-msg", "commit-msg"];
-const ANSWER_WAIT: Duration = Duration::from_secs(15);
+const ANSWER_WAIT: Duration = Duration::from_secs(3);
 
 pub(super) fn folder(data_dir: &Path) -> PathBuf {
     data_dir.join("agent-hooks")
 }
 
-/// Has `command`, the real git about to run `git <options> commit <args>`,
-/// run our hooks in front of the repository's.
+/// Has `command`, the real git about to run `git <options> commit <args>` or
+/// `merge <args>`, run our hooks in front of the repository's.
 pub(super) fn prepare(command: &mut Command, git: &Path, options: &[String], args: &[String]) {
     let Some(folder) = std::env::var_os(HOOKS).map(PathBuf::from) else {
         return;
@@ -49,9 +52,16 @@ pub(super) fn prepare(command: &mut Command, git: &Path, options: &[String], arg
         .iter()
         .take_while(|arg| *arg != "--")
         .any(|arg| arg == "--amend");
-    let mut setting = OsString::from("core.hooksPath=");
-    setting.push(ours);
-    command.arg("-c").arg(setting).env(REPO_HOOKS, theirs);
+    let count = std::env::var("GIT_CONFIG_COUNT")
+        .ok()
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
+    command
+        .env("GIT_CONFIG_COUNT", (count + 1).to_string())
+        .env(format!("GIT_CONFIG_KEY_{count}"), "core.hooksPath")
+        .env(format!("GIT_CONFIG_VALUE_{count}"), ours)
+        .env(CONFIG_COUNT, count.to_string())
+        .env(REPO_HOOKS, theirs);
     if amend {
         command.env(AMEND, "1");
     } else {
@@ -118,6 +128,8 @@ fn stand_in(footer: &Path) -> String {
         r#"#!/bin/sh
 name=${{0##*/}}
 hook="$SIKEMUX_REPO_HOOKS/$name"
+if [ "${{SIKEMUX_CONFIG_COUNT:-0}}" = 0 ]; then unset GIT_CONFIG_COUNT; else export GIT_CONFIG_COUNT="$SIKEMUX_CONFIG_COUNT"; fi
+unset SIKEMUX_REPO_HOOKS SIKEMUX_CONFIG_COUNT
 case $name in
 prepare-commit-msg|commit-msg)
 	if [ -f "$hook" ] && [ -x "$hook" ]; then "$hook" "$@" || exit; fi
@@ -132,11 +144,22 @@ exec "$hook" "$@"
 
 /// Run by our `prepare-commit-msg` and `commit-msg` with the hook's name and
 /// the message file: puts the footer in the message. A commit goes on without
-/// one when the core cannot be asked or the committer is no agent of its.
+/// one when the core cannot be asked or the committer is no agent of its, and
+/// the core is asked once per commit when it gives none.
 pub(super) fn run(args: Vec<OsString>) -> i32 {
     let [hook, file, ..] = args.as_slice() else {
         return 0;
     };
+    let mut unanswered = file.clone();
+    unanswered.push(".sikemux-unanswered");
+    let git = std::os::unix::process::parent_id().to_string();
+    if hook == "commit-msg" {
+        let asked = std::fs::read_to_string(&unanswered).is_ok_and(|pid| pid == git);
+        let _ = std::fs::remove_file(&unanswered);
+        if asked {
+            return 0;
+        }
+    }
     let Ok(text) = std::fs::read_to_string(file) else {
         return 0;
     };
@@ -145,6 +168,9 @@ pub(super) fn run(args: Vec<OsString>) -> i32 {
         return 0;
     }
     let Some(footer) = ask() else {
+        if hook == "prepare-commit-msg" {
+            let _ = std::fs::write(&unanswered, git);
+        }
         return 0;
     };
     if let Some(signed) = trailers::into_message_file(&text, &footer) {
