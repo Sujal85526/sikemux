@@ -253,6 +253,14 @@ export function demoSnapshot(): PersistedSnapshot {
         pinned: false,
         activeWindowId: "w-database",
       },
+      {
+        id: "s-jira",
+        name: "Jira",
+        kind: "sikemux.jira:issues",
+        cwd: "",
+        pinned: false,
+        activeWindowId: "w-jira",
+      },
     ],
     windowsBySession: {
       "s-sikemux": [
@@ -456,6 +464,22 @@ export function demoSnapshot(): PersistedSnapshot {
           activePaneId: "p-database",
         },
       ],
+      "s-jira": [
+        {
+          id: "w-jira",
+          name: "Jira",
+          role: "sikemux.jira:issues",
+          fixed: true,
+          root: {
+            type: "pane",
+            id: "p-jira",
+            cwd: "",
+            kind: "sikemux.jira:issues",
+            title: "Jira",
+          },
+          activePaneId: "p-jira",
+        },
+      ],
       "s-signoz": [
         {
           id: "w-signoz",
@@ -487,6 +511,7 @@ export function demoSnapshot(): PersistedSnapshot {
       "s-rundeck",
       "s-signoz",
       "s-database",
+      "s-jira",
     ],
     activeSessionId: "s-sikemux",
     recent: [],

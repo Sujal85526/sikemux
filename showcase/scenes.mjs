@@ -204,6 +204,35 @@ export const SCENES = [
     },
   },
   {
+    name: "jira",
+    settle: 1400,
+    setup: async (page) => {
+      await openWindow(page, "s-jira", "w-jira");
+      await page.waitForTimeout(500);
+      await run(page, async () => {
+        const jira = await import("/src/plugins/jira/state.ts");
+        jira.updateJiraView("p-jira", { list: { kind: "mine" }, issue: "ORB-212" });
+      });
+    },
+    crops: { stage: ".stage" },
+  },
+  {
+    name: "jira-board",
+    settle: 1400,
+    setup: async (page) => {
+      await openWindow(page, "s-jira", "w-jira");
+      await page.waitForTimeout(500);
+      await run(page, async () => {
+        const jira = await import("/src/plugins/jira/state.ts");
+        jira.updateJiraView("p-jira", {
+          list: { kind: "board", id: 7, name: "Orbit board" },
+          issue: null,
+        });
+      });
+    },
+    crops: { stage: ".stage" },
+  },
+  {
     name: "github-run",
     settle: 1600,
     setup: async (page) => {

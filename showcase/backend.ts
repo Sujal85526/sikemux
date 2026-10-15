@@ -16,6 +16,7 @@ import {
 import { BRANCHES, GIT_STATUS } from "./world/git";
 import { RUNDECK, rundeckStream } from "./world/rundeck";
 import { GITHUB } from "./world/github";
+import { JIRA } from "./world/jira";
 import { SIGNOZ, signozTail } from "./world/signoz";
 import { AWS, awsLogLines } from "./world/aws";
 import { demoActivity } from "./world/activity";
@@ -547,6 +548,7 @@ export class ShowcaseBackend implements IpcTransport {
       "sikemux.bruno": { send: () => CHECKOUT_RESPONSE },
       "sikemux.github": GITHUB,
       "sikemux.database": DATABASE,
+      "sikemux.jira": JIRA,
     };
     this.on("plugin_call", ({ plugin, method, params }) => {
       const answer = plugins[plugin as string]?.[method as string];
