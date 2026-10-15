@@ -2,16 +2,7 @@
 
 .git-compose {
     flex: 0 0 auto;
-    padding: var(--space-2) 10px var(--space-1);
-}
-.git-compose-well {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: color-mix(in srgb, var(--surface-sunken) calc(var(--window-opacity, 1) * 100%), transparent);
-    transition: border-color var(--dur-1);
-}
-.git-compose-well:focus-within {
-    border-color: var(--border-selected);
+    border-bottom: 1px solid var(--border);
 }
 .git-compose-message {
     display: block;
@@ -40,8 +31,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    padding: 6px;
-    border-top: 1px solid var(--border);
+    padding: 0 10px 8px;
 }
 .git-compose-agent,
 .git-compose-agent-pick,
