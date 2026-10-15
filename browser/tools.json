@@ -1592,6 +1592,9 @@
           "minLength": 1,
           "maxLength": 8192
         },
+        "secret": {
+          "type": "boolean"
+        },
         "for": {
           "type": "string",
           "minLength": 1,

@@ -988,6 +988,13 @@ one per turn.
   you can go on: carry on as if it were true, and a message tells you if it is
   not.
 
+- `secret: true` when the answer is a secret, such as a password or a token:
+  the question goes straight to the person, never to a lead, and the answer
+  comes to you as the path of a file only the person's account can read. Use
+  it from there, such as `"$(cat 'path')"` in a command, and never print it,
+  echo it or write it anywhere. Codex's request_user_input questions marked
+  secret go the same way.
+
 An agent another agent started asks its lead first, which answers or passes it
 to the person; an agent with no lead asks the person, in its chat, the rail,
 the notch and on their phone. The answer says `askedOf`. Do not ask the same

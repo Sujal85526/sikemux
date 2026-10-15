@@ -26,6 +26,10 @@ use super::wake::{sooner, Wake};
 use super::Core;
 
 const FILE: &str = "agent-questions.json";
+/// Where the person's answers to secret questions wait for their agents.
+const SECRETS: &str = "agent-secrets";
+/// The answers to secret questions kept for one agent, newest first.
+const MAX_SECRETS_PER_AGENT: usize = 8;
 const MAX_QUESTION_BYTES: usize = 8 * 1024;
 const MAX_CHOICES: usize = 9;
 const MAX_LABEL_CHARS: usize = 200;
@@ -80,6 +84,10 @@ struct Question {
     choices: Vec<Choice>,
     blocked: bool,
     assumption: Option<String>,
+    /// The answer is a secret, such as a password, so the question goes
+    /// straight to the person and the answer never enters a transcript.
+    #[serde(default)]
+    secret: bool,
     at: u64,
     stage: Stage,
 }
@@ -103,6 +111,7 @@ impl Question {
             "choices": self.choices,
             "blocked": self.blocked,
             "assumption": self.assumption,
+            "secret": self.secret,
             "at": self.at,
             "lead": lead,
             "via": via,
@@ -159,6 +168,7 @@ struct State {
 pub(crate) struct Questions {
     state: Mutex<State>,
     kept: Kept,
+    secrets: Option<std::path::PathBuf>,
     /// Moves questions on and tells the window and phones of them.
     pub(crate) wake: Wake,
 }
@@ -179,6 +189,7 @@ struct Asked {
     choices: Vec<Choice>,
     blocked: bool,
     assumption: Option<String>,
+    secret: bool,
 }
 
 impl Questions {
@@ -193,7 +204,19 @@ impl Questions {
         let kept = Kept::new(data_dir, FILE);
         let mut record: QuestionsRecord = kept.load();
         record.open.retain(|question| known(&question.agent_id));
+        let secrets = data_dir.map(|dir| dir.join(SECRETS));
+        if let Some(entries) = secrets
+            .as_deref()
+            .and_then(|dir| std::fs::read_dir(dir).ok())
+        {
+            for entry in entries.flatten() {
+                if !known(&entry.file_name().to_string_lossy()) {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+        }
         Self {
+            secrets,
             state: Mutex::new(State {
                 dirty: !record.open.is_empty(),
                 open: record.open,
@@ -202,6 +225,32 @@ impl Questions {
             kept,
             wake: Wake::default(),
         }
+    }
+
+    /// Keeps the person's answer to a secret question in a file only their
+    /// account reads, keeping each agent's newest few, and answers its path.
+    fn keep_secret(&self, question: &Question, answer: &str) -> Result<std::path::PathBuf, String> {
+        let agent = Path::new(&question.agent_id);
+        let folder = self
+            .secrets
+            .as_ref()
+            .filter(|_| agent.file_name() == Some(agent.as_os_str()))
+            .ok_or("Sikemux has nowhere private to keep a secret")?
+            .join(agent);
+        let path = folder.join(&question.id);
+        sikemux_process::files::write_atomic(&path, answer.as_bytes(), true)
+            .map_err(|error| format!("Sikemux could not keep the secret: {error}"))?;
+        let mut kept: Vec<(std::time::SystemTime, std::path::PathBuf)> = std::fs::read_dir(&folder)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
+            .collect();
+        kept.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+        for (_, old) in kept.iter().skip(MAX_SECRETS_PER_AGENT) {
+            let _ = std::fs::remove_file(old);
+        }
+        Ok(path)
     }
 
     /// The open questions changed: the window is told, and they are kept.
@@ -471,6 +520,15 @@ fn open(
     let questions: Vec<Question> = asked
         .into_iter()
         .map(|asked| Question {
+            stage: if asked.secret {
+                Stage::Person {
+                    lead: None,
+                    passed: false,
+                }
+            } else {
+                stage.clone()
+            },
+            secret: asked.secret,
             id: format!("question-{}", uuid::Uuid::new_v4().simple()),
             agent_id: agent_id.to_owned(),
             name: name.clone(),
@@ -482,7 +540,6 @@ fn open(
             blocked: asked.blocked,
             assumption: asked.assumption,
             at,
-            stage: stage.clone(),
         })
         .collect();
     let mut state = core.harness.questions.lock();
@@ -607,6 +664,14 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
         }
         _ => {}
     }
+    let secret = match params.get("secret") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(secret)) => *secret,
+        Some(_) => return Err("secret must be a boolean".into()),
+    };
+    if secret && !blocked {
+        return Err("a secret question is blocked: wait for the answer".into());
+    }
     let question = open(
         core,
         &agent_id,
@@ -616,6 +681,7 @@ pub(crate) async fn ask(core: &Arc<Core>, request: &HarnessRequest) -> Result<Va
             choices,
             blocked,
             assumption,
+            secret,
         }],
     )?
     .remove(0);
@@ -716,6 +782,7 @@ pub(crate) fn ask_from_cli(core: &Arc<Core>, agent_id: &str, input: &Value) -> S
                 choices: choices(options.map(Value::Array).as_ref()).unwrap_or_default(),
                 blocked: true,
                 assumption: None,
+                secret: question["isSecret"].as_bool().unwrap_or(false),
             })
         })
         .collect();
@@ -797,9 +864,20 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
         (question, text)
     };
     let (question, text) = question;
-    let Some(text) = text else {
+    let Some(mut text) = text else {
         return Ok(json!({ "answered": true }));
     };
+    if question.secret {
+        match core.harness.questions.keep_secret(&question, &text) {
+            Ok(path) => text = secret_note(&path),
+            Err(error) => {
+                let mut state = core.harness.questions.lock();
+                state.open.push(question);
+                core.harness.questions.changed(&mut state);
+                return Err(error);
+            }
+        }
+    }
     let note = match &question.assumption {
         Some(assumption) => format!(
             "The person answered the question you went on without. If that is not what you assumed ({assumption}), change course."
@@ -825,10 +903,13 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
         core.harness.questions.changed(&mut state);
         return Err(error);
     }
-    if let Stage::Person {
-        lead: Some((lead_id, _)),
-        ..
-    } = &question.stage
+    if let (
+        false,
+        Stage::Person {
+            lead: Some((lead_id, _)),
+            ..
+        },
+    ) = (question.secret, &question.stage)
     {
         let note = format!(
             "The person answered {}'s question, which went to you first. {} has the answer too.",
@@ -837,6 +918,14 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
         let _ = messages::answer(core, lead_id.clone(), answered(&question.text), text, note).await;
     }
     Ok(json!({ "answered": true }))
+}
+
+/// What the agent is told in place of the secret the person answered with.
+fn secret_note(path: &Path) -> String {
+    let path = path.display();
+    format!(
+        "The person's answer is a secret, so Sikemux kept it out of this conversation. It is in {path}, which only the person's account can read. Use it straight from the file, such as \"$(cat '{path}')\" in a command, and never print it, echo it, or write it into a reply, a message or another file."
+    )
 }
 
 /// What the person's answer says, or none when they only agreed with the
