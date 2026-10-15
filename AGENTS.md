@@ -40,6 +40,9 @@
 - What a person feels must never get visibly worse: startup, typing, scrolling,
   opening a pane, a terminal under heavy output. Making any of it faster is
   always welcome.
+- It must feel fast under stress, not only when idle: many agents streaming at
+  once, terminals flooding, a large repository, a long chat, a busy machine.
+  Time changes in those conditions, since that is where slowness shows first.
 - Size and speed trade against each other; make that trade only where nobody can
   feel it. Build cold code for size and keep hot paths (terminal output,
   serialization, search, git) at full speed. Measure both sides before choosing.
