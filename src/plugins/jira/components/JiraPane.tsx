@@ -547,6 +547,24 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                             <IconExternal size={12} />
                         </button>
                         <span className="jira-grow" />
+                        <button
+                            type="button"
+                            className="jira-chip"
+                            title="Put this issue on the open project's board as a card for agents"
+                            onClick={() =>
+                                void sendToBoard({
+                                    title: issue.summary,
+                                    details: issue.description,
+                                    ticket: ticketOf(issue),
+                                    subtasks: issue.subtasks
+                                        .filter((sub) => sub.statusCategory !== "done")
+                                        .map((sub) => ({ title: sub.summary, details: "", ticket: ticketOf(sub) })),
+                                    blockedBy: issue.blockedBy,
+                                    blocks: issue.blocks,
+                                })
+                            }>
+                            Send to board
+                        </button>
                         <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
                             <IconClose size={12} />
                         </button>
@@ -573,20 +591,19 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                         <button
                             type="button"
                             className="jira-chip"
-                            title="Put this issue on the open project's board as a card for agents"
-                            onClick={() =>
-                                void sendToBoard({
-                                    title: issue.summary,
-                                    details: issue.description,
-                                    ticket: ticketOf(issue),
-                                    subtasks: issue.subtasks
-                                        .filter((sub) => sub.statusCategory !== "done")
-                                        .map((sub) => ({ title: sub.summary, details: "", ticket: ticketOf(sub) })),
-                                    blockedBy: issue.blockedBy,
-                                    blocks: issue.blocks,
-                                })
-                            }>
-                            Send to board
+                            disabled={busy}
+                            onClick={() => void run("Assign", () => jiraApi.assign(issue.key, { me: true }, site || undefined))}>
+                            Assign to me
+                        </button>
+                        <button
+                            type="button"
+                            className="jira-chip"
+                            disabled={busy || !issue.assignee}
+                            onClick={() => void run("Unassign", () => jiraApi.assign(issue.key, { accountId: null }, site || undefined))}>
+                            Unassign
+                        </button>
+                        <button type="button" className="jira-chip" disabled={busy} onClick={() => setAssigning((open) => !open)}>
+                            Assign…
                         </button>
                     </div>
                     <section className="jira-fields" aria-label="Details">
@@ -595,25 +612,6 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                             <span className="jira-person">
                                 <Avatar person={issue.assignee} large />
                                 {issue.assignee?.name ?? "Unassigned"}
-                            </span>
-                            <span className="jira-chips">
-                                <button
-                                    type="button"
-                                    className="jira-chip"
-                                    disabled={busy}
-                                    onClick={() => void run("Assign", () => jiraApi.assign(issue.key, { me: true }, site || undefined))}>
-                                    Assign to me
-                                </button>
-                                <button
-                                    type="button"
-                                    className="jira-chip"
-                                    disabled={busy || !issue.assignee}
-                                    onClick={() => void run("Unassign", () => jiraApi.assign(issue.key, { accountId: null }, site || undefined))}>
-                                    Unassign
-                                </button>
-                                <button type="button" className="jira-chip" disabled={busy} onClick={() => setAssigning((open) => !open)}>
-                                    Assign…
-                                </button>
                             </span>
                             {assigning && (
                                 <div className="jira-assign">
