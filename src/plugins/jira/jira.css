@@ -818,6 +818,21 @@
     align-items: flex-start;
 }
 
+/* With several people, a long column scrolls past most of the screen so the next person is never far; its title stays put. */
+.jira-swimlane:not(:only-child) .kanban-column {
+    max-height: 85vh;
+    padding-top: 0;
+    overflow-y: auto;
+}
+
+.jira-swimlane:not(:only-child) .kanban-column-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding-top: 8px;
+    background: color-mix(in srgb, var(--surface-sunken) 72%, var(--surface));
+}
+
 .jira-swimlane + .jira-swimlane {
     margin-top: 6px;
 }
