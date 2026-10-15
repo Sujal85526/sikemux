@@ -15,7 +15,7 @@ use sikemux_pty::task::{validate_task_request, TaskSpawnRequest};
 use sikemux_pty::user_shell::{configured_shell, login_shell_environment};
 use sikemux_pty::validate_pty_dimensions;
 
-use crate::git_guard::shim;
+use crate::git_guard::{homes, shim};
 use crate::protocol::{Continuation, LaunchIdentity, SessionKind, TaskSessionInfo, TerminalSpawn};
 
 use super::CoreResult;
@@ -122,7 +122,16 @@ pub(crate) fn prepare_terminal(
         .and_then(|variable| env.get(variable))
         .map(|home| account_dir(home));
     let guard = match direct_command {
-        Some(_) => shim::environment(env.get("PATH").map(String::as_str)),
+        Some(_) => {
+            let mut guard = shim::environment(env.get("PATH").map(String::as_str));
+            guard.extend(homes::environment(
+                owner.agent_type.as_deref().unwrap_or_default(),
+                owner.agent_id.as_deref().unwrap_or_default(),
+                true,
+                |key| env.get(key).map(String::as_str),
+            ));
+            guard
+        }
         None => Vec::new(),
     };
     for (key, value) in env.into_iter().chain(guard) {

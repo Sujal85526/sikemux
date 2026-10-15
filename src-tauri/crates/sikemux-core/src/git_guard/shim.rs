@@ -22,6 +22,7 @@ const HOOK: &str = "sikemux-git-hook";
 
 static FOLDER: OnceLock<PathBuf> = OnceLock::new();
 static GROK_PLUGIN: OnceLock<PathBuf> = OnceLock::new();
+static HOOK_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// Links this binary as `git` in a folder of `data_dir`, for agents started
 /// from now on to find first, and as the hook, with the plugin Grok chats
@@ -40,6 +41,7 @@ pub(crate) fn install(data_dir: &Path) {
     match install_hook(data_dir) {
         Ok(plugin) => {
             let _ = GROK_PLUGIN.set(plugin);
+            let _ = HOOK_DATA_DIR.set(data_dir.to_path_buf());
         }
         Err(error) => eprintln!("sikemux core: Grok's and Hermes's git go unchecked: {error}"),
     }
@@ -75,14 +77,15 @@ fn install_hook(data_dir: &Path) -> std::io::Result<PathBuf> {
     Ok(plugin)
 }
 
-/// The command a harness runs as the hook, once the core has linked it.
-pub fn hook_command(data_dir: &Path) -> Option<String> {
-    let hook = hook_folder(data_dir).join(HOOK);
-    hook.exists().then(|| quoted(&hook))
+/// The data folder the hook was linked in, and the command a harness runs it
+/// with. None before [`install`].
+pub(super) fn hook() -> Option<(&'static Path, String)> {
+    let data_dir = HOOK_DATA_DIR.get()?;
+    Some((data_dir, quoted(&hook_folder(data_dir).join(HOOK))))
 }
 
 /// Grok's `hooks` table with the hook on every shell command.
-pub fn grok_hooks(command: &str) -> Value {
+pub(super) fn grok_hooks(command: &str) -> Value {
     json!({
         "PreToolUse": [{
             "matcher": "Bash",

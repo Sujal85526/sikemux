@@ -130,6 +130,12 @@ impl Process {
             .envs(git_guard::shim::environment(
                 launch.env.get("PATH").map(String::as_str),
             ))
+            .envs(git_guard::homes::environment(
+                &launch.provider,
+                &launch.agent_id,
+                false,
+                |key| launch.env.get(key).map(String::as_str),
+            ))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

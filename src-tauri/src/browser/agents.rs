@@ -13,8 +13,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use sikemux_core::acp::schema::v1::{EnvVariable, McpServer, McpServerStdio};
-use sikemux_core::git_guard::shim;
-use sikemux_core::launch::skills;
+use sikemux_core::launch::{homes, skills};
 use tauri::{AppHandle, Manager};
 
 use super::agent_skills;
@@ -22,10 +21,6 @@ use super::{browser_state_dir, validate_agent_id, BrowserManager, BrowserMcpLaun
 use crate::error::{AppError, AppResult};
 
 const CONFIG_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Lets Hermes run the hooks in its private home's config, which it otherwise
-/// skips until the person approves each one at a terminal.
-const HERMES_ACCEPT_HOOKS: (&str, &str) = ("HERMES_ACCEPT_HOOKS", "1");
 
 /// The hosts that can be told about the browser tools. Anything else launches
 /// untouched.
@@ -92,7 +87,6 @@ impl BrowserManager {
                 let home =
                     prepare_hermes_home(app, agent_id, agent_program, &launch, data_dir).await?;
                 environment.push(("HERMES_HOME".into(), home.to_string_lossy().into_owned()));
-                environment.push((HERMES_ACCEPT_HOOKS.0.into(), HERMES_ACCEPT_HOOKS.1.into()));
                 Vec::new()
             }
             "grok" => {
@@ -160,7 +154,6 @@ pub async fn chat_home(
             match chat_hermes_home(app, agent_id, &program.to_string_lossy(), &library).await {
                 Ok(home) => {
                     env.insert("HERMES_HOME".into(), home.to_string_lossy().into_owned());
-                    env.insert(HERMES_ACCEPT_HOOKS.0.into(), HERMES_ACCEPT_HOOKS.1.into());
                 }
                 Err(error) => {
                     eprintln!("Sikemux skills are unavailable to this Hermes chat: {error}")
@@ -185,7 +178,7 @@ async fn chat_hermes_home(
 ) -> AppResult<PathBuf> {
     let real = crate::agents::config::hermes_root()
         .ok_or_else(|| AppError::Other("the home folder is unavailable".into()))?;
-    share_session_store(&real, "state.db", false)?;
+    homes::share_session_store(&real, "state.db", false)?;
     let home = private_home(app, "hermes-chat", agent_id, &real, "config.yaml", "{}\n")?;
     let config = std::fs::read_to_string(home.join("config.yaml")).unwrap_or_default();
     let dirs = agent_skills::hermes_external_dirs(&config, library);
@@ -196,40 +189,19 @@ async fn chat_hermes_home(
         "Hermes",
     )
     .await?;
-    guard_hermes_home(app, program, &home).await;
     Ok(home)
 }
 
 fn chat_grok_home(app: &AppHandle, agent_id: &str, library: &Path) -> AppResult<PathBuf> {
     let real = crate::agents::config::grok_root()
         .ok_or_else(|| AppError::Other("the home folder is unavailable".into()))?;
-    share_session_store(&real, "sessions", true)?;
+    homes::share_session_store(&real, "sessions", true)?;
     let home = private_home(app, "grok-chat", agent_id, &real, "config.toml", "")?;
     let path = home.join("config.toml");
     let config = std::fs::read_to_string(&path).unwrap_or_default();
     let merged = agent_skills::grok_config(&config, library).map_err(AppError::Other)?;
     std::fs::write(&path, merged)?;
     Ok(home)
-}
-
-/// Makes the store an agent keeps its sessions in inside its real home, if it
-/// has none yet, so a private home links to it rather than starting its own.
-/// Sikemux lists and resumes sessions from the real home.
-fn share_session_store(real_home: &Path, name: &str, folder: bool) -> std::io::Result<()> {
-    let store = real_home.join(name);
-    if std::fs::symlink_metadata(&store).is_ok() {
-        return Ok(());
-    }
-    std::fs::create_dir_all(real_home)?;
-    if folder {
-        std::fs::create_dir_all(&store)
-    } else {
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&store)
-            .map(|_| ())
-    }
 }
 
 /// The app data folder with the skills library ready in it. Without one,
@@ -428,7 +400,6 @@ async fn prepare_hermes_home(
             eprintln!("Sikemux skills are unavailable to Hermes: {error}");
         }
     }
-    guard_hermes_home(app, agent_program, &home).await;
     Ok(home)
 }
 
@@ -451,100 +422,19 @@ async fn prepare_grok_home(
     let mut args = vec!["mcp", "add", "sikemux_tools", "--", launch.command.as_str()];
     args.extend(launch.args.iter().map(String::as_str));
     run_config_command(agent_program, &args, ("GROK_HOME", &home), "Grok").await?;
-    let path = home.join("config.toml");
-    let mut config = std::fs::read_to_string(&path).unwrap_or_default();
     if let Some(data_dir) = data_dir {
+        let path = home.join("config.toml");
+        let config = std::fs::read_to_string(&path).unwrap_or_default();
         match agent_skills::grok_config(&config, &sikemux_core::skills::library(data_dir)) {
-            Ok(merged) => config = merged,
+            Ok(config) => std::fs::write(&path, config)?,
             Err(error) => eprintln!("Sikemux skills are unavailable to Grok: {error}"),
         }
     }
-    if let Some(command) = git_hook(app) {
-        match grok_git_hook(&config, &command) {
-            Ok(guarded) => config = guarded,
-            Err(error) => eprintln!("Grok's git commands go unchecked: {error}"),
-        }
-    }
-    std::fs::write(&path, config)?;
     Ok(home)
 }
 
-/// The hook that refuses sweeping git commands in a shared checkout, which
-/// Grok and Hermes need since their login profile's PATH puts the system's
-/// git ahead of Sikemux's. A Grok chat gets it from the core instead.
-fn git_hook(app: &AppHandle) -> Option<String> {
-    shim::hook_command(&app.path().app_data_dir().ok()?)
-}
-
-fn grok_git_hook(config_toml: &str, command: &str) -> Result<String, String> {
-    let mut config: toml::Table = config_toml.parse().map_err(|error| format!("{error}"))?;
-    let hooks = config
-        .entry("hooks")
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
-        .as_table_mut()
-        .ok_or("[hooks] in config.toml is not a table")?;
-    let ours =
-        toml::Value::try_from(shim::grok_hooks(command)).map_err(|error| error.to_string())?;
-    for (event, groups) in ours.as_table().into_iter().flatten() {
-        let list = hooks
-            .entry(event)
-            .or_insert_with(|| toml::Value::Array(Vec::new()))
-            .as_array_mut()
-            .ok_or_else(|| format!("hooks.{event} in config.toml is not a list"))?;
-        for group in groups.as_array().into_iter().flatten() {
-            if !list.contains(group) {
-                list.push(group.clone());
-            }
-        }
-    }
-    toml::to_string(&config).map_err(|error| error.to_string())
-}
-
-/// Adds the git hook to the hooks the person's Hermes config already runs
-/// before a terminal command.
-async fn guard_hermes_home(app: &AppHandle, program: &str, home: &Path) {
-    let Some(command) = git_hook(app) else {
-        return;
-    };
-    let guarded = async {
-        let hooks = run_config_command(
-            program,
-            &["config", "get", "--json", "hooks"],
-            ("HERMES_HOME", home),
-            "Hermes",
-        )
-        .await?;
-        let hooks = hermes_git_hook(&hooks, &command);
-        run_config_command(
-            program,
-            &["config", "set", "hooks", &hooks, "--force"],
-            ("HERMES_HOME", home),
-            "Hermes",
-        )
-        .await
-    };
-    if let Err(error) = guarded.await {
-        eprintln!("Hermes's git commands go unchecked: {error}");
-    }
-}
-
-fn hermes_git_hook(hooks_json: &str, command: &str) -> String {
-    let mut hooks = serde_json::from_str::<Value>(hooks_json)
-        .ok()
-        .filter(Value::is_object)
-        .unwrap_or_else(|| json!({}));
-    let ours = json!({ "matcher": "terminal", "command": command });
-    match hooks["pre_tool_call"].as_array_mut() {
-        Some(list) if list.contains(&ours) => {}
-        Some(list) => list.push(ours),
-        None => hooks["pre_tool_call"] = json!([ours]),
-    }
-    hooks.to_string()
-}
-
-/// A private copy of the host's home: every entry is linked back to the real
-/// one, except the config file, which is copied so Sikemux can add a server to
-/// it without touching the user's own.
+/// A private copy of the host's home for `agent_id`, which Sikemux can add a
+/// server to without touching the user's own config.
 fn private_home(
     app: &AppHandle,
     host: &str,
@@ -554,53 +444,8 @@ fn private_home(
     empty_config: &str,
 ) -> AppResult<PathBuf> {
     let destination = browser_state_dir(app)?.join(host).join(agent_id);
-    std::fs::create_dir_all(&destination)?;
-    match std::fs::read_dir(source) {
-        Ok(entries) => {
-            for entry in entries.flatten() {
-                if entry.file_name() == config_name {
-                    continue;
-                }
-                link_entry(&entry.path(), &destination.join(entry.file_name()))?;
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
-    let config = destination.join(config_name);
-    let source_config = source.join(config_name);
-    if source_config.is_file() {
-        std::fs::copy(source_config, &config)?;
-    } else if !config.is_file() {
-        std::fs::write(&config, empty_config)?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o700))?;
-        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o600))?;
-    }
+    homes::private_home(&destination, source, config_name, empty_config)?;
     Ok(destination)
-}
-
-fn link_entry(source: &Path, destination: &Path) -> std::io::Result<()> {
-    if std::fs::symlink_metadata(destination).is_ok() {
-        return Ok(());
-    }
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(source, destination)
-    }
-    #[cfg(windows)]
-    {
-        if source.is_dir() {
-            std::os::windows::fs::symlink_dir(source, destination)
-        } else {
-            std::os::windows::fs::symlink_file(source, destination)
-                .or_else(|_| std::fs::hard_link(source, destination))
-                .or_else(|_| std::fs::copy(source, destination).map(|_| ()))
-        }
-    }
 }
 
 async fn run_config_command(
@@ -608,7 +453,7 @@ async fn run_config_command(
     args: &[&str],
     home: (&str, &Path),
     label: &str,
-) -> AppResult<String> {
+) -> AppResult<()> {
     let output = tokio::time::timeout(
         CONFIG_TIMEOUT,
         tokio::process::Command::from(sikemux_process::user_environment::command(program))
@@ -616,7 +461,7 @@ async fn run_config_command(
             .env(home.0, home.1)
             .kill_on_drop(true)
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
+            .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .output(),
     )
@@ -624,7 +469,7 @@ async fn run_config_command(
     .map_err(|_| AppError::Other(format!("{label} browser config timed out")))?
     .map_err(|error| AppError::Other(format!("{label} browser config failed: {error}")))?;
     if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+        return Ok(());
     }
     let detail = String::from_utf8_lossy(&output.stderr)
         .chars()
@@ -645,27 +490,6 @@ mod tests {
             command: "/Apps/Sikemux.app/sikemux-editor".into(),
             args: vec!["--tools-mcp".into()],
         }
-    }
-
-    #[test]
-    fn a_session_store_is_made_in_the_real_home_only_when_missing() {
-        let home = tempfile::tempdir().unwrap();
-        share_session_store(home.path(), "sessions", true).unwrap();
-        share_session_store(home.path(), "state.db", false).unwrap();
-        assert!(home.path().join("sessions").is_dir());
-        assert_eq!(
-            std::fs::metadata(home.path().join("state.db"))
-                .unwrap()
-                .len(),
-            0
-        );
-
-        std::fs::write(home.path().join("state.db"), "kept").unwrap();
-        share_session_store(home.path(), "state.db", false).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(home.path().join("state.db")).unwrap(),
-            "kept"
-        );
     }
 
     #[test]
