@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { BoardAuto, SettingsChanges } from "../agents/agentBoard";
+import type { BoardAuto, ReviewerChoice, SettingsChanges } from "../agents/agentBoard";
 import { agentBoardApi } from "../api/agentBoard";
 import { modelProvidersApi } from "../api/modelProviders";
 import { chatLaunchers } from "../remote/workspace";
@@ -12,6 +12,7 @@ import { IconClose } from "../ui/Icons";
 
 const MAX_SLOTS = 8;
 const FIRST_THAT_WORKS = "";
+const ANOTHER_CLI = "";
 
 const SLOT_OPTIONS: DropdownOption[] = Array.from({ length: MAX_SLOTS }, (_, index) => ({
     value: String(index + 1),
@@ -92,6 +93,16 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
         }
     };
 
+    const reviewer = settings?.reviewer ?? null;
+    const reviewers: DropdownOption[] = [
+        { value: ANOTHER_CLI, label: "Any other signed-in agent", detail: "On another CLI than the card's" },
+        ...launchers.slice(1),
+    ];
+    const saveReviewer = (changes: Partial<ReviewerChoice>) => {
+        const launcher = changes.launcher ?? reviewer?.launcher;
+        void save({ reviewer: launcher ? { launcher, provider: reviewer?.provider ?? null, model: reviewer?.model ?? null, ...changes } : null });
+    };
+
     return (
         <aside className="board-card-panel" aria-label="Auto">
             <header className="board-panel-head">
@@ -108,7 +119,7 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
             <p className="board-auto-about">
                 For each card you added that nobody has and nothing holds up, Auto starts an agent in a worktree and branch of its own. It plans first
                 and asks its questions up front; a card it waits on you for goes to Needs you. When the agent's turn ends, Auto commits, opens a pull
-                request and lands it. It keeps going while Sikemux is closed.
+                request, has an agent on another CLI review it and lands it. It keeps going while Sikemux is closed.
             </p>
             {auto?.autoNote && <p className="board-auto-note">{auto.autoNote}</p>}
             <div className="board-facts">
@@ -160,6 +171,46 @@ export function AutoPanel({ folder, auto, onClose }: { folder: string; auto: Boa
                     />
                 </span>
             </div>
+            <section className="board-result">
+                <span className="board-section-name">Reviewer</span>
+                <div className="board-facts">
+                    <span className="board-fact">
+                        <span className="board-fact-name">Agent</span>
+                        <Dropdown
+                            value={reviewer?.launcher ?? ANOTHER_CLI}
+                            options={reviewers}
+                            disabled={busy}
+                            onChange={(launcher) => (launcher ? saveReviewer({ launcher }) : void save({ reviewer: null }))}
+                        />
+                    </span>
+                    {reviewer && (payers.length > 0 || reviewer.provider) && (
+                        <span className="board-fact">
+                            <span className="board-fact-name">Paid by</span>
+                            <Dropdown
+                                value={reviewer.provider ?? ""}
+                                options={[{ value: "", label: "Its own account" }, ...payers]}
+                                disabled={busy}
+                                onChange={(provider) => saveReviewer({ provider: provider || null })}
+                            />
+                        </span>
+                    )}
+                    {reviewer && (
+                        <span className="board-fact">
+                            <span className="board-fact-name">Model</span>
+                            <TextSetting
+                                value={reviewer.model ?? ""}
+                                placeholder="The agent's own"
+                                label="Reviewer model"
+                                onSave={(model) => saveReviewer({ model: model || null })}
+                            />
+                        </span>
+                    )}
+                </div>
+                <span className="board-auto-hint">
+                    Before a card merges, an agent on another CLI than the one that did it reviews the change blind, against the card and its
+                    acceptance criteria. With none signed in, the pull request waits for you.
+                </span>
+            </section>
             <section className="board-result">
                 <span className="board-section-name">Check command</span>
                 <TextSetting

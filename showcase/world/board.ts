@@ -16,6 +16,7 @@ const card = (
   fields: Partial<BoardCard> & Pick<BoardCard, "id" | "title" | "status">,
 ): BoardCard => ({
   details: "",
+  acceptance: "",
   owner: null,
   ownerName: null,
   ownerCli: null,
@@ -71,6 +72,7 @@ export const DEMO_BOARD: ProjectBoard = {
     finish: "merge",
     check: "pnpm check",
     statuses: { progress: "In Progress", done: "Done" },
+    reviewer: null,
   },
   running: 1,
   autoNote: null,

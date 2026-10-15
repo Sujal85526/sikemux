@@ -14,8 +14,9 @@ export interface CardTicket {
     readonly syncNote?: string;
 }
 
-/** Where a card Auto runs is: "review" and "held" wait on the person. */
-export type RunStage = "starting" | "working" | "shipping" | "checking" | "fixing" | "merging" | "review" | "held" | "merged" | "closed";
+/** Where a card Auto runs is: "review" and "held" wait on the person; "reviewing" is an agent on another CLI reviewing it before it merges. */
+export type RunStage =
+    "starting" | "working" | "shipping" | "checking" | "reviewing" | "fixing" | "merging" | "review" | "held" | "merged" | "closed";
 
 /** The run Auto gave a card: its own agent, worktree and branch, and the pull request that lands it. */
 export interface CardRun {
@@ -30,6 +31,14 @@ export interface CardRun {
     /** What is happening, or why the card is back with the person. */
     readonly note: string | null;
     readonly pull: { readonly number: number; readonly url: string; readonly host: string } | null;
+}
+
+/** The agent that reviews each change before Auto merges it. */
+export interface ReviewerChoice {
+    /** The app's launcher it starts with, which runs another CLI than the card's agent. */
+    readonly launcher: string;
+    readonly provider: string | null;
+    readonly model: string | null;
 }
 
 /** How a project's board runs on its own. */
@@ -48,6 +57,8 @@ export interface BoardSettings {
     readonly check: string | null;
     /** The ticket statuses a card's ticket moves to when it is taken and done. */
     readonly statuses: { readonly progress: string; readonly done: string };
+    /** Who reviews each change before it merges; null for any signed-in agent on another CLI than its builder's. */
+    readonly reviewer: ReviewerChoice | null;
 }
 
 export type SettingsChanges = Partial<Omit<BoardSettings, "statuses">> & { readonly statuses?: Partial<BoardSettings["statuses"]> };
@@ -67,6 +78,8 @@ export interface BoardCard {
     readonly id: number;
     readonly title: string;
     readonly details: string;
+    /** What the work must do to count as done, written only by the person; a reviewer checks the change against it. */
+    readonly acceptance: string;
     readonly status: CardStatus;
     /** The agent working it, or that did, by id. */
     readonly owner: string | null;
@@ -140,6 +153,7 @@ export function runOfAgent(boards: Readonly<Record<string, readonly BoardCard[]>
 export interface CardChanges {
     readonly title?: string;
     readonly details?: string;
+    readonly acceptance?: string;
     readonly status?: CardStatus;
     readonly dependsOn?: number[];
     readonly parent?: number;
@@ -148,6 +162,7 @@ export interface CardChanges {
 export interface NewCard {
     readonly title: string;
     readonly details?: string;
+    readonly acceptance?: string;
     readonly parent?: number;
     readonly dependsOn?: number[];
     readonly ticket?: CardTicket;

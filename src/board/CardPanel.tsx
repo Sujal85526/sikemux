@@ -31,6 +31,7 @@ const STAGE_LABELS: Record<RunStage, string> = {
     working: "Working",
     shipping: "Shipping",
     checking: "Checks running",
+    reviewing: "Under review",
     fixing: "Fixing",
     merging: "Merging",
     review: "Waits for you",
@@ -71,11 +72,13 @@ export function CardPanel({
 }) {
     const [titleDraft, setTitleDraft] = useState<string | null>(card ? null : "");
     const [detailsDraft, setDetailsDraft] = useState<string | null>(card ? null : "");
+    const [acceptanceDraft, setAcceptanceDraft] = useState<string | null>(card ? null : "");
     const [newParent, setNewParent] = useState(0);
     const [newDependsOn, setNewDependsOn] = useState<number[]>([]);
     const [busy, setBusy] = useState(false);
     const title = titleDraft ?? card?.title ?? "";
     const details = detailsDraft ?? card?.details ?? "";
+    const acceptance = acceptanceDraft ?? card?.acceptance ?? "";
     const parent = card ? (card.parent ?? 0) : newParent;
     const dependsOn = card ? card.dependsOn : newDependsOn;
 
@@ -121,6 +124,7 @@ export function CardPanel({
         const fresh: NewCard = {
             title: title.trim(),
             details: details.trim() || undefined,
+            acceptance: acceptance.trim() || undefined,
             parent: parent || undefined,
             dependsOn: dependsOn.length > 0 ? dependsOn : undefined,
         };
@@ -255,6 +259,21 @@ export function CardPanel({
                     commit(detailsDraft, setDetailsDraft, card && next !== card.details ? { details: next } : null);
                 }}
             />
+            <section className="board-result">
+                <span className="board-section-name">Acceptance criteria</span>
+                <textarea
+                    className="board-panel-details"
+                    value={acceptance}
+                    placeholder="What the change must do to merge. Only you write these; Auto's reviewer checks the change against them"
+                    aria-label="Acceptance criteria"
+                    rows={4}
+                    onChange={(event) => setAcceptanceDraft(event.target.value)}
+                    onBlur={() => {
+                        const next = acceptance.trim();
+                        commit(acceptanceDraft, setAcceptanceDraft, card && next !== card.acceptance ? { acceptance: next } : null);
+                    }}
+                />
+            </section>
             {card?.result && (
                 <section className="board-result">
                     <span className="board-section-name">Result</span>
