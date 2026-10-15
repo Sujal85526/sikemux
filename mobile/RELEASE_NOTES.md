@@ -1,7 +1,7 @@
-# 0.1.0-nightly.19
+# 0.1.0-nightly.20
 
-• Answer an agent's question in its chat. Needs input shows the question it waits on, and a chat shows what its agent assumed.
-• Agents read "Otter · title", and workers sit under their lead.
-• A Board tab reads each project's board.
-• Messages from other agents read under "Message from Otter".
-• Updated TLS with security fixes.
+• Your computer's ranked inbox, with what happened while you were away.
+• Answer secret questions privately in a masked field.
+• Approve a host's sign-in code and manage its devices from the phone.
+• A board lists the messages between its agents, and workers on linked computers sit under their lead.
+• Chats read Reconnecting… while an agent retries.
