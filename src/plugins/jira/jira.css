@@ -498,12 +498,16 @@
 }
 
 .jira-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+    gap: 12px 20px;
     padding: 10px 12px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
+}
+
+.jira-fields-title {
+    grid-column: 1 / -1;
 }
 
 .jira-fields-title,
