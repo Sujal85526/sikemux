@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use sikemux_core::acp::schema::v1::{EnvVariable, McpServer, McpServerStdio};
+use sikemux_core::git_guard::shim;
 use sikemux_core::launch::skills;
 use tauri::{AppHandle, Manager};
 
@@ -21,6 +22,10 @@ use super::{browser_state_dir, validate_agent_id, BrowserManager, BrowserMcpLaun
 use crate::error::{AppError, AppResult};
 
 const CONFIG_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Lets Hermes run the hooks in its private home's config, which it otherwise
+/// skips until the person approves each one at a terminal.
+const HERMES_ACCEPT_HOOKS: (&str, &str) = ("HERMES_ACCEPT_HOOKS", "1");
 
 /// The hosts that can be told about the browser tools. Anything else launches
 /// untouched.
@@ -87,6 +92,7 @@ impl BrowserManager {
                 let home =
                     prepare_hermes_home(app, agent_id, agent_program, &launch, data_dir).await?;
                 environment.push(("HERMES_HOME".into(), home.to_string_lossy().into_owned()));
+                environment.push((HERMES_ACCEPT_HOOKS.0.into(), HERMES_ACCEPT_HOOKS.1.into()));
                 Vec::new()
             }
             "grok" => {
@@ -154,6 +160,7 @@ pub async fn chat_home(
             match chat_hermes_home(app, agent_id, &program.to_string_lossy(), &library).await {
                 Ok(home) => {
                     env.insert("HERMES_HOME".into(), home.to_string_lossy().into_owned());
+                    env.insert(HERMES_ACCEPT_HOOKS.0.into(), HERMES_ACCEPT_HOOKS.1.into());
                 }
                 Err(error) => {
                     eprintln!("Sikemux skills are unavailable to this Hermes chat: {error}")
@@ -189,6 +196,7 @@ async fn chat_hermes_home(
         "Hermes",
     )
     .await?;
+    guard_hermes_home(app, program, &home).await;
     Ok(home)
 }
 
@@ -420,6 +428,7 @@ async fn prepare_hermes_home(
             eprintln!("Sikemux skills are unavailable to Hermes: {error}");
         }
     }
+    guard_hermes_home(app, agent_program, &home).await;
     Ok(home)
 }
 
@@ -442,15 +451,95 @@ async fn prepare_grok_home(
     let mut args = vec!["mcp", "add", "sikemux_tools", "--", launch.command.as_str()];
     args.extend(launch.args.iter().map(String::as_str));
     run_config_command(agent_program, &args, ("GROK_HOME", &home), "Grok").await?;
+    let path = home.join("config.toml");
+    let mut config = std::fs::read_to_string(&path).unwrap_or_default();
     if let Some(data_dir) = data_dir {
-        let path = home.join("config.toml");
-        let config = std::fs::read_to_string(&path).unwrap_or_default();
         match agent_skills::grok_config(&config, &sikemux_core::skills::library(data_dir)) {
-            Ok(config) => std::fs::write(&path, config)?,
+            Ok(merged) => config = merged,
             Err(error) => eprintln!("Sikemux skills are unavailable to Grok: {error}"),
         }
     }
+    if let Some(command) = git_hook(app) {
+        match grok_git_hook(&config, &command) {
+            Ok(guarded) => config = guarded,
+            Err(error) => eprintln!("Grok's git commands go unchecked: {error}"),
+        }
+    }
+    std::fs::write(&path, config)?;
     Ok(home)
+}
+
+/// The hook that refuses sweeping git commands in a shared checkout, which
+/// Grok and Hermes need since their login profile's PATH puts the system's
+/// git ahead of Sikemux's. A Grok chat gets it from the core instead.
+fn git_hook(app: &AppHandle) -> Option<String> {
+    shim::hook_command(&app.path().app_data_dir().ok()?)
+}
+
+fn grok_git_hook(config_toml: &str, command: &str) -> Result<String, String> {
+    let mut config: toml::Table = config_toml.parse().map_err(|error| format!("{error}"))?;
+    let hooks = config
+        .entry("hooks")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .ok_or("[hooks] in config.toml is not a table")?;
+    let ours =
+        toml::Value::try_from(shim::grok_hooks(command)).map_err(|error| error.to_string())?;
+    for (event, groups) in ours.as_table().into_iter().flatten() {
+        let list = hooks
+            .entry(event)
+            .or_insert_with(|| toml::Value::Array(Vec::new()))
+            .as_array_mut()
+            .ok_or_else(|| format!("hooks.{event} in config.toml is not a list"))?;
+        for group in groups.as_array().into_iter().flatten() {
+            if !list.contains(group) {
+                list.push(group.clone());
+            }
+        }
+    }
+    toml::to_string(&config).map_err(|error| error.to_string())
+}
+
+/// Adds the git hook to the hooks the person's Hermes config already runs
+/// before a terminal command.
+async fn guard_hermes_home(app: &AppHandle, program: &str, home: &Path) {
+    let Some(command) = git_hook(app) else {
+        return;
+    };
+    let guarded = async {
+        let hooks = run_config_command(
+            program,
+            &["config", "get", "--json", "hooks"],
+            ("HERMES_HOME", home),
+            "Hermes",
+        )
+        .await?;
+        let hooks = hermes_git_hook(&hooks, &command);
+        run_config_command(
+            program,
+            &["config", "set", "hooks", &hooks, "--force"],
+            ("HERMES_HOME", home),
+            "Hermes",
+        )
+        .await
+    };
+    if let Err(error) = guarded.await {
+        eprintln!("Hermes's git commands go unchecked: {error}");
+    }
+}
+
+fn hermes_git_hook(hooks_json: &str, command: &str) -> String {
+    let mut hooks = serde_json::from_str::<Value>(hooks_json)
+        .ok()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    let ours = json!({ "matcher": "terminal", "command": command });
+    match hooks["pre_tool_call"].as_array_mut() {
+        Some(list) if list.contains(&ours) => {}
+        Some(list) => list.push(ours),
+        None => hooks["pre_tool_call"] = json!([ours]),
+    }
+    hooks.to_string()
 }
 
 /// A private copy of the host's home: every entry is linked back to the real
@@ -519,7 +608,7 @@ async fn run_config_command(
     args: &[&str],
     home: (&str, &Path),
     label: &str,
-) -> AppResult<()> {
+) -> AppResult<String> {
     let output = tokio::time::timeout(
         CONFIG_TIMEOUT,
         tokio::process::Command::from(sikemux_process::user_environment::command(program))
@@ -527,7 +616,7 @@ async fn run_config_command(
             .env(home.0, home.1)
             .kill_on_drop(true)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output(),
     )
@@ -535,7 +624,7 @@ async fn run_config_command(
     .map_err(|_| AppError::Other(format!("{label} browser config timed out")))?
     .map_err(|error| AppError::Other(format!("{label} browser config failed: {error}")))?;
     if output.status.success() {
-        return Ok(());
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
     let detail = String::from_utf8_lossy(&output.stderr)
         .chars()
