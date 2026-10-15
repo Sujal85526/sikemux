@@ -484,6 +484,10 @@
     color: var(--text-tertiary);
 }
 
+.jira-send > svg {
+    color: var(--acc);
+}
+
 @container (min-width: 540px) {
     .jira-detail-body {
         grid-template-columns: minmax(0, 1fr) minmax(190px, 240px);

@@ -5,6 +5,7 @@ import {
     ContextMenu,
     Dropdown,
     EmptyState,
+    IconAgent,
     IconBoard,
     IconChevron,
     IconClock,
@@ -550,7 +551,7 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                         <span className="jira-grow" />
                         <button
                             type="button"
-                            className="jira-chip"
+                            className="jira-chip jira-send"
                             title="Put this issue on the open project's board as a card for agents"
                             onClick={() =>
                                 void sendToBoard({
@@ -564,7 +565,7 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                                     blocks: issue.blocks,
                                 })
                             }>
-                            <IconBoard size={12} />
+                            <IconAgent size={12} />
                             Send to board
                         </button>
                         <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
