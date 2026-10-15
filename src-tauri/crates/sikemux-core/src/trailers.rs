@@ -28,8 +28,9 @@ const SCISSORS: &str = " ------------------------ >8 ------------------------";
 pub const NOTES_REF: &str = "refs/notes/agents";
 
 /// What a commit's hooks put on it once git has made it, if it is the commit
-/// of `tree` and `parents`: `note`, or, with none, no note at all, taking away
-/// one an amend copied from the commit it replaced.
+/// of `tree` and `parents`: `note`, as [`signed_note`] makes it, or, with
+/// none, no note at all, taking away one an amend copied from the commit it
+/// replaced.
 #[derive(Serialize, Deserialize)]
 pub struct PendingNote {
     pub tree: String,
@@ -141,16 +142,25 @@ fn short(host: &PublicKey) -> String {
     host.to_string()[..HOST_CHARS].to_owned()
 }
 
-/// What the host signs: each field by its length, so no field can run into
-/// the next.
-fn signed(commit: &Commit, host: &PublicKey, agents: &[Agent]) -> String {
-    let field = |text: &str| format!("{}:{text}", text.len());
-    let optional = |text: &Option<String>| field(text.as_deref().unwrap_or_default());
-    let mut text = format!("sikemux agent footer 2\ntree {}\n", field(commit.tree));
+/// Each field by its length, so no field can run into the next.
+fn field(text: &str) -> String {
+    format!("{}:{text}", text.len())
+}
+
+/// What the host signs of `commit` for a `kind` of statement about it.
+fn signed_commit(kind: &str, commit: &Commit, host: &PublicKey) -> String {
+    let mut text = format!("sikemux agent {kind}\ntree {}\n", field(commit.tree));
     for parent in commit.parents {
         text.push_str(&format!("parent {}\n", field(parent)));
     }
     text.push_str(&format!("host {}\n", field(&host.to_string())));
+    text
+}
+
+/// What the host signs of a footer.
+fn signed(commit: &Commit, host: &PublicKey, agents: &[Agent]) -> String {
+    let optional = |text: &Option<String>| field(text.as_deref().unwrap_or_default());
+    let mut text = signed_commit("footer 2", commit, host);
     for agent in agents {
         text.push_str(&format!(
             "agent {} {} {} {} {} {}\n",
@@ -162,6 +172,39 @@ fn signed(commit: &Commit, host: &PublicKey, agents: &[Agent]) -> String {
             field(&agent.chat),
         ));
     }
+    text
+}
+
+/// The note `note` on `commit`, as its blob holds it: the note, then the
+/// host's signature over it with the commit's tree and parents, so a note
+/// written or changed by hand, or copied onto another commit, does not check
+/// out.
+pub fn signed_note(note: &str, commit: &Commit, key: &SecretKey) -> String {
+    let text = note_signed(note, commit, &key.public());
+    let signature = key.sign(text.as_bytes());
+    format!(
+        "{note}\n{SIGNATURE}{}\n",
+        BASE64.encode(signature.to_bytes())
+    )
+}
+
+/// The note a note's `blob` holds, when one of `hosts` signed it for `commit`.
+pub fn verify_note<'a>(blob: &'a str, commit: &Commit, hosts: &[PublicKey]) -> Option<&'a str> {
+    let (note, signature) = blob.trim_end().rsplit_once('\n')?;
+    let signature = BASE64.decode(signature.strip_prefix(SIGNATURE)?).ok()?;
+    let signature = Signature::from_bytes(&signature.try_into().ok()?);
+    hosts
+        .iter()
+        .any(|host| {
+            host.verify(note_signed(note, commit, host).as_bytes(), &signature)
+                .is_ok()
+        })
+        .then_some(note)
+}
+
+fn note_signed(note: &str, commit: &Commit, host: &PublicKey) -> String {
+    let mut text = signed_commit("note 1", commit, host);
+    text.push_str(&format!("note {}\n", field(note)));
     text
 }
 

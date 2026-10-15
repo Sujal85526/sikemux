@@ -69,14 +69,17 @@ fn footer(
     if agents.is_empty() {
         agents.extend(fallback.and_then(|id| known(core, dir, id)));
     }
-    let note = staged
-        .ok()
-        .and_then(|(owners, diff)| note::of(&owners, &diff, &agents, fallback.is_none()));
     let commit = Commit {
         tree: &tree,
         parents: &parents,
     };
-    let footer = trailers::footer(&agents, &commit, core.remote.host_key().as_ref());
+    let key = core.remote.host_key();
+    let note = staged
+        .ok()
+        .and_then(|(owners, diff)| note::of(&owners, &diff, &agents, fallback.is_none()))
+        .zip(key.as_ref())
+        .map(|(note, key)| trailers::signed_note(&note, &commit, key));
+    let footer = trailers::footer(&agents, &commit, key.as_ref());
     let pending = (!footer.is_empty() && (amend || note.is_some())).then_some(PendingNote {
         tree,
         parents,

@@ -149,16 +149,17 @@ fn owners(core: &Core, agents: Vec<Agent>, listed: &[Listed]) -> Vec<AgentOwner>
 }
 
 /// What the notes on `commits` say each one's verified agents wrote, for the
-/// commits that have one. An agent a note names that the footer does not
-/// counts for nothing.
+/// commits that have one this host or one linked with it signed. An agent a
+/// note names that the footer does not counts for nothing.
 fn noted<'a>(
+    core: &Core,
     dir: &Path,
     commits: impl Iterator<Item = (&'a str, &'a [Agent])>,
 ) -> HashMap<String, Note> {
     let commits: HashMap<&str, &[Agent]> =
         commits.filter(|(_, agents)| !agents.is_empty()).collect();
     let hashes: Vec<&str> = commits.keys().copied().collect();
-    let mut notes = note::read(dir, &hashes);
+    let mut notes = note::read(dir, &hashes, &core.remote.host_keys());
     notes.retain(|commit, note| {
         let agents = commits.get(commit.as_str()).copied().unwrap_or_default();
         note.retain(|chat, _| agents.iter().any(|agent| agent.chat == *chat));
@@ -195,6 +196,7 @@ pub(crate) async fn call(
             return Ok(BTreeMap::new());
         }
         let mut notes = noted(
+            &core,
             &params.dir,
             found
                 .iter()
@@ -509,7 +511,12 @@ fn agent_value(owner: &AgentOwner) -> Value {
 /// says each agent wrote: of the `blamed` lines when lines were asked about,
 /// else of the commit, in `path` when a file was. The lines no agent wrote are
 /// the `person`'s.
-fn split(owners: &[AgentOwner], blamed: &[Blamed], path: Option<&str>, mut person: Value) -> Vec<Value> {
+fn split(
+    owners: &[AgentOwner],
+    blamed: &[Blamed],
+    path: Option<&str>,
+    mut person: Value,
+) -> Vec<Value> {
     let wrote = |owner: &AgentOwner, line: &Blamed| {
         owner
             .lines
@@ -602,6 +609,7 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             })
             .collect();
         let mut notes = noted(
+            &core,
             &top,
             agents
                 .iter()
