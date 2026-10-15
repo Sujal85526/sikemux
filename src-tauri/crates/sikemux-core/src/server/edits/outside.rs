@@ -14,6 +14,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use super::prior::{text_of, Before, Priors, MAX_FILE_BYTES};
 use super::{changed, line_count, owners::run, Edit, Store};
+use crate::protocol::AgentStatus;
 use crate::server::collisions::GRACE_MS;
 use crate::server::messages::{listed, Listed};
 use crate::server::names::project_of;
@@ -184,8 +185,8 @@ impl Outside {
     }
 
     /// Looks at the changes whose grace has passed, lets go of what was
-    /// committed, and stops watching checkouts no agent works in. When it
-    /// wants to run next.
+    /// committed, and stops watching checkouts no agent works in, including
+    /// one between commands of a long turn. When it wants to run next.
     pub(super) fn settle(&self, core: &Arc<Core>, store: &Store) -> Option<u64> {
         let now = unix_ms();
         let checkouts: Vec<(PathBuf, String, Arc<Mutex<Seen>>, u64)> = lock(&self.checkouts)
@@ -243,9 +244,18 @@ impl Outside {
                 continue;
             }
             let agents = agents.get_or_insert_with(|| listed(core));
+            let mid_turn = {
+                let tops = lock(&self.tops);
+                agents.iter().any(|agent| {
+                    matches!(agent.status, AgentStatus::Working | AgentStatus::Blocked)
+                        && tops
+                            .get(&agent.agent_id)
+                            .is_some_and(|at| at.as_ref() == Some(&top))
+                })
+            };
             let (shells, terminals) = core.collisions.at_work(core, agents, &project, now);
             let mut checkouts = lock(&self.checkouts);
-            if shells.is_empty() && terminals.is_empty() {
+            if !mid_turn && shells.is_empty() && terminals.is_empty() {
                 checkouts.remove(&top);
             } else if let Some(checkout) = checkouts.get_mut(&top) {
                 checkout.worked_at = now;
