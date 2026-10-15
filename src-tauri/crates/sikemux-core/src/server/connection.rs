@@ -224,7 +224,7 @@ async fn handshake(
     let frame = match tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(reader)).await {
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Control => frame,
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Frozen && peer.is_local() => {
-            upgrade::answer(core, &frame.payload, writer).await;
+            upgrade::answer(core, peer, &frame.payload, writer).await;
             return false;
         }
         _ => return false,

@@ -16,6 +16,7 @@ use crate::frozen::{
 };
 use crate::protocol::encode_frozen;
 
+use super::access::{Peer, APP_ONLY};
 use super::chat::{self, HandOver};
 use super::connection::{blocking, FrameWriter};
 use super::{handover, session, Core};
@@ -50,8 +51,17 @@ fn refused(message: impl Into<String>) -> FrozenReply {
 }
 
 /// Answers one frozen request on a connection that sent it instead of a hello.
-pub(crate) async fn answer(core: &Arc<Core>, payload: &[u8], writer: &mut FrameWriter) {
+/// Only the app replaces the core: the binary it names takes over everything.
+pub(crate) async fn answer(
+    core: &Arc<Core>,
+    peer: &Peer,
+    payload: &[u8],
+    writer: &mut FrameWriter,
+) {
     match serde_json::from_slice::<FrozenRequest>(payload) {
+        Ok(FrozenRequest::Upgrade { .. }) if *peer != Peer::App => {
+            reply(writer, &refused(APP_ONLY)).await;
+        }
         Ok(FrozenRequest::Upgrade { binary, force }) => upgrade(core, binary, force, writer).await,
         Ok(FrozenRequest::UpdateBlockers) => {
             let chats = core
