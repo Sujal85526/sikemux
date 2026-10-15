@@ -1075,6 +1075,62 @@
 .agent-tree .proj-child {
     cursor: default;
 }
+.agent-row-text {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+}
+.agent-row.two-line {
+    height: 40px;
+    align-items: flex-start;
+    padding-top: 5px;
+}
+.agent-row.two-line > .agent-glyph {
+    margin-top: -2px;
+}
+.agent-row.two-line .agent-title,
+.agent-row.two-line > .agent-ago {
+    line-height: 18px;
+}
+.agent-row-project {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 1px;
+    overflow: hidden;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-normal);
+    line-height: 14px;
+    white-space: nowrap;
+}
+.agent-row-project > svg {
+    flex: none;
+    color: color-mix(in oklab, var(--live) 70%, var(--ink-dim));
+}
+.agent-row-project > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.agent-row-wrap:has(> .agent-row.two-line) > .row-status,
+.agent-row-wrap:has(> .agent-row.two-line) > .row-x {
+    top: 14px;
+}
+/* Joins the agent's mark to its tree; a team's line already does this through drawTeamLines. */
+.agent-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-tree):not(:has(> .agent-row.active))::before {
+    content: "";
+    position: absolute;
+    top: 26px;
+    left: 14px;
+    width: 1px;
+    height: 2px;
+    background: var(--tree-spine);
+}
+.agent-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-row.two-line):has(> .agent-tree)::before {
+    height: 14px;
+}
 .agent-tree .agent-tree-items {
     display: flex;
     align-items: center;
@@ -1093,9 +1149,6 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-.agent-tree-project .proj-child-ic {
-    color: var(--live);
 }
 .agent-tree-link {
     flex: none;

@@ -11,7 +11,7 @@ import { Panel, PanelHeader } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentLabel } from "../agents/AgentLabel";
 import { collisionLabel, type CollisionMark } from "../agents/collisions";
-import { AgentRowTree } from "./AgentRowTree";
+import { AgentRowProject, AgentRowTree } from "./AgentRowTree";
 import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
 import { drawTeamLines } from "./teams";
 import { inInboxOrder, useInbox } from "./useInbox";
@@ -135,13 +135,16 @@ export function OpenAgentRow({
                 </div>
             ) : (
                 <button
-                    className={`agent-row${active ? " active" : ""}`}
+                    className={`agent-row${project ? " two-line" : ""}${active ? " active" : ""}`}
                     onClick={() => cmd.revealAgent(agent.id)}
                     onDoubleClick={onDoubleClick}
                     onContextMenu={onContextMenu}>
                     {glyph}
-                    <span className="agent-title">
-                        <AgentLabel agent={agent} />
+                    <span className="agent-row-text">
+                        <span className="agent-title">
+                            <AgentLabel agent={agent} />
+                        </span>
+                        {project && <AgentRowProject name={project.name} />}
                     </span>
                     <BackgroundCounts display={display} />
                     <Collided agentId={agent.id} />
@@ -157,7 +160,7 @@ export function OpenAgentRow({
                     <IconClose size={11} />
                 </button>
             </Tooltip>
-            <AgentRowTree agentId={agent.id} project={project} worktree={agent.worktree} runsOn={link === "head" || link === "member"} />
+            <AgentRowTree agentId={agent.id} worktree={agent.worktree} runsOn={link === "head" || link === "member"} />
         </div>
     );
 }

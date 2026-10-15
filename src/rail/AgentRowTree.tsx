@@ -4,9 +4,19 @@ import * as cmd from "../state/commands";
 import type { AgentWorktree } from "../state/types";
 import { IconFolder, IconGit, IconPullRequest } from "../ui/Icons";
 
+/** The project a row's agent works in, on a second line under its title when the rail shows every project. */
+export function AgentRowProject({ name }: { name: string }) {
+    return (
+        <span className="agent-row-project">
+            <IconFolder size={11} />
+            <span>{name}</span>
+        </span>
+    );
+}
+
 /**
  * What an agent row is tied to, hung off the row as the side rail hangs a project's views:
- * project, branch, pull requests, then tickets and thread. Each name opens what it names, and
+ * branch, pull requests, then tickets and thread. Each name opens what it names, and
  * several of one kind share a line, split by dots.
  *
  * Not built yet, waiting on agents recording them:
@@ -16,38 +26,23 @@ import { IconFolder, IconGit, IconPullRequest } from "../ui/Icons";
  */
 export function AgentRowTree({
     agentId,
-    project,
     worktree,
     runsOn = false,
 }: {
     agentId?: string;
-    project?: { name: string; sessionId?: string };
     worktree?: AgentWorktree;
     /** The tree's spine goes on past its last item, as the line of a team that continues below. */
     runsOn?: boolean;
 }) {
-    if (!project && !worktree) return null;
+    if (!worktree) return null;
     return (
         <div className={`proj-children agent-tree${runsOn ? " runs-on" : ""}`}>
-            {project && (
-                <TreeItem icon={<IconFolder size={12} />} className="agent-tree-project">
-                    {project.sessionId ? (
-                        <button type="button" className="agent-tree-link" onClick={() => cmd.selectSession(project.sessionId!)}>
-                            {project.name}
-                        </button>
-                    ) : (
-                        <span>{project.name}</span>
-                    )}
-                </TreeItem>
-            )}
-            {worktree && (
-                <TreeItem icon={<IconGit size={13} />}>
-                    <span className="agent-tree-mono" title={worktree.path}>
-                        {worktree.branch}
-                    </span>
-                </TreeItem>
-            )}
-            {worktree && <WorktreePulls agentId={agentId} worktree={worktree} />}
+            <TreeItem icon={<IconGit size={13} />}>
+                <span className="agent-tree-mono" title={worktree.path}>
+                    {worktree.branch}
+                </span>
+            </TreeItem>
+            <WorktreePulls agentId={agentId} worktree={worktree} />
         </div>
     );
 }
