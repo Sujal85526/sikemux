@@ -14,7 +14,7 @@ use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
 
 /// The core's inbox calls, the only ones the page may make through this.
-const METHODS: [&str; 2] = ["inbox", "digest"];
+const METHODS: [&str; 3] = ["inbox", "digest", "agentMessages"];
 
 const CHANGED_EVENT: &str = "inbox_changed";
 

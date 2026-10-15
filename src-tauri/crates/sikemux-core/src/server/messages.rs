@@ -436,18 +436,37 @@ fn log<'a>(core: &Core, to: &str, queued: impl IntoIterator<Item = &'a Queued>, 
         return;
     };
     let at = unix_ms();
+    let to_name = core.names.name(to);
+    let mut logged = false;
     for queued in queued {
+        let from = queued.origin.as_ref().map(|origin| origin.from.clone());
         core.harness.mailbox.log.append(
             &project,
             &Entry {
                 at,
-                from: queued.origin.as_ref().map(|origin| origin.from.clone()),
+                from_name: from.as_deref().and_then(|from| core.names.name(from)),
+                from,
                 kind: queued.origin.as_ref().map(|origin| origin.kind),
                 to: to.to_owned(),
+                to_name: to_name.clone(),
                 outcome,
             },
         );
+        logged = true;
     }
+    if logged {
+        devices_hear_of_it(core);
+    }
+}
+
+/// Sends the device view, which carries when each project last logged a
+/// message. Building it reads every terminal, so it runs on a task of its own
+/// rather than under whatever locks the caller holds.
+fn devices_hear_of_it(core: &Core) {
+    let (Ok(runtime), Some(core)) = (tokio::runtime::Handle::try_current(), core.arc()) else {
+        return;
+    };
+    runtime.spawn_blocking(move || core.publish_device_view());
 }
 
 /// How an agent can be reached.

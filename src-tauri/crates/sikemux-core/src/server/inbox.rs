@@ -3,7 +3,7 @@
 //! to review, then finished work, then work under way. Built from what the
 //! core already keeps; only how each agent's latest turn went is kept here.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
@@ -150,6 +150,9 @@ pub(crate) struct View {
     pub working: usize,
     /// The person is away from this host, so a client can tell when they return.
     pub away: bool,
+    /// When each project last logged a message between its agents, so a client
+    /// showing that log reads it again.
+    pub agent_messages: BTreeMap<String, u64>,
 }
 
 /// What happened while the person was away.
@@ -614,6 +617,7 @@ fn view_of(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> View {
         items: ranked(items),
         working,
         away: core.notify.absence().1,
+        agent_messages: core.harness.mailbox.log.latest(),
     }
 }
 

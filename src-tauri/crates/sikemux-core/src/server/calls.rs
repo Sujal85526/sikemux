@@ -3,11 +3,11 @@
 //! released app calls is never removed or renamed.
 
 use std::collections::{BTreeMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::access::{Needs, Peer};
 use super::attachments;
@@ -129,15 +129,19 @@ struct AgentMessagesParams {
     limit: Option<usize>,
 }
 
-/// The project's log of messages between agents, newest first.
+/// The project's log of messages between agents, newest first, under the
+/// project's own path, which keys it in the inbox's `agentMessages`.
 async fn agent_messages(core: &Arc<Core>, params: AgentMessagesParams) -> CoreResult<Value> {
+    let path = Path::new(&params.project);
+    if !path.is_absolute() {
+        return Err("project must be the project's absolute path".into());
+    }
+    let path = path.to_owned();
     let core = core.clone();
     blocking(move || {
-        Ok(serde_json::to_value(messages::logged(
-            &core,
-            &params.project,
-            params.limit,
-        ))?)
+        let project = project_of(&path, &core.workspaces.project_paths());
+        let entries = messages::logged(&core, &project, params.limit);
+        Ok(json!({ "project": project, "entries": entries }))
     })
     .await
 }

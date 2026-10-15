@@ -3,6 +3,7 @@
 //! text, in a file per project that starts over once it fills, keeping the
 //! one before.
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -47,15 +48,21 @@ pub(crate) struct Entry {
     /// message that came back unread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+    /// What the sender was called then, as its name goes once it closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<Kind>,
     pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_name: Option<String>,
     pub outcome: Outcome,
 }
 
 pub(crate) struct MessageLog {
     folder: Option<PathBuf>,
-    writing: Mutex<()>,
+    /// When each project last logged a message, held while writing.
+    latest: Mutex<BTreeMap<String, u64>>,
 }
 
 impl MessageLog {
@@ -63,8 +70,20 @@ impl MessageLog {
     pub(crate) fn new(data_dir: Option<&Path>) -> Self {
         Self {
             folder: data_dir.map(|dir| dir.join(FOLDER)),
-            writing: Mutex::new(()),
+            latest: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, u64>> {
+        self.latest
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// When each project last logged a message since the core started, so a
+    /// client reads a project's log again when its time changes.
+    pub(crate) fn latest(&self) -> BTreeMap<String, u64> {
+        self.lock().clone()
     }
 
     fn files(&self, project: &str) -> Option<(PathBuf, PathBuf)> {
@@ -85,10 +104,8 @@ impl MessageLog {
             return;
         };
         line.push(b'\n');
-        let _writing = self
-            .writing
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut latest = self.lock();
+        latest.insert(project.to_owned(), entry.at);
         let full = std::fs::metadata(&current)
             .is_ok_and(|file| file.len() + line.len() as u64 > MAX_FILE_BYTES);
         let written = (|| {
@@ -114,10 +131,7 @@ impl MessageLog {
         let Some((current, old)) = self.files(project) else {
             return Vec::new();
         };
-        let _writing = self
-            .writing
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _writing = self.lock();
         let mut entries = Vec::new();
         for path in [current, old] {
             let Ok(file) = std::fs::File::open(path) else {
