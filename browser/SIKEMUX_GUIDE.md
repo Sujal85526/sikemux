@@ -844,6 +844,11 @@ happened:
   that is working, so it gets the message when its turn ends, together with
   the others waiting. At most ten wait for one agent.
 - `repeat`: you sent it the same text a moment ago, so it was not sent again.
+- `held`: you and the agent have messaged each other back and forth eight
+  times without either doing anything else, so Sikemux holds the message and
+  tells the person. It goes on once one of you does other work, such as
+  calling another tool, or the person writes to one of you. Reports from an
+  agent you started and answers to its questions are never held.
 
 An asleep agent is woken first, or once Sikemux is open again. Do not wait for
 an answer in a loop: carry on, and a reply arrives as a message of its own.

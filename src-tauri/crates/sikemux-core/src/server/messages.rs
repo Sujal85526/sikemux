@@ -37,6 +37,14 @@ const REPEAT_WINDOW_MS: u64 = 2 * 60 * 1000;
 /// Two agents answering each other forever stop here.
 const PAIR_WINDOW_MS: u64 = 10 * 60 * 1000;
 const PAIR_LIMIT: usize = 30;
+/// Two agents that have exchanged this many messages, both ways, with
+/// neither doing anything else in between, have their messages to each other
+/// held for the person.
+const LOOP_MESSAGES: usize = 8;
+/// The messages held between one pair of agents.
+const MAX_HELD: usize = 10;
+/// The tools that only talk to other agents, so calling them is no other work.
+const MESSAGING_TOOLS: [&str; 4] = ["agent_send", "agent_list", "agent_read", "agent_wait"];
 /// How long an agent rests after a turn before a message starts another, so a
 /// message the person queued in the app goes first.
 const SETTLE_MS: u64 = 1500;
@@ -120,8 +128,24 @@ fn joined(queued: &[Queued]) -> String {
 struct Sent {
     from: String,
     to: String,
+    kind: Kind,
     digest: u64,
     at: u64,
+}
+
+/// A message held because its sender and the agent it is for keep messaging
+/// each other and nothing else.
+struct Held {
+    from: String,
+    to: String,
+    queued: Queued,
+    at: u64,
+}
+
+/// Two agents whose messages to each other are held, from when.
+pub(crate) struct Loop {
+    pub agents: (String, String),
+    pub since: u64,
 }
 
 /// Messages typed into a terminal agent's prompt that it has not yet been
@@ -141,6 +165,34 @@ struct State {
     pasted: HashMap<String, Pasted>,
     /// How many pastes in a row each terminal agent did not take.
     missed_pastes: HashMap<String, u8>,
+    /// When each agent last did something besides messaging other agents,
+    /// within the pair window.
+    worked: HashMap<String, u64>,
+    held: Vec<Held>,
+}
+
+impl State {
+    /// Whether `from` and `to` have messaged each other, both ways, enough
+    /// times since either last did other work to count as a loop.
+    fn looping(&self, from: &str, to: &str) -> bool {
+        let since = [from, to]
+            .iter()
+            .filter_map(|agent| self.worked.get(*agent))
+            .max()
+            .copied()
+            .unwrap_or(0);
+        let exchanged: Vec<&Sent> = self
+            .sent
+            .iter()
+            .filter(|sent| {
+                sent.at > since
+                    && sent.kind != Kind::Question
+                    && ((sent.from == from && sent.to == to)
+                        || (sent.from == to && sent.to == from))
+            })
+            .collect();
+        exchanged.len() >= LOOP_MESSAGES && exchanged.iter().any(|sent| sent.from == to)
+    }
 }
 
 impl State {
@@ -167,7 +219,11 @@ pub(crate) struct Mailbox {
 
 enum Admitted {
     Yes,
-    Repeat { seconds_ago: u64 },
+    Repeat {
+        seconds_ago: u64,
+    },
+    /// It is held, as one of a loop between two agents.
+    Held,
 }
 
 impl Mailbox {
@@ -230,6 +286,9 @@ impl Mailbox {
                 seconds_ago: now.saturating_sub(repeat.at) / 1000,
             });
         }
+        if letter.kind == Kind::Message && state.looping(&letter.from_id, to) {
+            return Ok(Admitted::Held);
+        }
         let report = letter.kind == Kind::Report;
         if pair.len() >= PAIR_LIMIT && !report {
             return Err(format!(
@@ -249,9 +308,51 @@ impl Mailbox {
         self.lock().sent.push_back(Sent {
             from: letter.from_id.clone(),
             to: to.to_owned(),
+            kind: letter.kind,
             digest: digest(&wrapped(letter)),
             at: letter.at,
         });
+    }
+
+    /// Holds a message of a loop, keeping the newest few each pair sent.
+    /// Answers those it no longer keeps.
+    fn hold(&self, from: &str, to: &str, queued: Queued) -> Vec<Queued> {
+        let mut state = self.lock();
+        let pair = |held: &Held| {
+            (held.from == from && held.to == to) || (held.from == to && held.to == from)
+        };
+        let mut dropped = Vec::new();
+        while state.held.iter().filter(|held| pair(held)).count() >= MAX_HELD {
+            if let Some(oldest) = state.held.iter().position(&pair) {
+                dropped.push(state.held.remove(oldest).queued);
+            }
+        }
+        state.held.push(Held {
+            from: from.to_owned(),
+            to: to.to_owned(),
+            queued,
+            at: unix_ms(),
+        });
+        dropped
+    }
+
+    /// The pairs of agents whose messages to each other are held.
+    pub(crate) fn loops(&self) -> Vec<Loop> {
+        let state = self.lock();
+        let mut loops: Vec<Loop> = Vec::new();
+        for held in &state.held {
+            let known = loops.iter().any(|known| {
+                let (a, b) = &known.agents;
+                (*a == held.from && *b == held.to) || (*a == held.to && *b == held.from)
+            });
+            if !known {
+                loops.push(Loop {
+                    agents: (held.from.clone(), held.to.clone()),
+                    since: held.at,
+                });
+            }
+        }
+        loops
     }
 
     pub(crate) fn has_waiting(&self, agent_id: &str) -> bool {
@@ -1031,8 +1132,9 @@ async fn handed(
         .unwrap_or_else(|| target.agent_id.clone());
     let answer = |delivery: &str, note: String| json!({ "to": name, "agentId": target.agent_id, "delivery": delivery, "note": note });
     let mailbox = &core.harness.mailbox;
-    if let Admitted::Repeat { seconds_ago } = mailbox.admit(&letter, &target.agent_id, &name)? {
-        return Ok((
+    match mailbox.admit(&letter, &target.agent_id, &name)? {
+        Admitted::Yes => {}
+        Admitted::Repeat { seconds_ago } => return Ok((
             answer(
                 "repeat",
                 format!(
@@ -1040,7 +1142,18 @@ async fn handed(
                 ),
             ),
             Outcome::Repeat,
-        ));
+        )),
+        Admitted::Held => {
+            let dropped = mailbox.hold(&letter.from_id, &target.agent_id, queued.clone());
+            log(core, &target.agent_id, &dropped, Outcome::Dropped);
+            return Ok((
+                answer(
+                    "held",
+                    format!("You and {name} keep messaging each other without either doing other work, so Sikemux holds this and has asked the person. It goes to {name} once one of you does other work or the person writes to one of you; carry on with your own work."),
+                ),
+                Outcome::Waiting,
+            ));
+        }
     }
     let mut woke = "";
     let mut held = None;
@@ -1224,6 +1337,46 @@ fn unpasted(core: &Core, agent_id: &str) {
         Some(pasted.texts)
     });
     log(core, agent_id, returned.iter().flatten(), Outcome::Returned);
+}
+
+/// The agent did something besides messaging other agents, which ends any
+/// loop it was in: the messages held between it and another agent go on.
+pub(crate) fn worked(core: &Core, agent_id: &str) {
+    let mailbox = &core.harness.mailbox;
+    let now = unix_ms();
+    let looped = {
+        let mut state = mailbox.lock();
+        state
+            .worked
+            .retain(|_, at| now.saturating_sub(*at) < PAIR_WINDOW_MS);
+        state.worked.insert(agent_id.to_owned(), now);
+        state
+            .held
+            .iter()
+            .any(|held| held.from == agent_id || held.to == agent_id)
+    };
+    if !looped {
+        return;
+    }
+    mailbox.change(|state| {
+        let (released, kept): (Vec<Held>, Vec<Held>) = std::mem::take(&mut state.held)
+            .into_iter()
+            .partition(|held| held.from == agent_id || held.to == agent_id);
+        state.held = kept;
+        for held in released {
+            state.waiting.entry(held.to).or_default().push(held.queued);
+        }
+    });
+}
+
+/// The agent called a tool, by the name its CLI gives it.
+pub(crate) fn used_tool(core: &Core, agent_id: &str, tool: &str) {
+    if !MESSAGING_TOOLS
+        .iter()
+        .any(|messaging| tool.ends_with(messaging))
+    {
+        worked(core, agent_id);
+    }
 }
 
 /// The terminal agent was seen at work on a turn or asking the person

@@ -270,10 +270,27 @@ impl Chat {
                 return;
             }
         }
+        if kind == ChatEventKind::SessionUpdate {
+            self.note_tool_call(&payload);
+        }
         self.feed.emit(kind, payload);
         if kind == ChatEventKind::SessionUpdate {
             self.finish_held();
         }
+    }
+
+    fn note_tool_call(&self, update: &Value) {
+        if update["sessionUpdate"] != "tool_call" {
+            return;
+        }
+        let Some(core) = self.core.upgrade() else {
+            return;
+        };
+        let tool = update["name"]
+            .as_str()
+            .or_else(|| update["title"].as_str())
+            .unwrap_or_default();
+        super::messages::used_tool(&core, self.agent_id(), tool);
     }
 
     /// Finishes a held turn once its last subagent has ended, unless the agent
@@ -1488,6 +1505,7 @@ pub(crate) fn prompt(
     if let Some(message_id) = message_id.as_deref() {
         bounded_text("message id", message_id, 256)?;
     }
+    super::messages::worked(core, agent_id);
     core.chats.running(agent_id)?.send(ChatCommand::Prompt {
         from,
         message_id,

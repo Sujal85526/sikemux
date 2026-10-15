@@ -462,6 +462,9 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         .map_err(|error| error.to_string())?
         .to_string_lossy()
         .into_owned();
+    if let Some(agent_id) = &request.agent_id {
+        messages::used_tool(core, agent_id, &request.method.replace('.', "_"));
+    }
     match request.method.as_str() {
         "task.read" => task_read(core, &request).await,
         "task.stop" => {

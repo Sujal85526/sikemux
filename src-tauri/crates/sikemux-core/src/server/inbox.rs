@@ -41,7 +41,8 @@ pub(crate) enum Kind {
     Question,
     /// An agent in a terminal waits for the person to type.
     Input,
-    /// Auto handed the card back, for the reason in `detail`.
+    /// Auto handed the card back, or Sikemux holds the messages two agents
+    /// keep sending each other, for the reason in `detail`.
     Held,
     /// The agent went on with an assumption the person may correct.
     Assumption,
@@ -556,6 +557,21 @@ fn needs(core: &Core, agents: &[Agent], sessions: &[SessionInfo]) -> Vec<Item> {
             .by(&question.agent_id, find(&question.agent_id));
         item.detail = Some(clip(&question.text, MAX_LINE_CHARS));
         item.question_id = Some(question.id.clone());
+        items.push(item);
+    }
+    for looped in core.harness.mailbox.loops() {
+        let (agent, other) = &looped.agents;
+        let other_name = core.names.name(other).unwrap_or_else(|| other.clone());
+        let mut item = Item::new(
+            format!("loop:{agent}:{other}"),
+            Kind::Held,
+            format!("Keeps messaging {other_name} and nothing else"),
+            looped.since,
+        )
+        .by(agent, find(agent));
+        item.detail = Some(
+            "Sikemux holds their messages to each other until one of them does other work or you write to one of them.".to_owned(),
+        );
         items.push(item);
     }
     for session in sessions {
