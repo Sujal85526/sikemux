@@ -11,6 +11,7 @@ import { Panel, PanelHeader } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentLabel } from "../agents/AgentLabel";
 import { AgentRowTree } from "./AgentRowTree";
+import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
 import { drawTeamLines } from "./teams";
 import { inInboxOrder, useInbox } from "./useInbox";
 
@@ -50,7 +51,10 @@ export function AllProjectsAgents() {
         return rows;
     }, [sessionOrder, sessions, windows, windowsBySession, agents, agentActivity, agentTasks, agentSubagents]);
 
-    const teams = useMemo(() => inTeams(inInboxOrder(open, inbox.items)), [open, inbox.items]);
+    const teams = useMemo(
+        () => inTeams(withRemoteWorkers(inInboxOrder(open, inbox.items), inbox.remoteAgents)),
+        [open, inbox.items, inbox.remoteAgents],
+    );
 
     const root = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
@@ -62,17 +66,21 @@ export function AllProjectsAgents() {
     return (
         <div ref={root} className="agent-all-projects">
             <Panel variant="group" className="agent-group">
-                <PanelHeader label={`Open ${teams.length}`} rule />
-                {teams.map(({ agent: { agent, display, sessionName, sessionId }, link }) => (
-                    <OpenAgentRow
-                        key={agent.id}
-                        agent={agent}
-                        display={display}
-                        link={link}
-                        active={agent.id === shownAgentId}
-                        project={{ name: sessionName, sessionId }}
-                    />
-                ))}
+                <PanelHeader label={`Open ${open.length}`} rule />
+                {teams.map(({ agent: row, link }) =>
+                    isRemoteWorker(row) ? (
+                        <RemoteAgentRow key={row.id} agent={row.remote} link={link} />
+                    ) : (
+                        <OpenAgentRow
+                            key={row.id}
+                            agent={row.agent}
+                            display={row.display}
+                            link={link}
+                            active={row.id === shownAgentId}
+                            project={{ name: row.sessionName, sessionId: row.sessionId }}
+                        />
+                    ),
+                )}
             </Panel>
         </div>
     );
@@ -106,7 +114,7 @@ export function OpenAgentRow({
         </span>
     );
     return (
-        <div className={`agent-row-wrap${link === "head" ? " chain-head" : link ? ` chain${link === "last" ? " chain-last" : ""}` : ""}`} {...wrap}>
+        <div className={teamWrapClass(link)} {...wrap}>
             {title ? (
                 <div className={`agent-row${active ? " active" : ""}`}>
                     {glyph}

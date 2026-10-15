@@ -516,7 +516,13 @@ export class ShowcaseBackend implements IpcTransport {
           project: (params as { project: string }).project,
           entries: DEMO_MESSAGES,
         };
-      return { items: [], working: 0, away: false, agentMessages: {} };
+      return {
+        items: [],
+        working: 0,
+        away: false,
+        agentMessages: {},
+        remoteAgents: [],
+      };
     });
     let board = DEMO_BOARD;
     this.on("agent_board_call", ({ method, params }) => {

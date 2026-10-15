@@ -81,6 +81,27 @@ export interface RemoteStatus {
     readonly notifications: readonly PhoneNotifications[];
 }
 
+/** Another host on the account linked with this one, whose agents and this host's may start each other's workers. */
+export interface LinkedHost {
+    /** The host's public key. */
+    readonly id: string;
+    readonly name: string;
+    readonly platform: string;
+    readonly linkedAt: number;
+    readonly lastSeen: number | null;
+    readonly connected: boolean;
+    /** Agents of teams shared with this host that run on it. */
+    readonly agents: number;
+}
+
+/** Who waits to join or link with this host, and who already has. */
+export interface RemotePairing {
+    readonly pending: readonly PendingDevice[];
+    readonly devices: readonly PairedDevice[];
+    readonly links: readonly LinkedHost[];
+    readonly pendingLinks: readonly PendingDevice[];
+}
+
 /** A project a paired device may start an agent in. */
 export interface PublishedProject {
     readonly id: string;
@@ -112,6 +133,7 @@ export const REMOTE_STATUS_EVENT = "remote_status_changed";
 
 export const remoteApi = {
     status: () => invoke<RemoteStatus>("remote_status"),
+    pairing: () => invoke<RemotePairing>("remote_pairing"),
     setEnabled: (enabled: boolean) => invoke<RemoteStatus>("remote_set_enabled", { enabled }),
     setDeviceAccess: (id: string, access: DeviceAccess) => invoke<RemoteStatus>("remote_set_device_access", { id, access }),
     revokeDevice: (id: string) => invoke<RemoteStatus>("remote_revoke_device", { id }),

@@ -187,6 +187,17 @@ pub(crate) async fn connected(
     }
 }
 
+/// Who waits to join this host and who is paired, and the hosts linked with
+/// it or asking to be.
+#[tauri::command]
+pub async fn remote_pairing(manager: State<'_, PtyManager>) -> AppResult<Value> {
+    let client = manager.client().await?;
+    client
+        .call("pairing", Value::Null)
+        .await
+        .map_err(core_error)
+}
+
 #[tauri::command]
 pub async fn remote_status(manager: State<'_, PtyManager>) -> AppResult<RemoteStatus> {
     let client = manager.client().await?;

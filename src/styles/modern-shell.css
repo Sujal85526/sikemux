@@ -550,6 +550,12 @@ textarea:focus,
     color: var(--text-primary);
 }
 
+.agent-row.remote,
+.agent-row-wrap:hover > .agent-row.remote {
+    background: transparent;
+    cursor: default;
+}
+
 .proj-row-status {
     display: grid;
     place-items: center;

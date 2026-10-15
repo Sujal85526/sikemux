@@ -22,7 +22,7 @@ use sikemux_core::accounts::host::{
     HostSignInStatus,
 };
 use sikemux_core::accounts::protocol::{
-    ApiError, Challenge, Channel, Device, DeviceList, DeviceRegistration, DeviceRole,
+    ApiError, Challenge, Channel, Device, DeviceList, DeviceRegistration, DeviceRole, JoinTicket,
 };
 use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{AccountLinkState, BuildChannel, DeviceInfo, RemoteStatus};
@@ -469,6 +469,79 @@ pub async fn account_phones(manager: State<'_, PtyManager>) -> AppResult<Vec<Dev
         .map_err(core_error)?
         .devices;
     Ok(unpaired_phones(list.devices, &paired))
+}
+
+/// The other hosts on the account that this one has not linked with, newest
+/// first.
+#[tauri::command]
+pub async fn account_hosts(manager: State<'_, PtyManager>) -> AppResult<Vec<Device>> {
+    let Some(token) = access_token().await? else {
+        return Ok(Vec::new());
+    };
+    let response = http()
+        .get(api("/v1/devices"))
+        .query(&[("role", "host")])
+        .bearer_auth(token)
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Err(api_failure(response).await);
+    }
+    let list: DeviceList = response.json().await?;
+    let core = manager.client().await?;
+    let own = core.remote_status().await.map_err(core_error)?.core_id;
+    let pairing = core
+        .call("pairing", serde_json::Value::Null)
+        .await
+        .map_err(core_error)?;
+    let linked: Vec<&str> = pairing["links"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|link| link["id"].as_str())
+        .collect();
+    Ok(list
+        .devices
+        .into_iter()
+        .filter(|device| device.role == DeviceRole::Host && device.key != own)
+        .filter(|device| !linked.contains(&device.key.as_str()))
+        .collect())
+}
+
+/// Links this host with `key`, another host on the account, with a ticket
+/// from the account, once the person there allows it. Answers with this
+/// host's devices and links.
+#[tauri::command]
+pub async fn account_link_host(
+    manager: State<'_, PtyManager>,
+    key: String,
+    name: String,
+    platform: String,
+) -> AppResult<serde_json::Value> {
+    let token = access_token()
+        .await?
+        .ok_or_else(|| AppError::Other("sign in to link this computer with another".into()))?;
+    let core = manager.client().await?;
+    let own = core.remote_status().await.map_err(core_error)?.core_id;
+    if own.is_empty() {
+        return Err(AppError::Other("the core's key has not loaded".into()));
+    }
+    let response = http()
+        .post(api(&format!("/v1/devices/{own}/join")))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "host": key }))
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Err(api_failure(response).await);
+    }
+    let ticket: JoinTicket = response.json().await?;
+    core.call(
+        "linkHost",
+        serde_json::json!({ "ticket": ticket, "name": name, "platform": platform }),
+    )
+    .await
+    .map_err(core_error)
 }
 
 fn unpaired_phones(devices: Vec<Device>, paired: &[DeviceInfo]) -> Vec<Device> {

@@ -31,6 +31,7 @@ import { ScopeTrack } from "./ScopeTrack";
 import { drawTeamLines } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inInboxOrder, useInbox } from "./useInbox";
+import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
@@ -380,31 +381,38 @@ export function AgentRailBody() {
                 {scope === "project" && opens.length > 0 && (
                     <Panel variant="group" className="agent-group">
                         <PanelHeader label="Open" rule />
-                        {inTeams(opens).map(({ agent: a, link }) => (
-                            <OpenAgentRow
-                                key={a.id}
-                                agent={a}
-                                display={agentDisplayOf({ agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById }, a.id)}
-                                link={link}
-                                active={activeAgentId({ windows: windowsById }, session) === a.id}
-                                wrap={{ ref: leaveRow, "data-agent-id": a.id, "data-session": session.id }}
-                                title={
-                                    renamingId === a.id && (
-                                        <AgentTitleInput
-                                            title={a.title}
-                                            className="agent-title"
-                                            onSave={(title) => cmd.renameAgent(a.id, title)}
-                                            onDone={() => setRenamingId(null)}
-                                        />
-                                    )
-                                }
-                                onDoubleClick={() => setRenamingId(a.id)}
-                                onContextMenu={(event) => {
-                                    event.preventDefault();
-                                    setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
-                                }}
-                            />
-                        ))}
+                        {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
+                            isRemoteWorker(a) ? (
+                                <RemoteAgentRow key={a.id} agent={a.remote} link={link} />
+                            ) : (
+                                <OpenAgentRow
+                                    key={a.id}
+                                    agent={a}
+                                    display={agentDisplayOf(
+                                        { agentActivity: activityById, agentTasks: tasksById, agentSubagents: subagentsById },
+                                        a.id,
+                                    )}
+                                    link={link}
+                                    active={activeAgentId({ windows: windowsById }, session) === a.id}
+                                    wrap={{ ref: leaveRow, "data-agent-id": a.id, "data-session": session.id }}
+                                    title={
+                                        renamingId === a.id && (
+                                            <AgentTitleInput
+                                                title={a.title}
+                                                className="agent-title"
+                                                onSave={(title) => cmd.renameAgent(a.id, title)}
+                                                onDone={() => setRenamingId(null)}
+                                            />
+                                        )
+                                    }
+                                    onDoubleClick={() => setRenamingId(a.id)}
+                                    onContextMenu={(event) => {
+                                        event.preventDefault();
+                                        setMenu({ agentId: a.id, x: event.clientX, y: event.clientY });
+                                    }}
+                                />
+                            ),
+                        )}
                     </Panel>
                 )}
 

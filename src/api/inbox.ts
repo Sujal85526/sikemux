@@ -45,6 +45,25 @@ export interface InboxItem {
     url: string | null;
     handoff: InboxHandoff | null;
     recordings: InboxRecording[];
+    /** What this host calls the linked host the agent runs on, when it runs on one. */
+    host?: string;
+}
+
+export type RemoteAgentStatus = "working" | "done" | "idle" | "blocked" | "stopped" | "starting" | "asleep";
+
+/** A worker an agent here started on a linked host. */
+export interface RemoteAgent {
+    agentId: string;
+    name: string;
+    host: string;
+    hostId: string;
+    cli: string;
+    status: RemoteAgentStatus;
+    /** The agent here that started it. */
+    lead: string | null;
+    project: string;
+    /** Its host answers now. */
+    reachable: boolean;
 }
 
 export interface Inbox {
@@ -53,6 +72,8 @@ export interface Inbox {
     away: boolean;
     /** When each project, by its path, last logged a message between its agents. */
     agentMessages: Record<string, number>;
+    /** Workers agents here started on linked hosts. */
+    remoteAgents: RemoteAgent[];
 }
 
 /** What finished, failed and still waits since the person last left. */
