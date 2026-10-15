@@ -31,6 +31,32 @@ pub(crate) fn needs(method: &str) -> Needs {
     }
 }
 
+/// Whether only Sikemux's own window or notch may call `method` from this
+/// host; another program here may only read.
+pub(crate) fn for_person(method: &str) -> bool {
+    !matches!(
+        method,
+        "chatFile"
+            | "questions"
+            | "boards"
+            | "board"
+            | "agentNames"
+            | "agentSessions"
+            | "agentMessages"
+            | "edits"
+            | "changeOwners"
+            | "commitTrailers"
+            | "inbox"
+            | "digest"
+            | "pairing"
+            | "shares"
+            | "agentAccounts"
+            | "agentStatus"
+            | "agentAccountStatus"
+            | "agentUsage"
+    )
+}
+
 pub(crate) async fn call(
     core: Arc<Core>,
     client: &ClientConn,

@@ -18,6 +18,7 @@ mod host;
 mod inbox;
 mod join;
 mod kept;
+mod local_peer;
 mod messages;
 mod names;
 mod network_watch;
@@ -749,7 +750,7 @@ impl Core {
 
     pub(crate) fn permit(&self, peer: &access::Peer, needs: access::Needs) -> CoreResult<()> {
         let standing = match peer {
-            access::Peer::Local | access::Peer::Share { .. } => None,
+            access::Peer::App | access::Peer::Local | access::Peer::Share { .. } => None,
             access::Peer::Device { id } => self.remote.standing_of(id),
         };
         access::permit(peer, standing, needs)

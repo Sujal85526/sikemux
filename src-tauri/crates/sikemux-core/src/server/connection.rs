@@ -20,8 +20,8 @@ use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
 use super::{
-    agent, attachments, chat, harness, remote, upgrade, window, workspace, Core, CoreError,
-    CoreResult,
+    agent, attachments, chat, harness, local_peer, remote, upgrade, window, workspace, Core,
+    CoreError, CoreResult,
 };
 
 pub(crate) type ClientId = u64;
@@ -279,8 +279,9 @@ async fn handshake(
 }
 
 pub(crate) async fn serve_local(core: Arc<Core>, stream: UnixStream) {
+    let peer = local_peer::identify(&stream).await;
     let (read_half, write_half) = stream.into_split();
-    serve_client(core, Peer::Local, Box::new(read_half), Box::new(write_half)).await;
+    serve_client(core, peer, Box::new(read_half), Box::new(write_half)).await;
 }
 
 pub(crate) async fn serve_client(
@@ -387,6 +388,10 @@ async fn read_requests(
                     client.respond(request_id, Err(refused));
                     continue;
                 }
+                if client.peer == Peer::Local {
+                    client.respond(request_id, Err(access::APP_ONLY.into()));
+                    continue;
+                }
                 let Some(target) = core.session(id) else {
                     client.respond(request_id, Err("invalid argument: pty not found".into()));
                     continue;
@@ -441,6 +446,10 @@ async fn run_requests(
         }
         if let Err(refused) = core.permit(&client.peer, access::needs(&request)) {
             client.respond(request_id, Err(refused));
+            continue;
+        }
+        if client.peer == Peer::Local && access::for_person(&request, core.remote.setup()) {
+            client.respond(request_id, Err(access::APP_ONLY.into()));
             continue;
         }
         match request {
@@ -871,7 +880,7 @@ async fn run_requests(
             Request::SetNotifications { key_id, key, prefs } => {
                 let result = match &client.peer {
                     Peer::Device { id } => core.remote.set_notifications(id, key_id, &key, prefs),
-                    Peer::Local | Peer::Share { .. } => {
+                    Peer::App | Peer::Local | Peer::Share { .. } => {
                         Err("only a paired phone can ask for notifications".into())
                     }
                 };
@@ -883,7 +892,7 @@ async fn run_requests(
             Request::ClearNotifications => {
                 let result = match &client.peer {
                     Peer::Device { id } => core.remote.clear_notifications(id),
-                    Peer::Local | Peer::Share { .. } => {
+                    Peer::App | Peer::Local | Peer::Share { .. } => {
                         Err("only a paired phone has notifications to stop".into())
                     }
                 };

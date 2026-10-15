@@ -29,7 +29,7 @@ use crate::protocol::{
 use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
 
-use super::access::{Peer, Standing};
+use super::access::{Peer, Setup, Standing};
 use super::connection::{blocking, serve_client};
 use super::{Core, CoreError, CoreResult, ServerConfig};
 
@@ -247,6 +247,14 @@ impl Remote {
             owners: stored.owner.is_some()
                 && stored.joined_through.get(id) == stored.owner.as_ref(),
         })
+    }
+
+    pub(crate) fn setup(&self) -> Setup {
+        let inner = self.lock();
+        Setup {
+            signed_in: inner.stored.owner.is_some(),
+            paired: !inner.stored.devices.is_empty(),
+        }
     }
 
     pub(crate) fn status(&self) -> RemoteStatus {

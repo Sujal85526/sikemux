@@ -1,7 +1,9 @@
 //! Who is on the other end of a connection, and what each request needs from
-//! them. The app on this host may do anything. A paired device does what it
-//! is approved for at the moment it asks, and never touches the core itself.
-//! One with full control that joined through this host's own account may also
+//! them. The app on this host may do anything. Any other program here, such as
+//! the CLI or an agent's shell, may read and stop the core and set up a host
+//! with no window, but not act as the person. A paired device does what it is
+//! approved for at the moment it asks, and never touches the core itself. One
+//! with full control that joined through this host's own account may also
 //! answer for its owner: let devices in and change or remove them.
 
 use crate::protocol::{DeviceAccess, Request};
@@ -10,7 +12,10 @@ use super::{CoreError, CoreResult};
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Peer {
-    /// The app or the CLI, over the core's own socket.
+    /// Sikemux's own window or notch, over the core's socket, as the code
+    /// signature of the program on the other end shows.
+    App,
+    /// Any other program on this host, over the core's socket.
     Local,
     Device {
         id: String,
@@ -39,6 +44,7 @@ pub(crate) struct Standing {
 }
 
 pub(crate) const LOCAL_ONLY: &str = "only Sikemux on this host can do that";
+pub(crate) const APP_ONLY: &str = "only Sikemux's own window or notch can do that";
 pub(crate) const WATCH_ONLY: &str =
     "this device can watch and answer permission requests, not drive sessions";
 pub(crate) const UNPAIRED: &str = "this device is no longer paired with this host";
@@ -113,14 +119,94 @@ pub(crate) fn needs(request: &Request) -> Needs {
     }
 }
 
+/// What this host has set up, which decides what a program other than the app
+/// may still do to set it up.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Setup {
+    pub signed_in: bool,
+    pub paired: bool,
+}
+
+/// Whether only Sikemux's own window or notch may send `request` from this
+/// host. A host with no window is set up from a terminal, which cannot be told
+/// from an agent's shell: `sikemux core sign-in` while no account owns it,
+/// `sign-out`, and `pair` until its first device is in.
+pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
+    match request {
+        Request::Call { method, .. } => super::calls::for_person(method),
+        Request::SetOwner { owner: None } => false,
+        Request::SetOwner { owner: Some(_) } | Request::SignRegistration { .. } => setup.signed_in,
+        Request::AnswerPairing { .. } => setup.paired,
+        Request::List
+        | Request::Attach { .. }
+        | Request::Detach { .. }
+        | Request::Subscribe { .. }
+        | Request::TaskOutput { .. }
+        | Request::ShellAtPrompt { .. }
+        | Request::AcpList
+        | Request::AcpAttach { .. }
+        | Request::AcpHistory { .. }
+        | Request::AcpDetach { .. }
+        | Request::BackdropImage
+        | Request::Workspace
+        | Request::Attentions
+        | Request::Host
+        | Request::WatchView
+        | Request::RemoteStatus
+        | Request::ListManifests
+        | Request::ExplainAgentDetection { .. }
+        | Request::StopAll
+        | Request::Shutdown { .. }
+        | Request::Unpair
+        | Request::SetNotifications { .. }
+        | Request::ClearNotifications
+        | Request::SetForeground { .. } => false,
+        Request::Spawn { .. }
+        | Request::Resize { .. }
+        | Request::Kill { .. }
+        | Request::ResetModes { .. }
+        | Request::AcpStart { .. }
+        | Request::AcpPrompt { .. }
+        | Request::AcpEdit { .. }
+        | Request::AcpSteer { .. }
+        | Request::AttachFile { .. }
+        | Request::AcpCancel { .. }
+        | Request::AcpStopTask { .. }
+        | Request::AcpStop { .. }
+        | Request::AcpSetPermissionMode { .. }
+        | Request::AcpSetConfig { .. }
+        | Request::AcpWake { .. }
+        | Request::AcpPermissionReply { .. }
+        | Request::AcpSwitchAccount { .. }
+        | Request::StartChat { .. }
+        | Request::ResumeChat { .. }
+        | Request::Configure { .. }
+        | Request::ReloadManifests
+        | Request::RegisterWindow
+        | Request::HarnessAwaitingTrust { .. }
+        | Request::HarnessStopRuns { .. }
+        | Request::PluginsChanged
+        | Request::FocusAgent { .. }
+        | Request::SetRemoteAccess { .. }
+        | Request::SetDeviceAccess { .. }
+        | Request::RevokeDevice { .. }
+        | Request::AllowDevices { .. }
+        | Request::PublishAgents { .. }
+        | Request::PublishRecent { .. }
+        | Request::PublishOnScreen { .. }
+        | Request::PublishPalette { .. }
+        | Request::PublishBackdrop { .. } => true,
+    }
+}
+
 impl Peer {
     pub(crate) fn is_local(&self) -> bool {
-        matches!(self, Peer::Local)
+        matches!(self, Peer::App | Peer::Local)
     }
 
     pub(crate) fn device_id(&self) -> Option<String> {
         match self {
-            Peer::Local | Peer::Share { .. } => None,
+            Peer::App | Peer::Local | Peer::Share { .. } => None,
             Peer::Device { id } => Some(id.clone()),
         }
     }
@@ -177,7 +263,7 @@ mod tests {
             Request::RegisterWindow,
             Request::Kill { id: SESSION },
         ] {
-            assert!(permit(&Peer::Local, None, needs(&request)).is_ok());
+            assert!(permit(&Peer::App, None, needs(&request)).is_ok());
         }
     }
 
