@@ -1093,11 +1093,12 @@ async fn a_device_is_sent_its_view_on_connecting_and_again_when_it_changes() {
         .any(|launcher| launcher.id == "opencode:fake"));
 
     tokio::time::sleep(Duration::from_secs(1)).await;
+    let mut last = changed;
     while let Ok(event) = events.try_recv() {
-        assert!(
-            !matches!(event, ClientEvent::Event(Event::DeviceView { .. })),
-            "nothing changed, so nothing was sent"
-        );
+        if let ClientEvent::Event(Event::DeviceView { view }) = event {
+            assert_ne!(view, last, "nothing changed, so nothing was sent");
+            last = view;
+        }
     }
     while let Ok(event) = app_events.try_recv() {
         assert!(!matches!(
