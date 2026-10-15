@@ -1,4 +1,5 @@
 import type { AgentMessageLog } from "../agents/agentMessages";
+import type { CollisionMark } from "../agents/collisions";
 import { invokeCommand as invoke } from "./invoke";
 
 export type InboxTier = "needs" | "review" | "finished" | "progress";
@@ -72,6 +73,8 @@ export interface Inbox {
     away: boolean;
     /** When each project, by its path, last logged a message between its agents. */
     agentMessages: Record<string, number>;
+    /** Agents that just collided with another over a file, by agent id. */
+    collisions: Record<string, CollisionMark>;
     /** Workers agents here started on linked hosts. */
     remoteAgents: RemoteAgent[];
 }

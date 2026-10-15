@@ -9,7 +9,7 @@ interface InboxState {
     digest: InboxDigest | null;
 }
 
-let state: InboxState = { inbox: { items: [], working: 0, away: false, agentMessages: {}, remoteAgents: [] }, digest: null };
+let state: InboxState = { inbox: { items: [], working: 0, away: false, agentMessages: {}, collisions: {}, remoteAgents: [] }, digest: null };
 const listeners = new Set<() => void>();
 let started = false;
 

@@ -6,10 +6,11 @@ import { inTeams, type TeamLink } from "../agents/teams";
 import type { AgentDisplay } from "../state/agentStatus";
 import { activeAgentId, agentDisplayOf, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
-import { AgentIcon, IconClose } from "../ui/Icons";
+import { AgentIcon, IconClose, IconMerge } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentLabel } from "../agents/AgentLabel";
+import { collisionLabel, type CollisionMark } from "../agents/collisions";
 import { AgentRowTree } from "./AgentRowTree";
 import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
 import { drawTeamLines } from "./teams";
@@ -86,6 +87,18 @@ export function AllProjectsAgents() {
     );
 }
 
+/** A mark on an agent that just changed the same lines, or the same claimed file, as another. */
+function Collided({ agentId }: { agentId: string }) {
+    const mark: CollisionMark | undefined = useInbox().inbox.collisions[agentId];
+    if (!mark) return null;
+    const label = collisionLabel(mark);
+    return (
+        <span className={`collision-mark${mark.claim ? " claim" : ""}`} title={label} aria-label={label} role="img">
+            <IconMerge size={11} />
+        </span>
+    );
+}
+
 /** An open agent's row, with its state, its close, and what it is tied to hung below. `title` replaces its label while it is renamed. */
 export function OpenAgentRow({
     agent,
@@ -131,6 +144,7 @@ export function OpenAgentRow({
                         <AgentLabel agent={agent} />
                     </span>
                     <BackgroundCounts display={display} />
+                    <Collided agentId={agent.id} />
                 </button>
             )}
             {showsAgentState(display) && (

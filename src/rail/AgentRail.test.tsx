@@ -127,7 +127,7 @@ beforeEach(() => {
         sessions: "/home/me/.codex/sessions",
     }));
     mocks.signIn.mockResolvedValue(undefined);
-    mocks.inbox.mockReturnValue({ inbox: { items: [], working: 0, away: false, remoteAgents: [] }, digest: null });
+    mocks.inbox.mockReturnValue({ inbox: { items: [], working: 0, away: false, collisions: {}, remoteAgents: [] }, digest: null });
     invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions" || kind === "agents.usage" || kind === "agents.account");
 });
 
@@ -408,6 +408,7 @@ describe("agent rail", () => {
                 ],
                 working: 0,
                 away: false,
+                collisions: {},
                 remoteAgents: [],
             },
             digest: null,
