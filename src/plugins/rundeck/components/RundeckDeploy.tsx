@@ -14,6 +14,8 @@ import { RundeckAdvanced, type AdvancedRun } from "./RundeckAdvanced";
 import { RundeckOptionsForm } from "./RundeckOptionsForm";
 import { RundeckPlan } from "./RundeckPlan";
 import { FolderChip, Header, levelCrumbs } from "./parts";
+import { usualSeconds } from "./runStats";
+import { formatDuration } from "../../../plugin-api/format";
 
 interface Props {
     paneId: string;
@@ -132,6 +134,8 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
     const [error, setError] = useState<string | null>(null);
 
     const branch = branchKey ? (values[branchKey] ?? "").trim() : "";
+    const history = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 30);
+    const usual = useMemo(() => usualSeconds(history.data ?? [], Date.now()), [history.data]);
     const settledBranch = useDebounced(branch, 400);
     const planRequest = useMemo(
         () => ({
@@ -219,7 +223,8 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
     };
 
     const canSubmit = !busy && detail.execution_enabled && planReady;
-    const label = busy ? "Starting…" : isProd ? (runsBranch ? "Deploy to production" : "Run in production") : runsBranch ? "Deploy" : "Run";
+    const verb = runsBranch ? (branch ? `Deploy ${branch}` : "Deploy") : "Run";
+    const label = busy ? "Starting…" : isProd ? `${verb} to production` : verb;
 
     return (
         <form
@@ -285,6 +290,7 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
                 )}
 
                 <div className="rnd-form-foot">
+                    {usual !== null && <span className="rnd-form-usual">Usually takes {formatDuration(usual * 1000)}</span>}
                     <button type="button" className="rnd-btn lg" onClick={() => cmd.rundeckPop(paneId)} disabled={busy}>
                         Cancel
                     </button>
@@ -313,7 +319,7 @@ function BranchPicks({
     onPick: (branch: string) => void;
 }) {
     const branchOptions = useBranchOptions();
-    const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 25);
+    const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 30);
     const picks: { name: string; note?: string }[] = [];
     const add = (name: string | null | undefined, note?: string) => {
         if (!name) return;
