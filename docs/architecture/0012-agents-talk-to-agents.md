@@ -81,6 +81,17 @@ MCP server every agent is launched with.
   types. Claiming is a single step in the core. Only the person moves a Jira or Linear
   ticket onto the board, and the board's automatic pickup starts agents only for cards the
   person added.
+- **Agents sharing a checkout are told when they collide.** The core keeps, for each file an
+  agent read or changed this session, the copy that agent last saw and the file's last few
+  versions, in memory within a fixed budget. When an edit lands on lines another open agent has
+  uncommitted, both and their leads get one note per burst, from Sikemux, and both are marked in
+  the rail and on phones. A write made from an older copy is merged on disk with what changed
+  since: where both changed the same lines the file keeps the other side, lines no agent wrote
+  counting as the person's, and the writer is told which lines to redo. The first agent to edit a
+  lockfile, migration or generated file holds it for a few minutes; another's edit still goes in,
+  and both are told. After each `git_commit` the board's check command runs in the checkout and
+  its failure goes to the agents the commit's trailers name. Two agents that keep colliding, and
+  a check that keeps failing, reach the person's inbox once.
 
 ## Consequences
 
@@ -91,6 +102,12 @@ MCP server every agent is launched with.
   so they survive a window reload, a core upgrade, a crash and a restart.
 - Messages, questions and the board move on events and deadlines of their own, not a
   polling tick.
+- Collisions are seen from what the drivers report: reads and edits by tool, and a watch on
+  the folders of the files agents share for changes no tool reported. Claude refuses a write
+  from a stale copy itself, so the core mends the others' writes right after they land, having
+  kept the file as it stood when the tool started. A change no edit tool reported is mended only
+  when one chat agent was running a command at the time; otherwise its owners are only told,
+  since it may be the person's own.
 - The rail lists workers flat, right after their lead, joined by the lead's tree line.
 - Phones reach the same tools as `Call` methods (ADR 0010), never new wire requests.
 - A lead that is compacted or closed does not lose the plan: it lives on the board.

@@ -822,6 +822,24 @@ commit, its files and what was left. In the shared checkout Sikemux refuses
 `git add -A`, `commit -a`, `stash`, `reset --hard` and the like; in a git
 worktree of your own they are allowed.
 
+### When agents change the same file
+
+Sikemux follows the files the agents in one checkout read and change, and tells
+you about them in messages from Sikemux itself, never from the person:
+
+- When you change lines another agent has uncommitted, or it changes yours,
+  both of you and your leads hear which lines of which file. Read the file
+  again before you edit it, and agree on those lines with `agent_send`.
+- When you write a file from a copy older than the file, Sikemux keeps what
+  others changed since. Where you both changed the same lines it keeps theirs
+  and tells you which lines to redo. Read a file again before writing it whole.
+- The first agent to edit a lockfile, a migration or a generated file holds it
+  for a few minutes. Another agent's edit still goes in, but that agent is told
+  who holds it and should agree with them before changing it further.
+- After `git_commit`, the project's check runs when its board has one. If it
+  fails you get its output. The checkout also holds other agents' uncommitted
+  work, so see whether the failure is yours before fixing it.
+
 ### Listing agents
 
 `agent_list` lists the agents Sikemux runs in your project, the ones that most
