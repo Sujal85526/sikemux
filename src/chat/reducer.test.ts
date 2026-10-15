@@ -933,16 +933,16 @@ describe("chat reducer", () => {
         expect(runningSubagents(done.messages)).toEqual([]);
     });
 
-    it("stops a subagent when its agent goes away or starts again", () => {
+    it("leaves ending a subagent to the host when its agent goes away or starts again", () => {
         const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
         const wrote = update(spawned, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Looking" } }, "sub-1");
         const ended = chatReducer(wrote, { type: "turn_completed", stopReason: "end_turn" });
 
         for (const state of ["stopped", "error", "starting"] as const) {
-            const part = chatReducer(ended, { type: "status", state }).messages[0].parts[0];
-            if (part.kind !== "subagent") throw new Error("expected a subagent");
-            expect(part.subagent.state).toBe("cancelled");
+            expect(runningSubagents(chatReducer(ended, { type: "status", state }).messages)).toHaveLength(1);
         }
+        const gone = update(ended, { sessionUpdate: "subagent_state_update", subagentSessionId: "sub-1", state: "disconnected" });
+        expect(runningSubagents(gone.messages)).toEqual([]);
     });
 
     it("keeps a subagent's transcript as is when its session sends an update it cannot place", () => {

@@ -344,25 +344,9 @@ function settleMessages(messages: ChatMessage[], at: number, endSubagents: boole
     return changed ? settled : null;
 }
 
-function settleState(state: ChatState, endSubagents: boolean): ChatState {
-    const messages = settleMessages(state.messages, Date.now(), endSubagents);
+function settleState(state: ChatState): ChatState {
+    const messages = settleMessages(state.messages, Date.now(), false);
     return messages ? { ...state, messages, revision: state.revision + 1 } : state;
-}
-
-function stopSubagents(state: ChatState): ChatState {
-    let changed = false;
-    const at = Date.now();
-    const messages = state.messages.map((message) => {
-        if (!message.parts.some((part) => part.kind === "subagent" && part.subagent.state === "running")) return message;
-        changed = true;
-        const parts = message.parts.map((part) => {
-            if (part.kind !== "subagent" || part.subagent.state !== "running") return part;
-            const settled = settleMessages(part.subagent.messages, at, true);
-            return { ...part, subagent: { ...part.subagent, state: "cancelled" as const, ...(settled ? { messages: settled } : {}) } };
-        });
-        return { ...message, parts };
-    });
-    return changed ? { ...state, messages, revision: state.revision + 1 } : state;
 }
 
 /* A subagent can spawn subagents of its own, so its card holds theirs. */
@@ -579,7 +563,7 @@ function retryOf(update: Record<string, unknown>): ChatState["retrying"] {
 /* A cancelled turn stops only the subagents it was waiting on, and the agent
    says which. Background ones run on and report their own end. */
 function endTurn(state: ChatState, stopReason: string | null, at = Date.now()): ChatState {
-    const settled = settleState(state, false);
+    const settled = settleState(state);
     const last = settled.messages.at(-1);
     // Only a turn this side watched run has a finish worth stamping.
     const messages = state.running && last?.role === "assistant" ? [...settled.messages.slice(0, -1), { ...last, endedAt: at }] : settled.messages;
@@ -719,13 +703,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                 : initialChatState;
         case "status":
             return {
-                /* Starting again, as when the chat moves to another account, is a
-                   new agent that knows nothing of the old one's subagents. */
-                ...(action.state === "stopped" || action.state === "error"
-                    ? settleState(state, true)
-                    : action.state === "starting"
-                      ? stopSubagents(state)
-                      : state),
+                /* The host ends the subagents itself, with an update every client
+                   keeps, so a status never does. */
+                ...(action.state === "stopped" || action.state === "error" ? settleState(state) : state),
                 connection: action.state,
                 running: action.state === "stopped" || action.state === "error" ? false : state.running,
                 permissions: action.state === "stopped" || action.state === "error" ? [] : state.permissions,
