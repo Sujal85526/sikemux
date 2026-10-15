@@ -479,7 +479,8 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 ];
             }
             const shown = collectPanes(win.root).find((pane) => pane.id === win.activePaneId);
-            const label = win.role === "term" && shown ? terminalLabel(win, shown, termTitles) : roleLabel(win.role);
+            const role = shown?.kind === "terminal" ? "term" : win.role;
+            const label = role === "term" && shown ? terminalLabel(win, shown, termTitles) : roleLabel(role);
             return [
                 {
                     id: key,
@@ -488,8 +489,8 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                     active: key === activeKey,
                     closable: !win.fixed,
                     icon: (
-                        <span className={`agent-glyph ${win.role}`}>
-                            <WindowIcon role={win.role} size={13} />
+                        <span className={`agent-glyph ${role}`}>
+                            <WindowIcon role={role} size={13} />
                         </span>
                     ),
                 },
