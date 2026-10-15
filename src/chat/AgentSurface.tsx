@@ -150,38 +150,40 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                     {supportsGui && <ShareButton agent={agent} />}
                     <AgentMenuButton agent={agent} session={session} onRetitle={() => setRenaming(true)} />
                 </div>
-                <div className="agent-surface-controls">
-                    {view === "tui" && recovery?.phase === "resuming" && (
-                        <span className="agent-surface-resuming" role="status">
-                            <span className="chat-activity-loader" aria-hidden="true" />
-                            Resuming…
-                        </span>
-                    )}
-                    {agent.worktree && (
-                        <Suspense fallback={null}>
-                            <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
-                        </Suspense>
-                    )}
-                    {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
-                    <div className="agent-view-switch" role="group" aria-label="Agent view">
-                        <button
-                            type="button"
-                            aria-pressed={view === "gui"}
-                            disabled={!supportsGui || switching}
-                            title="Open the built-in agent chat"
-                            onClick={() => void switchView("gui")}>
-                            <IconAgent size={13} />
-                            <span>GUI</span>
-                        </button>
-                        <button
-                            type="button"
-                            aria-pressed={view === "tui"}
-                            disabled={switching || (view === "gui" && chatBusy)}
-                            title={chatBusy ? "Stop the current turn before opening TUI" : "Open native agent TUI"}
-                            onClick={() => void switchView("tui")}>
-                            <IconTerminal size={13} />
-                            <span>TUI</span>
-                        </button>
+                <div className="agent-surface-end">
+                    <div className="agent-surface-controls">
+                        {view === "tui" && recovery?.phase === "resuming" && (
+                            <span className="agent-surface-resuming" role="status">
+                                <span className="chat-activity-loader" aria-hidden="true" />
+                                Resuming…
+                            </span>
+                        )}
+                        {agent.worktree && (
+                            <Suspense fallback={null}>
+                                <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
+                            </Suspense>
+                        )}
+                        {view === "tui" && cmd.agentSupportsSkipPermissions(agent.type) && <YoloToggle agent={agent} relaunches />}
+                        <div className="agent-view-switch" role="group" aria-label="Agent view">
+                            <button
+                                type="button"
+                                aria-pressed={view === "gui"}
+                                disabled={!supportsGui || switching}
+                                title="Open the built-in agent chat"
+                                onClick={() => void switchView("gui")}>
+                                <IconAgent size={13} />
+                                <span>GUI</span>
+                            </button>
+                            <button
+                                type="button"
+                                aria-pressed={view === "tui"}
+                                disabled={switching || (view === "gui" && chatBusy)}
+                                title={chatBusy ? "Stop the current turn before opening TUI" : "Open native agent TUI"}
+                                onClick={() => void switchView("tui")}>
+                                <IconTerminal size={13} />
+                                <span>TUI</span>
+                            </button>
+                        </div>
                     </div>
                     <DeskButton agent={agent} />
                 </div>
