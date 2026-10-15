@@ -140,7 +140,7 @@ pub(crate) fn owners_at(
                 .map(|((_, diff), moved)| patched_diff(&diff, staged, &moved.paths));
             let diff = Arc::new(match patched {
                 Some(diff) => diff?,
-                None => read_diff(dir, staged, true, None)?,
+                None => read_diff(dir, staged, true, None, false)?,
             });
             let mut read = lock();
             let read = read.get_or_insert_with(HashMap::new);
@@ -187,31 +187,35 @@ pub(super) struct Diff {
 }
 
 pub(super) fn traced(core: &Core, dir: &Path, staged: bool) -> Result<(Owners, Diff), String> {
-    let diff = read_diff(dir, staged, false, None)?;
+    let diff = read_diff(dir, staged, false, None, false)?;
     Ok((record_over(core, dir, staged, &diff), diff))
 }
 
 /// Who wrote each line staged in `index`, or in the checkout's own index, and
-/// the commit it is staged against.
+/// what git said changed: since `HEAD`, or since its first parent when the
+/// commit made of it will `amend` `HEAD`.
 pub(super) fn staged_in(
     core: &Core,
     dir: &Path,
     index: Option<&Path>,
-) -> Result<(Owners, Option<String>), String> {
-    let diff = read_diff(dir, true, false, index)?;
-    Ok((record_over(core, dir, true, &diff), diff.base))
+    amend: bool,
+) -> Result<(Owners, Diff), String> {
+    let diff = read_diff(dir, true, false, index, amend)?;
+    Ok((record_over(core, dir, true, &diff), diff))
 }
 
 /// What git says changed in `dir`'s checkout, with the files it has staged
 /// when `list_staged`, which `patched_diff` needs to stay quick. `index`
-/// stands in for the checkout's own.
+/// stands in for the checkout's own, and `amend` compares with `HEAD`'s first
+/// parent.
 fn read_diff(
     dir: &Path,
     staged: bool,
     list_staged: bool,
     index: Option<&Path>,
+    amend: bool,
 ) -> Result<Diff, String> {
-    let (top, base) = top_and_base(dir)?;
+    let (top, base) = top_and_base(dir, amend)?;
     let against = base.as_deref().unwrap_or(EMPTY_TREE);
     let mut runs = vec![diff_args(staged, Some(against))];
     if staged {
@@ -355,9 +359,9 @@ fn patched_diff(diff: &Diff, staged: bool, moved: &[String]) -> Result<Diff, Str
     Ok(patched)
 }
 
-/// The checkout's top folder and its `HEAD` commit, none before the first,
-/// from one git run.
-fn top_and_base(dir: &Path) -> Result<(PathBuf, Option<String>), String> {
+/// The checkout's top folder and its `HEAD` commit, or that commit's first
+/// parent when `amend`, none before the first, from one git run.
+fn top_and_base(dir: &Path, amend: bool) -> Result<(PathBuf, Option<String>), String> {
     let mut command = sikemux_process::user_environment::command("git");
     command
         .args(["-c", "core.fsmonitor=false", "-c", "core.quotePath=false"])
@@ -366,7 +370,11 @@ fn top_and_base(dir: &Path) -> Result<(PathBuf, Option<String>), String> {
             "--show-toplevel",
             "--verify",
             "--quiet",
-            "HEAD^{commit}",
+            if amend {
+                "HEAD^1^{commit}"
+            } else {
+                "HEAD^{commit}"
+            },
         ])
         .current_dir(dir)
         .env("GIT_TERMINAL_PROMPT", "0");

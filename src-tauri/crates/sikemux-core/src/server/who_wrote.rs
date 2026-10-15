@@ -15,6 +15,7 @@ use crate::trailers::{self, Agent};
 
 use super::board::codehost;
 use super::connection::blocking;
+use super::edits::note::{self, Note, Wrote};
 use super::edits::{self, footer};
 use super::messages::{self, Listed, Reach};
 use super::{saved, Core, CoreResult};
@@ -56,6 +57,10 @@ pub(crate) struct AgentOwner {
     /// The project its session ran in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
+    /// The lines it wrote in the commit, as the commit's note says, when the
+    /// commit holds lines of others too.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lines: Option<Wrote>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -137,9 +142,29 @@ fn owners(core: &Core, agents: Vec<Agent>, listed: &[Listed]) -> Vec<AgentOwner>
                 model: agent.model,
                 sikemux: agent.sikemux,
                 chat: agent.chat,
+                lines: None,
             }
         })
         .collect()
+}
+
+/// What the notes on `commits` say each one's verified agents wrote, for the
+/// commits that have one. An agent a note names that the footer does not
+/// counts for nothing.
+fn noted<'a>(
+    dir: &Path,
+    commits: impl Iterator<Item = (&'a str, &'a [Agent])>,
+) -> HashMap<String, Note> {
+    let commits: HashMap<&str, &[Agent]> =
+        commits.filter(|(_, agents)| !agents.is_empty()).collect();
+    let hashes: Vec<&str> = commits.keys().copied().collect();
+    let mut notes = note::read(dir, &hashes);
+    notes.retain(|commit, note| {
+        let agents = commits.get(commit.as_str()).copied().unwrap_or_default();
+        note.retain(|chat, _| agents.iter().any(|agent| agent.chat == *chat));
+        !note.is_empty()
+    });
+    notes
 }
 
 #[derive(Deserialize)]
@@ -169,10 +194,24 @@ pub(crate) async fn call(
         if found.is_empty() {
             return Ok(BTreeMap::new());
         }
+        let mut notes = noted(
+            &params.dir,
+            found
+                .iter()
+                .map(|(commit, agents)| (commit.as_str(), agents.as_slice())),
+        );
         let listed = messages::listed(&core);
         Ok(found
             .into_iter()
-            .map(|(commit, agents)| (commit, owners(&core, agents, &listed)))
+            .map(|(commit, agents)| {
+                let mut owners = owners(&core, agents, &listed);
+                if let Some(note) = notes.get_mut(&commit) {
+                    for owner in &mut owners {
+                        owner.lines = note.remove(&owner.chat);
+                    }
+                }
+                (commit, owners)
+            })
             .collect())
     })
     .await
@@ -185,11 +224,19 @@ fn is_hash(text: &str) -> bool {
 /// Runs of line numbers, first and last.
 type Lines = Vec<(u64, u64)>;
 
+/// A line of the file asked about, `at`, as the commit that last changed it
+/// had it: line `orig` of `path`.
+struct Blamed {
+    path: String,
+    orig: u64,
+    at: u64,
+}
+
 /// What the asker named, worked out to commits.
 struct Found {
     kind: &'static str,
     /// Each commit with the lines of the file it last changed, when blamed.
-    commits: Vec<(String, Lines)>,
+    commits: Vec<(String, Vec<Blamed>)>,
     path: Option<String>,
     uncommitted: Lines,
     /// Picked by matching a test's name, which may have found the wrong file.
@@ -279,41 +326,63 @@ fn resolve(dir: &Path, top: &Path, target: &str) -> Result<Found, String> {
 fn blame(top: &Path, path: &str, (start, end): (u64, u64)) -> Result<Found, String> {
     let range = format!("{start},{end}");
     let out = git(top, &["blame", "--porcelain", "-L", &range, "--", path])?;
-    let mut lines: Vec<(String, u64)> = Vec::new();
-    for line in out.lines() {
-        let mut words = line.split(' ');
-        let (Some(hash), Some(_), Some(at)) = (words.next(), words.next(), words.next()) else {
-            continue;
-        };
-        if hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            if let Ok(at) = at.parse() {
-                lines.push((hash.to_owned(), at));
-            }
-        }
-    }
     let mut found = Found::new("lines");
-    for (hash, at) in lines {
-        let ranges = if hash == UNCOMMITTED {
-            &mut found.uncommitted
-        } else {
-            let index = match found.commits.iter().position(|(seen, _)| *seen == hash) {
-                Some(index) => index,
+    let mut paths: HashMap<String, String> = HashMap::new();
+    let mut current: Option<(String, u64, u64)> = None;
+    for line in out.lines() {
+        if line.starts_with('\t') {
+            let Some((hash, orig, at)) = current.take() else {
+                continue;
+            };
+            if hash == UNCOMMITTED {
+                match found.uncommitted.last_mut() {
+                    Some((_, last)) if *last + 1 == at => *last = at,
+                    _ => found.uncommitted.push((at, at)),
+                }
+                continue;
+            }
+            let path = paths.get(&hash).cloned().unwrap_or_else(|| path.to_owned());
+            let lines = match found.commits.iter().position(|(seen, _)| *seen == hash) {
+                Some(index) => &mut found.commits[index].1,
                 None => {
                     found.commits.push((hash, Vec::new()));
-                    found.commits.len() - 1
+                    &mut found.commits.last_mut().expect("just pushed").1
                 }
             };
-            &mut found.commits[index].1
-        };
-        match ranges.last_mut() {
-            Some((_, last)) if *last + 1 == at => *last = at,
-            _ => ranges.push((at, at)),
+            lines.push(Blamed { path, orig, at });
+        } else if let Some(name) = line.strip_prefix("filename ") {
+            if let Some((hash, _, _)) = &current {
+                paths.insert(hash.clone(), name.to_owned());
+            }
+        } else {
+            let mut words = line.split(' ');
+            let (Some(hash), Some(orig), Some(at)) = (words.next(), words.next(), words.next())
+            else {
+                continue;
+            };
+            if hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                if let (Ok(orig), Ok(at)) = (orig.parse(), at.parse()) {
+                    current = Some((hash.to_owned(), orig, at));
+                }
+            }
         }
     }
     Ok(found)
 }
 
-fn latest(top: &Path, path: &str, count: usize) -> Result<Vec<(String, Lines)>, String> {
+/// `lines`, in order, as runs.
+fn runs(lines: impl Iterator<Item = u64>) -> Lines {
+    let mut runs: Lines = Vec::new();
+    for at in lines {
+        match runs.last_mut() {
+            Some((_, last)) if *last + 1 == at => *last = at,
+            _ => runs.push((at, at)),
+        }
+    }
+    runs
+}
+
+fn latest(top: &Path, path: &str, count: usize) -> Result<Vec<(String, Vec<Blamed>)>, String> {
     let count = format!("-n{count}");
     Ok(git(top, &["log", &count, "--format=%H", "--", path])?
         .lines()
@@ -436,6 +505,66 @@ fn agent_value(owner: &AgentOwner) -> Value {
     })
 }
 
+/// The owners of a commit holding lines of several writers, by what its note
+/// says each agent wrote: of the `blamed` lines when lines were asked about,
+/// else of the commit, in `path` when a file was. The lines no agent wrote are
+/// the `person`'s.
+fn split(owners: &[AgentOwner], blamed: &[Blamed], path: Option<&str>, mut person: Value) -> Vec<Value> {
+    let wrote = |owner: &AgentOwner, line: &Blamed| {
+        owner
+            .lines
+            .as_ref()
+            .is_some_and(|wrote| note::holds(wrote, &line.path, line.orig))
+    };
+    let mut answered = Vec::new();
+    if blamed.is_empty() {
+        for owner in owners {
+            let lines: BTreeMap<&str, String> = owner
+                .lines
+                .iter()
+                .flatten()
+                .filter(|(file, _)| path.is_none_or(|path| path == *file))
+                .map(|(file, runs)| {
+                    let runs: Lines = runs.iter().map(|[first, last]| (*first, *last)).collect();
+                    (file.as_str(), ranges(&runs))
+                })
+                .collect();
+            if !lines.is_empty() {
+                let mut agent = agent_value(owner);
+                agent["linesInCommit"] = json!(lines);
+                answered.push(agent);
+            }
+        }
+        person["linesInCommit"] = "every other line of the commit".into();
+        answered.push(person);
+        return answered;
+    }
+    for owner in owners {
+        let lines = runs(
+            blamed
+                .iter()
+                .filter(|line| wrote(owner, line))
+                .map(|line| line.at),
+        );
+        if !lines.is_empty() {
+            let mut agent = agent_value(owner);
+            agent["lines"] = ranges(&lines).into();
+            answered.push(agent);
+        }
+    }
+    let rest = runs(
+        blamed
+            .iter()
+            .filter(|line| !owners.iter().any(|owner| wrote(owner, line)))
+            .map(|line| line.at),
+    );
+    if !rest.is_empty() {
+        person["lines"] = ranges(&rest).into();
+        answered.push(person);
+    }
+    answered
+}
+
 /// What `who_wrote` answers.
 pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
     let target = request
@@ -462,14 +591,31 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             describe(&top, &hashes)?
         };
         let listed = messages::listed(&core);
-        let commits: Vec<(Described, Vec<AgentOwner>)> = described
+        let agents: Vec<(Described, Vec<Agent>)> = described
             .into_iter()
             .map(|commit| {
                 let agents = match commit.footer {
                     true => verified(&core, &top, &commit.hash),
                     false => Vec::new(),
                 };
-                let owners = owners(&core, agents, &listed);
+                (commit, agents)
+            })
+            .collect();
+        let mut notes = noted(
+            &top,
+            agents
+                .iter()
+                .map(|(commit, agents)| (commit.hash.as_str(), agents.as_slice())),
+        );
+        let commits: Vec<(Described, Vec<AgentOwner>)> = agents
+            .into_iter()
+            .map(|(commit, agents)| {
+                let mut owners = owners(&core, agents, &listed);
+                if let Some(note) = notes.get_mut(&commit.hash) {
+                    for owner in &mut owners {
+                        owner.lines = note.remove(&owner.chat);
+                    }
+                }
                 (commit, owners)
             })
             .collect();
@@ -499,14 +645,31 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         })
         .await;
     }
-    let lines_of: HashMap<&str, &Lines> = found
+    let blamed: HashMap<&str, &[Blamed]> = found
         .commits
         .iter()
-        .map(|(hash, lines)| (hash.as_str(), lines))
+        .map(|(hash, lines)| (hash.as_str(), lines.as_slice()))
         .collect();
     let answered: Vec<Value> = commits
         .drain(..)
         .map(|(commit, owners)| {
+            let blamed = blamed
+                .get(commit.hash.as_str())
+                .copied()
+                .unwrap_or_default();
+            let person = |pull: Option<Value>| {
+                let action = match pull {
+                    Some(_) => "comment on the pull request",
+                    None => "ask the person",
+                };
+                json!({
+                    "kind": "person",
+                    "name": commit.author,
+                    "email": commit.email,
+                    "pull": pull,
+                    "action": action,
+                })
+            };
             let owners: Vec<Value> = if owners.is_empty() {
                 let pull = pulls.get(&commit.hash).map(|pull| {
                     json!({
@@ -516,25 +679,20 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                         "url": pull["url"],
                     })
                 });
-                let action = match pull {
-                    Some(_) => "comment on the pull request",
-                    None => "ask the person",
-                };
-                vec![json!({
-                    "kind": "person",
-                    "name": commit.author,
-                    "email": commit.email,
-                    "footer": commit.footer.then_some("its agent footer does not check out here, so it counts for nothing"),
-                    "pull": pull,
-                    "action": action,
-                })]
+                let mut person = person(pull);
+                if commit.footer {
+                    person["footer"] =
+                        "its agent footer does not check out here, so it counts for nothing".into();
+                }
+                vec![person]
+            } else if owners.iter().any(|owner| owner.lines.is_some()) {
+                split(&owners, blamed, found.path.as_deref(), person(None))
             } else {
                 owners.iter().map(agent_value).collect()
             };
-            let lines = lines_of
-                .get(commit.hash.as_str())
+            let lines = Some(runs(blamed.iter().map(|line| line.at)))
                 .filter(|lines| !lines.is_empty())
-                .map(|lines| ranges(lines));
+                .map(|lines| ranges(&lines));
             json!({
                 "commit": commit.short,
                 "subject": commit.subject,

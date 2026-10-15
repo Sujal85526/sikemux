@@ -9,20 +9,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
+use super::note;
 use super::owners::{git, latest, run, staged_in, Author};
 use crate::cli::protocol::HarnessRequest;
 use crate::server::callers::{self, CommitGrant};
 use crate::server::connection::blocking;
 use crate::server::names::project_of;
 use crate::server::Core;
-use crate::trailers::{self, Agent, Commit};
+use crate::trailers::{self, Agent, Commit, PendingNote};
 
 /// The footer for committing what `dir` has staged, or what `index` holds when
 /// git commits from an index of its own: every agent whose lines it holds, or
 /// the agents `named` when that was worked out before, else `fallback`. An
-/// `amend` keeps the agents of the commit it replaces.
+/// `amend` keeps the agents of the commit it replaces. With it, the note for
+/// the commit's hooks to put on it, when it holds lines of several writers.
 fn footer(
     core: &Core,
     dir: &Path,
@@ -30,30 +32,30 @@ fn footer(
     fallback: Option<&str>,
     index: Option<&Path>,
     amend: bool,
-) -> Result<Vec<String>, String> {
-    let (writers, (tree, parents)) = std::thread::scope(|scope| {
+) -> Result<(Vec<String>, Option<PendingNote>), String> {
+    let (staged, (tree, parents)) = std::thread::scope(|scope| {
         let made_of = scope.spawn(|| made_of(dir, index, amend));
-        let writers: Result<Vec<Agent>, String> = match named {
-            Some(named) => Ok(named.iter().filter_map(|id| known(core, dir, id)).collect()),
-            None => staged_in(core, dir, index).map(|(owners, _)| {
-                owners
-                    .writers()
-                    .flat_map(|author| match author.shared.is_empty() {
-                        true => vec![agent(core, author)],
-                        false => author
-                            .shared
-                            .iter()
-                            .filter_map(|id| known(core, dir, id))
-                            .collect(),
-                    })
-                    .collect()
-            }),
-        };
+        let staged = staged_in(core, dir, index, amend);
         let made_of = made_of
             .join()
             .unwrap_or_else(|_| Err("git did not run".to_owned()));
-        writers.and_then(|writers| Ok((writers, made_of?)))
+        made_of.map(|made_of| (staged, made_of))
     })?;
+    let writers: Vec<Agent> = match (named, &staged) {
+        (Some(named), _) => named.iter().filter_map(|id| known(core, dir, id)).collect(),
+        (None, Ok((owners, _))) => owners
+            .writers()
+            .flat_map(|author| match author.shared.is_empty() {
+                true => vec![agent(core, author)],
+                false => author
+                    .shared
+                    .iter()
+                    .filter_map(|id| known(core, dir, id))
+                    .collect(),
+            })
+            .collect(),
+        (None, Err(error)) => return Err(error.clone()),
+    };
     let mut agents = if amend {
         verified(core, dir, "HEAD")?
     } else {
@@ -67,15 +69,20 @@ fn footer(
     if agents.is_empty() {
         agents.extend(fallback.and_then(|id| known(core, dir, id)));
     }
+    let note = staged
+        .ok()
+        .and_then(|(owners, diff)| note::of(&owners, &diff, &agents, fallback.is_none()));
     let commit = Commit {
         tree: &tree,
         parents: &parents,
     };
-    Ok(trailers::footer(
-        &agents,
-        &commit,
-        core.remote.host_key().as_ref(),
-    ))
+    let footer = trailers::footer(&agents, &commit, core.remote.host_key().as_ref());
+    let pending = (!footer.is_empty() && (amend || note.is_some())).then_some(PendingNote {
+        tree,
+        parents,
+        note,
+    });
+    Ok((footer, pending))
 }
 
 /// The tree `index` makes, and the parents a commit of it takes: those of
@@ -221,7 +228,7 @@ pub(crate) async fn call(
     let pending: Pending =
         serde_json::from_value(request.params.clone()).map_err(|error| error.to_string())?;
     let (core, dir) = (core.clone(), PathBuf::from(&request.project));
-    blocking(move || {
+    let (footer, note) = blocking(move || {
         Ok(footer(
             &core,
             &dir,
@@ -232,8 +239,8 @@ pub(crate) async fn call(
         )?)
     })
     .await
-    .map(Value::from)
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    Ok(json!({ "footer": footer, "note": note }))
 }
 
 /// How long a commit the core runs may take, hooks and all.
@@ -261,7 +268,7 @@ pub(crate) fn commit(
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_EDITOR", "true");
     crate::git_guard::shim::sign_commit(&mut command, dir);
-    let staged: Vec<String> = staged_in(core, dir, None)
+    let staged: Vec<String> = staged_in(core, dir, None, false)
         .map(|(owners, _)| {
             owners
                 .writers()

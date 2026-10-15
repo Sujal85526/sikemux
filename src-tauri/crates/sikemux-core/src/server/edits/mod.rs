@@ -8,6 +8,7 @@
 pub(crate) mod commit;
 pub(crate) mod footer;
 mod lines;
+pub(crate) mod note;
 mod outside;
 mod owners;
 mod prior;

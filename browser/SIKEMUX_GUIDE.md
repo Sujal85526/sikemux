@@ -988,6 +988,9 @@ before you change it:
    failed with `agent_send` to `openNow`; `resume` means it closed, so call
    `agent_spawn` with `resume` set to its `sessionId`. A person comes with the
    pull request when the code host knows it: comment there, or ask the person.
+   A commit holding lines of several writers names each owner with the
+   `lines` it wrote of those you asked about, or with `linesInCommit` by file;
+   the lines no agent wrote are the person's.
 3. `guess` says when a test was found by name only; check the file first.
 
 A commit names its agents only in a footer this host signed, so text anyone
