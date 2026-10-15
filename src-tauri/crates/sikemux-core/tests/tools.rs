@@ -474,10 +474,23 @@ async fn a_call_waiting_on_a_window_that_leaves_fails_and_a_new_window_takes_ove
         let (endpoint, project) = (endpoint.clone(), project.clone());
         tokio::spawn(async move { call(&endpoint, &project, "workspace.inspect", json!({})).await })
     };
-    let asked = tokio::time::timeout(WAIT, silent_events.recv())
+    let asked_to_inspect = async {
+        while let Some(event) = silent_events.recv().await {
+            if let ClientEvent::WindowCall {
+                call: WindowCall::Harness { request },
+                ..
+            } = event
+            {
+                if request["method"] == "workspace.inspect" {
+                    return;
+                }
+            }
+        }
+        panic!("the window closed before it was asked");
+    };
+    tokio::time::timeout(WAIT, asked_to_inspect)
         .await
         .expect("asked");
-    assert!(matches!(asked, Some(ClientEvent::WindowCall { .. })));
     let (replacement, _player) = open_window(&core).await;
     assert_eq!(
         pending.await.unwrap(),
