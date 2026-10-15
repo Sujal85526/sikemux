@@ -15,8 +15,8 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::cli::protocol::{
-    is_browser_method, is_sim_method, validate_harness, HarnessRequest, PLUGINS_CHANGED_METHOD,
-    SIM_CANCEL_METHOD, SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
+    is_browser_method, is_sim_method, validate_harness, HarnessRequest, COMMIT_FOOTER_METHOD,
+    PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
 };
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
 use crate::harness::journal::{EventsPage, JournalRecord, Journals};
@@ -503,6 +503,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "board.update" => board::update(core, &request).await,
         "review.verdict" => board::verdict(core, &request).await,
         "git.commit" => super::edits::commit::call(core, &request).await,
+        COMMIT_FOOTER_METHOD => super::edits::footer::call(core, &request).await,
         "browser.record" => {
             let agent_id = request.agent_id.clone();
             let answer = forward(core, request).await?;
@@ -1144,6 +1145,7 @@ fn tool_name(request: &HarnessRequest) -> Option<String> {
         "plugins.tools"
         | PLUGINS_CHANGED_METHOD
         | TOOLS_MANIFEST_METHOD
+        | COMMIT_FOOTER_METHOD
         | SIM_OFFERED_METHOD
         | SIM_CANCEL_METHOD => None,
         "plugins.call" => request

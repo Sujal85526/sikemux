@@ -13,10 +13,12 @@ use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::owners::{git, latest, run, traced, trailer, Diff, Hunk, Owners};
+use super::footer::{agent, known};
+use super::owners::{git, run, traced, Diff, Hunk, Owners};
 use crate::cli::protocol::HarnessRequest;
 use crate::server::connection::blocking;
 use crate::server::Core;
+use crate::trailers::Commit;
 
 const ATTEMPTS: usize = 4;
 const INDEX_LOCKED_TRIES: usize = 5;
@@ -106,11 +108,14 @@ pub(crate) fn commit(
             .authors
             .iter()
             .find(|author| author.agent_id == agent_id);
-        let signed = me
-            .map(trailer)
-            .or_else(|| latest(core, dir, agent_id).as_ref().map(trailer));
-        let message = crate::trailers::append(message, &Vec::from_iter(signed));
-        let (commit, blobs) = build(&diff, &changes, &message)?;
+        let signer = me.map(agent).or_else(|| known(core, dir, agent_id));
+        let key = core.remote.host_key();
+        let signed = |commit: &Commit| {
+            let footer =
+                crate::trailers::footer(Vec::from_iter(signer).as_slice(), commit, key.as_ref());
+            crate::trailers::append(message, &footer)
+        };
+        let (commit, message, blobs) = build(&diff, &changes, signed)?;
         let old = diff
             .base
             .clone()
@@ -426,11 +431,13 @@ fn tree_entries<'a>(
 
 /// The commit of `changes` on top of the last one, built in an index of its
 /// own, and the blob each change wrote.
+/// The commit of `changes`, with the message `signed` gives for its tree and
+/// parents.
 fn build(
     diff: &Diff,
     changes: &[Change],
-    message: &str,
-) -> Result<(String, Vec<Option<String>>), String> {
+    signed: impl FnOnce(&Commit) -> String,
+) -> Result<(String, String, Vec<Option<String>>), String> {
     let git_dir = git(&diff.top, &["rev-parse", "--absolute-git-dir"])?;
     let index = Scratch(
         Path::new(git_dir.trim()).join(format!("sikemux-commit-{}.index", Uuid::new_v4().simple())),
@@ -460,13 +467,22 @@ fn build(
         Some(&info),
     )?;
     let tree = git_in(&diff.top, &["write-tree"], index)?;
+    let parents = Vec::from_iter(diff.base.clone());
+    let message = signed(&Commit {
+        tree: &tree,
+        parents: &parents,
+    });
     let mut args = vec!["commit-tree", tree.as_str()];
-    if let Some(base) = &diff.base {
-        args.extend(["-p", base.as_str()]);
+    for parent in &parents {
+        args.extend(["-p", parent.as_str()]);
     }
     args.extend(["-F", "-"]);
     let commit = run(&diff.top, &args, None, Some(message.as_bytes()))?;
-    Ok((String::from_utf8_lossy(&commit).trim().to_owned(), blobs))
+    Ok((
+        String::from_utf8_lossy(&commit).trim().to_owned(),
+        message,
+        blobs,
+    ))
 }
 
 fn git_in(top: &Path, args: &[&str], index: Option<&Path>) -> Result<String, String> {

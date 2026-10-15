@@ -515,6 +515,27 @@ impl Remote {
         })
     }
 
+    /// The key this host signs with, once it has loaded.
+    pub(crate) fn host_key(&self) -> Option<SecretKey> {
+        self.lock().secret.clone()
+    }
+
+    /// The keys of this host and the hosts linked with it.
+    pub(crate) fn host_keys(&self) -> Vec<iroh::PublicKey> {
+        let inner = self.lock();
+        let linked = inner
+            .stored
+            .links
+            .iter()
+            .filter_map(|link| link.id.parse().ok());
+        inner
+            .secret
+            .iter()
+            .map(SecretKey::public)
+            .chain(linked)
+            .collect()
+    }
+
     pub(super) fn core_id(&self) -> Option<String> {
         self.lock()
             .secret

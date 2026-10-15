@@ -724,7 +724,10 @@ impl Collisions {
             }
         }
         if Path::new(&project).starts_with(top) {
-            let mut agents = crate::trailers::agent_ids(message);
+            let mut agents: Vec<String> = crate::trailers::agents(message)
+                .into_iter()
+                .map(|agent| agent.chat)
+                .collect();
             if agents.is_empty() {
                 agents.push(agent_id.to_owned());
             }

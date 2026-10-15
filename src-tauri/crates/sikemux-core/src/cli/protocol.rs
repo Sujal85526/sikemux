@@ -215,6 +215,8 @@ pub const PLUGIN_METHODS: &[&str] = &["plugins.tools", "plugins.call"];
 pub const PLUGINS_CHANGED_METHOD: &str = "plugins.changed";
 /// The tools server asks this for the built-in tools and the guide.
 pub const TOOLS_MANIFEST_METHOD: &str = "tools.manifest";
+/// What the git shim asks for to end an agent's commit, not a tool.
+pub const COMMIT_FOOTER_METHOD: &str = "git.footer";
 
 pub fn is_browser_method(method: &str) -> bool {
     BROWSER_METHODS.contains(&method)
@@ -267,6 +269,7 @@ pub fn validate_harness(request: &HarnessRequest) -> Result<(), String> {
         && !is_plugin_method(&request.method)
         && request.method != PLUGINS_CHANGED_METHOD
         && request.method != TOOLS_MANIFEST_METHOD
+        && request.method != COMMIT_FOOTER_METHOD
     {
         return Err("unknown harness method".into());
     }

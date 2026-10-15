@@ -25,6 +25,25 @@ pub(crate) struct Owners {
     pub files: Vec<FileOwners>,
 }
 
+impl Owners {
+    /// The authors with a line or a removal among the files.
+    pub(super) fn writers(&self) -> impl Iterator<Item = &Author> {
+        let wrote: HashSet<usize> = self
+            .files
+            .iter()
+            .flat_map(|file| {
+                let lines = file.lines.iter().map(|run| run.author);
+                lines.chain(file.removed.iter().map(|removal| removal.author))
+            })
+            .collect();
+        self.authors
+            .iter()
+            .enumerate()
+            .filter(move |(at, _)| wrote.contains(at))
+            .map(|(_, author)| author)
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Author {
@@ -108,7 +127,7 @@ pub(crate) fn owners_at(
                 .map(|((_, diff), moved)| patched_diff(&diff, staged, &moved.paths));
             let diff = Arc::new(match patched {
                 Some(diff) => diff?,
-                None => read_diff(dir, staged, true)?,
+                None => read_diff(dir, staged, true, None)?,
             });
             let mut read = lock();
             let read = read.get_or_insert_with(HashMap::new);
@@ -155,13 +174,30 @@ pub(super) struct Diff {
 }
 
 pub(super) fn traced(core: &Core, dir: &Path, staged: bool) -> Result<(Owners, Diff), String> {
-    let diff = read_diff(dir, staged, false)?;
+    let diff = read_diff(dir, staged, false, None)?;
     Ok((record_over(core, dir, staged, &diff), diff))
 }
 
+/// Who wrote each line staged in `index`, or in the checkout's own index, and
+/// the commit it is staged against.
+pub(super) fn staged_in(
+    core: &Core,
+    dir: &Path,
+    index: Option<&Path>,
+) -> Result<(Owners, Option<String>), String> {
+    let diff = read_diff(dir, true, false, index)?;
+    Ok((record_over(core, dir, true, &diff), diff.base))
+}
+
 /// What git says changed in `dir`'s checkout, with the files it has staged
-/// when `list_staged`, which `patched_diff` needs to stay quick.
-fn read_diff(dir: &Path, staged: bool, list_staged: bool) -> Result<Diff, String> {
+/// when `list_staged`, which `patched_diff` needs to stay quick. `index`
+/// stands in for the checkout's own.
+fn read_diff(
+    dir: &Path,
+    staged: bool,
+    list_staged: bool,
+    index: Option<&Path>,
+) -> Result<Diff, String> {
     let (top, base) = top_and_base(dir)?;
     let against = base.as_deref().unwrap_or(EMPTY_TREE);
     let mut runs = vec![diff_args(staged, Some(against))];
@@ -181,7 +217,7 @@ fn read_diff(dir: &Path, staged: bool, list_staged: bool) -> Result<Diff, String
         }
     }
     let runs = runs.into_iter().map(|args| (args, &[][..])).collect();
-    let mut outputs = in_parallel(&top, runs).into_iter();
+    let mut outputs = in_parallel(&top, runs, index).into_iter();
     let mut next = || outputs.next().unwrap_or_else(|| Ok(String::new()));
     let changed = hunks(&next()?);
     let others = next()?;
@@ -217,7 +253,11 @@ fn split_paths(paths: &str) -> impl Iterator<Item = String> + '_ {
 
 /// Each of `runs` of git in `top` at once, each limited to its paths when
 /// it names any.
-fn in_parallel(top: &Path, runs: Vec<(Vec<&str>, &[&str])>) -> Vec<Result<String, String>> {
+fn in_parallel(
+    top: &Path,
+    runs: Vec<(Vec<&str>, &[&str])>,
+    index: Option<&Path>,
+) -> Vec<Result<String, String>> {
     std::thread::scope(|scope| {
         let handles: Vec<_> = runs
             .into_iter()
@@ -231,7 +271,10 @@ fn in_parallel(top: &Path, runs: Vec<(Vec<&str>, &[&str])>) -> Vec<Result<String
                     scoped.extend(paths);
                     scoped
                 };
-                scope.spawn(move || git(top, &args))
+                scope.spawn(move || {
+                    run(top, &args, index, None)
+                        .map(|out| String::from_utf8_lossy(&out).into_owned())
+                })
             })
             .collect();
         handles
@@ -265,7 +308,7 @@ fn patched_diff(diff: &Diff, staged: bool, moved: &[String]) -> Result<Diff, Str
         return Ok(patched);
     }
     if staged {
-        let mut unstaged = in_parallel(&diff.top, vec![(diff_args(false, None), &all)]);
+        let mut unstaged = in_parallel(&diff.top, vec![(diff_args(false, None), &all)], None);
         patched.unstaged = kept(&diff.unstaged);
         patched.unstaged.extend(hunks(&unstaged.remove(0)?));
         return Ok(patched);
@@ -287,7 +330,7 @@ fn patched_diff(diff: &Diff, staged: bool, moved: &[String]) -> Result<Diff, Str
             runs.push((args, paths));
         }
     }
-    let mut outputs = in_parallel(&diff.top, runs).into_iter();
+    let mut outputs = in_parallel(&diff.top, runs, None).into_iter();
     patched.untracked = diff.untracked.iter().filter(outside).cloned().collect();
     patched
         .untracked
@@ -390,41 +433,6 @@ fn record_over(core: &Core, dir: &Path, staged: bool, diff: &Diff) -> Owners {
         owners = agents.owners(core, files);
     }
     owners
-}
-
-/// One trailer line for each agent that wrote something staged in `dir`, or
-/// for `fallback` when none did.
-pub(crate) fn commit_trailers(core: &Core, dir: &Path, fallback: Option<&str>) -> Vec<String> {
-    let owners = owners(core, dir, true).unwrap_or_default();
-    let wrote: HashSet<usize> = owners
-        .files
-        .iter()
-        .flat_map(|file| {
-            let lines = file.lines.iter().map(|run| run.author);
-            lines.chain(file.removed.iter().map(|removal| removal.author))
-        })
-        .collect();
-    let mut authors: Vec<&Author> = owners
-        .authors
-        .iter()
-        .enumerate()
-        .filter(|(at, _)| wrote.contains(at))
-        .map(|(_, author)| author)
-        .collect();
-    let latest = fallback
-        .filter(|_| authors.is_empty())
-        .and_then(|id| latest(core, dir, id));
-    authors.extend(&latest);
-    authors.into_iter().map(trailer).collect()
-}
-
-pub(super) fn trailer(author: &Author) -> String {
-    crate::trailers::agent(
-        &author.name,
-        &author.cli,
-        author.model.as_deref(),
-        &author.agent_id,
-    )
 }
 
 /// `agent_id` as its latest edit in `dir`'s project names it.

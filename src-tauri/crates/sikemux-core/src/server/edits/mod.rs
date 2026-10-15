@@ -4,6 +4,7 @@
 //! lines only, never what the files hold.
 
 pub(crate) mod commit;
+pub(crate) mod footer;
 mod lines;
 mod owners;
 
@@ -21,8 +22,9 @@ use super::chat::Chat;
 use super::names::project_of;
 use super::remote::unix_ms;
 use super::Core;
+pub(crate) use footer::footer;
 pub(crate) use lines::{changed, hunk, replaced, Lines, Replaced};
-pub(crate) use owners::{authors, before, commit_trailers, git, owners, owners_at, Moved, Owners};
+pub(crate) use owners::{authors, before, git, owners, owners_at, Moved, Owners};
 
 const FOLDER: &str = "edits";
 const MAX_PER_PROJECT: usize = 5000;

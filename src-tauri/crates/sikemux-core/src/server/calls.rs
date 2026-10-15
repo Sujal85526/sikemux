@@ -353,15 +353,14 @@ async fn change_owners(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<O
     .await
 }
 
-/// The trailer lines naming the agents whose work a commit of what is staged holds.
+/// The signed footer naming the agents whose work a commit of what is staged holds.
 async fn commit_trailers(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<Vec<String>> {
     let core = core.clone();
     blocking(move || {
-        Ok(edits::commit_trailers(
-            &core,
-            &params.dir,
-            params.agent_id.as_deref(),
-        ))
+        Ok(
+            edits::footer(&core, &params.dir, params.agent_id.as_deref(), None, false)
+                .unwrap_or_default(),
+        )
     })
     .await
 }

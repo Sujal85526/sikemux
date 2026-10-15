@@ -251,8 +251,8 @@ pub(super) fn commit_all(
         return Ok(false);
     }
     git(tree, &["add", "--all"])?;
-    let trailers = edits::commit_trailers(core, tree, Some(agent));
-    let message = crate::trailers::append(message, &trailers);
+    let footer = edits::footer(core, tree, Some(agent), None, false)?;
+    let message = crate::trailers::append(message, &footer);
     git_in(tree, &["commit", "--quiet", "-m", &message], SLOW)?;
     Ok(true)
 }

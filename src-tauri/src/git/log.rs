@@ -233,7 +233,10 @@ pub(super) fn describe_commits(
             date: relative_time(commit.time().seconds()),
             time: commit.time().seconds(),
             subject: commit.summary().ok().flatten().unwrap_or("").to_string(),
-            agents: sikemux_core::trailers::agents(commit.message().unwrap_or_default()),
+            agents: sikemux_core::trailers::agents(commit.message().unwrap_or_default())
+                .into_iter()
+                .map(|agent| agent.name)
+                .collect(),
             unpushed: unpushed.contains(&oid),
             refs: ref_map.get(&oid).cloned().unwrap_or_default(),
         });
