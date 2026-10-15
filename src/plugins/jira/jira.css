@@ -818,12 +818,6 @@
     align-items: flex-start;
 }
 
-/* With several people, each person's columns stay short enough to reach the next one; a column scrolls instead. */
-.jira-swimlane:not(:only-child) .kanban-column {
-    max-height: 62vh;
-    overflow-y: auto;
-}
-
 .jira-swimlane + .jira-swimlane {
     margin-top: 6px;
 }
