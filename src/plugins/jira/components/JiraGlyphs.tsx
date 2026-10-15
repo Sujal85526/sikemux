@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
-import type { JiraIssueSummary } from "../api";
+import type { CSSProperties, ReactNode } from "react";
+import { IconWarning } from "../../../plugin-api/ui";
+import type { JiraIssueSummary, JiraParent } from "../api";
 
 function Glyph({ tone, title, children }: { tone: string; title: string; children: ReactNode }) {
     return (
@@ -87,4 +88,65 @@ export function PriorityGlyph({ priority }: { priority: string | null }) {
 /** An issue's key, struck through once the issue is done, as Jira shows it. */
 export function IssueKey({ issue, className = "jira-key" }: { issue: Pick<JiraIssueSummary, "key" | "statusCategory">; className?: string }) {
     return <span className={`${className}${issue.statusCategory === "done" ? " done" : ""}`}>{issue.key}</span>;
+}
+
+/** Jira's fourteen epic colours, by the names its boards give them. */
+const EPIC_COLORS: Record<string, string> = {
+    color_1: "#a07150",
+    color_2: "#f79232",
+    color_3: "#d9a83a",
+    color_4: "#3b7fc4",
+    color_5: "#6a87a6",
+    color_6: "#8eb021",
+    color_7: "#ac707a",
+    color_8: "#8b6bb8",
+    color_9: "#f15c75",
+    color_10: "#5d7aa8",
+    color_11: "#2ab3c8",
+    color_12: "#e5603e",
+    color_13: "#3fb37e",
+    color_14: "#7a69d6",
+};
+
+export const epicColor = (color: string | null) => (color && EPIC_COLORS[color]) ?? "var(--gray-700)";
+
+function CalendarIcon() {
+    return (
+        <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true">
+            <rect x="2.5" y="3.5" width="11" height="10" rx="2" />
+            <path d="M2.5 7h11M5.5 2v3M10.5 2v3" />
+        </svg>
+    );
+}
+
+/** The epic or parent an issue sits under, as a chip in the epic's colour. */
+export function EpicChip({ parent }: { parent: JiraParent }) {
+    return (
+        <span className="jira-epic" style={{ "--epic": epicColor(parent.color) } as CSSProperties} title={`${parent.key} ${parent.summary}`}>
+            <i />
+            <span className="jira-ellipsis">{parent.summary || parent.key}</span>
+        </span>
+    );
+}
+
+/** A due date as Jira writes it, and whether it has passed with the issue still open. */
+export function dueOf(due: string, done: boolean, today = new Date()): { label: string; late: boolean } {
+    const [year, month, day] = due.split("-").map(Number);
+    const date = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return {
+        label: date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }),
+        late: !done && date < start,
+    };
+}
+
+/** A due date, turned red with a warning once it has passed and the issue is still open. */
+export function DueChip({ due, done }: { due: string; done: boolean }) {
+    const { label, late } = dueOf(due, done);
+    return (
+        <span className={`jira-due${late ? " late" : ""}`} title={late ? "Overdue" : "Due"}>
+            {late ? <IconWarning size={12} /> : <CalendarIcon />}
+            {label}
+        </span>
+    );
 }

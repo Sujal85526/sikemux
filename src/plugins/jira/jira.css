@@ -775,29 +775,98 @@
     background: var(--gray-300);
 }
 
-.jira-board .kanban-columns {
-    gap: 8px;
-    padding: 0 0 4px;
+.jira-lanes {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    overflow: auto;
 }
 
+.jira-lanes > .kanban-columns {
+    flex: 1;
+}
+
+.jira-board .kanban-columns {
+    gap: 8px;
+    min-height: 0;
+    padding: 0;
+    overflow: visible;
+}
+
+.jira-swimlane {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.jira-swimlane + .jira-swimlane {
+    margin-top: 6px;
+}
+
+.jira-swimlane-head {
+    position: sticky;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    max-width: 100%;
+    height: 30px;
+    padding: 0 10px 0 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    background: var(--jira-glass);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+}
+
+.jira-swimlane-head:hover {
+    color: var(--text-primary);
+}
+
+.jira-swimlane-head b {
+    overflow: hidden;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.jira-swimlane-chevron {
+    flex: none;
+    color: var(--text-tertiary);
+    transition: transform var(--dur-1) var(--ease-out);
+}
+
+.jira-swimlane-head[aria-expanded="true"] .jira-swimlane-chevron {
+    transform: rotate(90deg);
+}
+
+/* Jira's ladder: the lane sinks below the pane, the card rises above it on a solid surface. */
 .jira-board .kanban-column {
     flex: 1 0 236px;
-    max-width: 340px;
-    gap: 4px;
+    max-width: 320px;
+    gap: 6px;
     padding: 6px;
     border-color: transparent;
-    background: linear-gradient(color-mix(in oklab, var(--ink) 5%, transparent) 0 0), color-mix(in srgb, var(--void) 55%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface-sunken) 72%, transparent);
+    overflow: visible;
 }
 
 .jira-board .kanban-column.drop {
     border-color: var(--border-selected);
-    background: var(--surface-selected);
+    background: color-mix(in oklab, var(--acc) 10%, color-mix(in srgb, var(--surface-sunken) 72%, transparent));
 }
 
 .jira-board .kanban-column-head {
     justify-content: flex-start;
     gap: 6px;
-    min-height: 26px;
+    min-height: 28px;
     padding: 2px 6px 4px;
     font-size: var(--text-3xs);
     letter-spacing: var(--tracking-label);
@@ -821,20 +890,26 @@
 }
 
 .jira-board .kanban-card {
-    gap: 10px;
-    padding: 9px 10px 8px;
-    border-color: color-mix(in oklab, var(--border) 70%, transparent);
-    background: var(--gray-100);
-    transition: border-color var(--dur-1) var(--ease-out);
+    gap: 8px;
+    padding: 10px 10px 8px;
+    border-color: transparent;
+    background: var(--gray-200);
+    box-shadow:
+        0 1px 1px rgb(0 0 0 / 0.5),
+        0 0 1px rgb(0 0 0 / 0.5);
+    transition:
+        border-color var(--dur-1) var(--ease-out),
+        background var(--dur-1) var(--ease-out);
 }
 
 .jira-board .kanban-card:hover {
     border-color: var(--border-strong);
+    background: var(--gray-300);
 }
 
 .jira-board .kanban-card.active {
     border-color: var(--border-selected);
-    background: color-mix(in oklab, var(--acc) 14%, var(--gray-100));
+    background: color-mix(in oklab, var(--acc) 16%, var(--gray-200));
 }
 
 .jira-board .kanban-card-summary {
@@ -844,6 +919,54 @@
     -webkit-line-clamp: 3;
 }
 
+.jira-card-chips {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+}
+
+.jira-epic,
+.jira-due {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    height: 20px;
+    padding: 0 6px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-1);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.jira-epic {
+    align-self: stretch;
+    border-color: color-mix(in oklab, var(--epic) 70%, transparent);
+}
+
+.jira-epic i {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--epic);
+}
+
+.jira-due.late {
+    border-color: color-mix(in oklab, var(--danger) 70%, transparent);
+    color: var(--danger);
+}
+
+.jira-card-marks {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 14px;
+}
+
 .jira-board .kanban-card-foot {
     gap: 6px;
 }
@@ -851,4 +974,57 @@
 .jira-board .kanban-key {
     font-size: var(--text-2xs);
     color: var(--text-secondary);
+}
+
+.jira-space-row .jira-space-chevron {
+    flex: none;
+    margin: 0 -2px 0 -2px;
+    color: var(--text-tertiary);
+    transition: transform var(--dur-1) var(--ease-out);
+}
+
+.jira-space-row[aria-expanded="true"] .jira-space-chevron {
+    transform: rotate(90deg);
+}
+
+.jira-project-avatar {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    overflow: hidden;
+    border-radius: var(--radius-1);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--gray-500);
+}
+
+.jira-project-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.jira-space-children {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 1px 0 4px 18px;
+}
+
+.jira-subheading {
+    padding-top: 8px;
+}
+
+.jira-more {
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+}
+
+.jira-field-value > .jira-due,
+.jira-field-value > .jira-epic {
+    align-self: flex-start;
 }

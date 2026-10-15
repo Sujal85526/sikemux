@@ -6,6 +6,7 @@ import {
     Dropdown,
     EmptyState,
     IconBoard,
+    IconChevron,
     IconClock,
     IconClose,
     IconCopy,
@@ -23,14 +24,23 @@ import {
     SkeletonRows,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
-import { failureMessage, jiraApi, refreshJira, type JiraIssue, type JiraIssueSummary, type JiraPerson } from "../api";
+import {
+    failureMessage,
+    jiraApi,
+    refreshJira,
+    type JiraBoard as JiraBoardInfo,
+    type JiraIssue,
+    type JiraIssueSummary,
+    type JiraPerson,
+    type JiraProject,
+} from "../api";
 import { jiraBoardsR, jiraFiltersR, jiraIssueR, jiraProjectsR, jiraSearchR, jiraStatusR } from "../resources";
 import { copyIssue, issueMenu, openIssue } from "../issueLinks";
 import { jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
 import { statusCounts, withStatuses } from "../statusFilter";
 import { JiraBoard } from "./JiraBoard";
-import { Avatar } from "./JiraFace";
-import { IssueKey, IssueTypeIcon, PriorityGlyph } from "./JiraGlyphs";
+import { Avatar, ProjectAvatar } from "./JiraFace";
+import { DueChip, EpicChip, IssueKey, IssueTypeIcon, PriorityGlyph } from "./JiraGlyphs";
 import { JiraMark } from "./JiraMark";
 import { JiraSignIn } from "./JiraSignIn";
 import { StatusChip } from "./StatusChip";
@@ -73,16 +83,8 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
     const filters = useResourceEnabled(active, jiraFiltersR, site);
     const projects = useResourceEnabled(active, jiraProjectsR, site);
     const boards = useResourceEnabled(active, jiraBoardsR, site);
-    const [boardFilter, setBoardFilter] = useState("");
-    const listProject = view.list.kind === "project" || view.list.kind === "unassigned" ? view.list : null;
-    const [picked, setPicked] = useState<{ key: string; name: string } | null>(null);
-    const project = listProject ?? picked ?? projects.data?.[0] ?? null;
     const show = (list: JiraList) => updateJiraView(paneId, { list });
-    const words = boardFilter.trim().toLowerCase();
-    const shownBoards = (boards.data ?? []).filter(
-        (board) => !words || board.name.toLowerCase().includes(words) || (board.project ?? "").toLowerCase().includes(words),
-    );
-    const listButton = (list: JiraList, label: string, Mark: Icon, title?: string, key = label) => (
+    const listButton: ListButton = (list, label, Mark, title, key = label) => (
         <button key={key} type="button" className={`jira-list${sameList(view.list, list) ? " active" : ""}`} title={title} onClick={() => show(list)}>
             <Mark size={14} className="jira-list-mark" />
             <span className="jira-list-label">{label}</span>
@@ -111,65 +113,14 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                     <div className="jira-heading">Your work</div>
                     {MY_WORK.map(([list, label, Mark]) => listButton(list, label, Mark))}
                 </div>
-                {(projects.data?.length ?? 0) > 0 && project && (
-                    <div className="jira-lists">
-                        <div className="jira-heading">Project</div>
-                        <Dropdown
-                            label="Project"
-                            value={project.key}
-                            options={(projects.data ?? []).map((each) => ({ value: each.key, label: each.name, detail: each.key }))}
-                            search="Find a project"
-                            onChange={(key) => {
-                                const chosen = projects.data?.find((each) => each.key === key);
-                                if (!chosen) return;
-                                setPicked(chosen);
-                                show({ kind: listProject?.kind ?? "project", key: chosen.key, name: chosen.name });
-                            }}
-                        />
-                        {listButton(
-                            { kind: "project", key: project.key, name: project.name },
-                            "All open",
-                            IconStack,
-                            `Open issues in ${project.name}`,
-                        )}
-                        {listButton(
-                            { kind: "unassigned", key: project.key, name: project.name },
-                            "Unassigned",
-                            IconInbox,
-                            `Open issues in ${project.name} with nobody on them`,
-                        )}
-                    </div>
-                )}
-                {(boards.data?.length ?? 0) > 0 && (
-                    <div className="jira-lists">
-                        <div className="jira-heading">Boards</div>
-                        {(boards.data?.length ?? 0) > 8 && (
-                            <input
-                                className="jira-board-filter"
-                                value={boardFilter}
-                                onChange={(event) => setBoardFilter(event.target.value)}
-                                placeholder="Find a board"
-                                aria-label="Find a board"
-                                spellCheck={false}
-                            />
-                        )}
-                        {shownBoards.map((board) =>
-                            listButton(
-                                { kind: "board", id: board.id, name: board.name },
-                                board.name,
-                                IconBoard,
-                                board.project ? `${board.name} · ${board.project}` : board.name,
-                                String(board.id),
-                            ),
-                        )}
-                    </div>
-                )}
-                {boards.status === "error" && (
-                    <div className="jira-lists">
-                        <div className="jira-heading">Boards</div>
-                        <p className="jira-lists-error">{boards.error ?? "Jira would not list the boards."} Sign out and in again to retry.</p>
-                    </div>
-                )}
+                <Spaces
+                    site={site}
+                    projects={projects.data ?? []}
+                    boards={boards.data ?? []}
+                    boardsError={boards.status === "error" ? (boards.error ?? "Jira would not list the boards.") : null}
+                    current={view.list}
+                    listButton={listButton}
+                />
                 {(filters.data?.length ?? 0) > 0 && (
                     <div className="jira-lists">
                         <div className="jira-heading">Starred filters</div>
@@ -225,6 +176,138 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                     <EmptyState message="Pick an issue to read it, comment, move it along or assign it." />
                 </div>
             )}
+        </div>
+    );
+}
+
+type ListButton = (list: JiraList, label: string, Mark: Icon, title?: string, key?: string) => ReactNode;
+
+const SPACES_SHOWN = 8;
+
+/** Jira's spaces: each project with its picture, opening onto its boards and its lists. */
+function Spaces({
+    site,
+    projects,
+    boards,
+    boardsError,
+    current,
+    listButton,
+}: {
+    site: string;
+    projects: JiraProject[];
+    boards: JiraBoardInfo[];
+    boardsError: string | null;
+    current: JiraList;
+    listButton: ListButton;
+}) {
+    const [toggled, setToggled] = useState<ReadonlySet<string>>(new Set());
+    const [find, setFind] = useState("");
+    const [everyone, setEveryone] = useState(false);
+    const known = new Set(projects.map((project) => project.key));
+    const homeOf = (board: JiraBoardInfo) => board.projectKey ?? board.project ?? "";
+    const boardsOf = (key: string) => boards.filter((board) => homeOf(board) === key);
+    const loose = boards.filter((board) => !known.has(homeOf(board)));
+    const activeKey =
+        current.kind === "project" || current.kind === "unassigned"
+            ? current.key
+            : current.kind === "board"
+              ? (boards.find((board) => board.id === current.id) ?? null)?.projectKey
+              : undefined;
+    const openByDefault = activeKey ?? projects.find((project) => boardsOf(project.key).length > 0)?.key ?? projects[0]?.key;
+    const isOpen = (key: string) => (key === openByDefault) !== toggled.has(key);
+    const toggle = (key: string) =>
+        setToggled((now) => {
+            const next = new Set(now);
+            if (!next.delete(key)) next.add(key);
+            return next;
+        });
+    const words = find.trim().toLowerCase();
+    const matching = projects.filter(
+        (project) =>
+            !words ||
+            project.name.toLowerCase().includes(words) ||
+            project.key.toLowerCase().includes(words) ||
+            boardsOf(project.key).some((board) => board.name.toLowerCase().includes(words)),
+    );
+    const shown = words || everyone ? matching : matching.filter((project, index) => index < SPACES_SHOWN || project.key === activeKey);
+    if (projects.length === 0 && boards.length === 0 && !boardsError) return null;
+    return (
+        <div className="jira-lists">
+            <div className="jira-heading">Spaces</div>
+            {projects.length > SPACES_SHOWN && (
+                <input
+                    className="jira-board-filter"
+                    value={find}
+                    onChange={(event) => setFind(event.target.value)}
+                    placeholder="Find a space or board"
+                    aria-label="Find a space or board"
+                    spellCheck={false}
+                />
+            )}
+            {shown.map((project) => {
+                const open = isOpen(project.key) || !!words;
+                return (
+                    <div key={project.key} className="jira-space">
+                        <button
+                            type="button"
+                            className="jira-list jira-space-row"
+                            aria-expanded={open}
+                            title={`${project.name} · ${project.key}`}
+                            onClick={() => toggle(project.key)}>
+                            <IconChevron size={11} className="jira-space-chevron" />
+                            <ProjectAvatar project={project} site={site} />
+                            <span className="jira-list-label">{project.name}</span>
+                        </button>
+                        {open && (
+                            <div className="jira-space-children">
+                                {boardsOf(project.key).map((board) =>
+                                    listButton(
+                                        { kind: "board", id: board.id, name: board.name },
+                                        board.name,
+                                        IconBoard,
+                                        board.name,
+                                        String(board.id),
+                                    ),
+                                )}
+                                {listButton(
+                                    { kind: "project", key: project.key, name: project.name },
+                                    "All open",
+                                    IconStack,
+                                    `Open issues in ${project.name}`,
+                                    `${project.key}-open`,
+                                )}
+                                {listButton(
+                                    { kind: "unassigned", key: project.key, name: project.name },
+                                    "Unassigned",
+                                    IconInbox,
+                                    `Open issues in ${project.name} with nobody on them`,
+                                    `${project.key}-unassigned`,
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+            {!words && !everyone && matching.length > shown.length && (
+                <button type="button" className="jira-list jira-more" onClick={() => setEveryone(true)}>
+                    <span className="jira-list-label">Show all {matching.length} spaces</span>
+                </button>
+            )}
+            {loose.length > 0 && (
+                <>
+                    <div className="jira-heading jira-subheading">Other boards</div>
+                    {loose.map((board) =>
+                        listButton(
+                            { kind: "board", id: board.id, name: board.name },
+                            board.name,
+                            IconBoard,
+                            board.project ? `${board.name} · ${board.project}` : board.name,
+                            String(board.id),
+                        ),
+                    )}
+                </>
+            )}
+            {boardsError && <p className="jira-lists-error">{boardsError} Sign out and in again to retry.</p>}
         </div>
     );
 }
@@ -537,6 +620,16 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                                     <PriorityGlyph priority={issue.priority} />
                                     {issue.priority}
                                 </span>
+                            </Field>
+                        )}
+                        {issue.due && (
+                            <Field label="Due date">
+                                <DueChip due={issue.due} done={issue.statusCategory === "done"} />
+                            </Field>
+                        )}
+                        {issue.parent && (
+                            <Field label="Parent">
+                                <EpicChip parent={issue.parent} />
                             </Field>
                         )}
                         {issue.issueType && (

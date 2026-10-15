@@ -1,4 +1,4 @@
-import type { JiraBoardView, JiraColumn } from "./api";
+import type { JiraBoardView, JiraColumn, JiraPerson } from "./api";
 
 export interface BoardPerson {
     accountId: string;
@@ -33,4 +33,31 @@ export function matchingCards(columns: JiraColumn[], words: string): JiraColumn[
         ...column,
         issues: column.issues.filter((issue) => issue.key.toLowerCase().includes(needle) || issue.summary.toLowerCase().includes(needle)),
     }));
+}
+
+export interface Swimlane {
+    id: string;
+    person: JiraPerson | null;
+    count: number;
+    columns: JiraColumn[];
+}
+
+/** The board split into one row of columns per assignee, as Jira's "Group: Assignee" does: busiest first, nobody last. */
+export function swimlanes(columns: JiraColumn[]): Swimlane[] {
+    const lanes = new Map<string, Swimlane>();
+    columns.forEach((column, index) => {
+        for (const issue of column.issues) {
+            const id = issue.assignee?.accountId ?? "";
+            let lane = lanes.get(id);
+            if (!lane) {
+                lane = { id, person: issue.assignee, count: 0, columns: columns.map((each) => ({ ...each, issues: [] })) };
+                lanes.set(id, lane);
+            }
+            lane.count += 1;
+            lane.columns[index]?.issues.push(issue);
+        }
+    });
+    return [...lanes.values()].sort(
+        (a, b) => Number(!a.person) - Number(!b.person) || b.count - a.count || (a.person?.name ?? "").localeCompare(b.person?.name ?? ""),
+    );
 }

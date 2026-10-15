@@ -1,12 +1,21 @@
-import { useState } from "react";
+import { useState, type MouseEvent, type PointerEvent } from "react";
 import { notify } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { ContextMenu, EmptyState, IconRefresh, IconSearch, SkeletonRows, useCardDrag, type ContextMenuItem } from "../../../plugin-api/ui";
+import {
+    ContextMenu,
+    EmptyState,
+    IconChevron,
+    IconRefresh,
+    IconSearch,
+    SkeletonRows,
+    useCardDrag,
+    type ContextMenuItem,
+} from "../../../plugin-api/ui";
 import { failureMessage, jiraApi, type JiraBoardView, type JiraColumn, type JiraIssueSummary } from "../api";
-import { boardPeople, matchingCards, pickKey, unassignedCount } from "../boardFilter";
+import { boardPeople, matchingCards, pickKey, swimlanes, unassignedCount } from "../boardFilter";
 import { jiraBoardR } from "../resources";
 import { Avatar, JiraFace } from "./JiraFace";
-import { IssueKey, IssueTypeIcon, PriorityGlyph } from "./JiraGlyphs";
+import { DueChip, EpicChip, IssueKey, IssueTypeIcon, PriorityGlyph } from "./JiraGlyphs";
 
 const FACES = 6;
 
@@ -49,6 +58,7 @@ export function JiraBoard({
     const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
     const [words, setWords] = useState("");
     const [everyone, setEveryone] = useState(false);
+    const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
     const whole = useResourceEnabled(active, jiraBoardR, boardId, site, "");
     const found = useResourceEnabled(active, jiraBoardR, boardId, site, pickKey(picked));
     const [moves, setMoves] = useState<Record<string, number>>({});
@@ -97,6 +107,55 @@ export function JiraBoard({
     };
 
     const left = sprintLeft(board.sprint?.end ?? null);
+    const lanes = swimlanes(columns);
+    const fold = (id: string) =>
+        setFolded((now) => {
+            const next = new Set(now);
+            if (!next.delete(id)) next.add(id);
+            return next;
+        });
+    const lanesOf = (shown: JiraColumn[]) => (
+        <div className="kanban-columns">
+            {shown.map((column, index) => (
+                <div
+                    key={column.name}
+                    className={`kanban-column${drag.dragging?.over === String(index) ? " drop" : ""}`}
+                    data-column={index}
+                    role="list"
+                    aria-label={column.name}>
+                    <div className="kanban-column-head">
+                        <span className="jira-column-name">{column.name}</span>
+                        <span className="kanban-count">{column.issues.length}</span>
+                    </div>
+                    {column.issues.map((issue) => (
+                        <Card
+                            key={issue.key}
+                            issue={issue}
+                            selected={issue.key === selected}
+                            dragging={drag.dragging?.card === issue.key}
+                            moving={issue.key in moves}
+                            onPointerDown={(event) => drag.startDrag(event, issue.key)}
+                            onClick={() => {
+                                if (!drag.wasDragged()) onSelect(issue.key);
+                            }}
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                setMenu({
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                    items: board.columns.map((target, to) => ({
+                                        label: `Move to ${target.name}`,
+                                        disabled: to === index,
+                                        run: () => void move(issue, to),
+                                    })),
+                                });
+                            }}
+                        />
+                    ))}
+                </div>
+            ))}
+        </div>
+    );
 
     return (
         <section className="kanban jira-board" aria-label={board.name}>
@@ -183,55 +242,74 @@ export function JiraBoard({
             ) : !narrowed ? (
                 <SkeletonRows rows={6} label="Loading their cards" />
             ) : (
-                <div className="kanban-columns">
-                    {columns.map((column, index) => (
-                        <div
-                            key={column.name}
-                            className={`kanban-column${drag.dragging?.over === String(index) ? " drop" : ""}`}
-                            data-column={index}
-                            role="list"
-                            aria-label={column.name}>
-                            <div className="kanban-column-head">
-                                <span className="jira-column-name">{column.name}</span>
-                                <span className="kanban-count">{column.issues.length}</span>
-                            </div>
-                            {column.issues.map((issue) => (
-                                <button
-                                    key={issue.key}
-                                    type="button"
-                                    role="listitem"
-                                    className={`kanban-card${issue.key === selected ? " active" : ""}${drag.dragging?.card === issue.key ? " dragging" : ""}${issue.key in moves ? " moving" : ""}`}
-                                    onPointerDown={(event) => drag.startDrag(event, issue.key)}
-                                    onClick={() => {
-                                        if (!drag.wasDragged()) onSelect(issue.key);
-                                    }}
-                                    onContextMenu={(event) => {
-                                        event.preventDefault();
-                                        setMenu({
-                                            x: event.clientX,
-                                            y: event.clientY,
-                                            items: board.columns.map((target, to) => ({
-                                                label: `Move to ${target.name}`,
-                                                disabled: to === index,
-                                                run: () => void move(issue, to),
-                                            })),
-                                        });
-                                    }}>
-                                    <span className="kanban-card-summary">{issue.summary}</span>
-                                    <span className="kanban-card-foot">
-                                        <IssueTypeIcon type={issue.issueType} />
-                                        <IssueKey issue={issue} className="kanban-key" />
-                                        <PriorityGlyph priority={issue.priority} />
-                                        <span className="kanban-grow" />
-                                        <Avatar person={issue.assignee} />
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-                    ))}
+                <div className="jira-lanes">
+                    {lanes.length === 0
+                        ? lanesOf(columns)
+                        : lanes.map((lane) => (
+                              <div key={lane.id} className="jira-swimlane">
+                                  <button
+                                      type="button"
+                                      className="jira-swimlane-head"
+                                      aria-expanded={!folded.has(lane.id)}
+                                      onClick={() => fold(lane.id)}>
+                                      <IconChevron size={12} className="jira-swimlane-chevron" />
+                                      <Avatar person={lane.person} large />
+                                      <b>{lane.person?.name ?? "Unassigned"}</b>
+                                      <span className="jira-meta">({lane.count === 1 ? "1 work item" : `${lane.count} work items`})</span>
+                                  </button>
+                                  {!folded.has(lane.id) && lanesOf(lane.columns)}
+                              </div>
+                          ))}
                 </div>
             )}
             {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
         </section>
+    );
+}
+
+function Card({
+    issue,
+    selected,
+    dragging,
+    moving,
+    onPointerDown,
+    onClick,
+    onContextMenu,
+}: {
+    issue: JiraIssueSummary;
+    selected: boolean;
+    dragging: boolean;
+    moving: boolean;
+    onPointerDown: (event: PointerEvent) => void;
+    onClick: () => void;
+    onContextMenu: (event: MouseEvent) => void;
+}) {
+    return (
+        <button
+            type="button"
+            role="listitem"
+            className={`kanban-card${selected ? " active" : ""}${dragging ? " dragging" : ""}${moving ? " moving" : ""}`}
+            onPointerDown={onPointerDown}
+            onClick={onClick}
+            onContextMenu={onContextMenu}>
+            <span className="kanban-card-summary">{issue.summary}</span>
+            {(issue.parent || issue.due) && (
+                <span className="jira-card-chips">
+                    {issue.parent && <EpicChip parent={issue.parent} />}
+                    {issue.due && <DueChip due={issue.due} done={issue.statusCategory === "done"} />}
+                </span>
+            )}
+            {issue.priority && (
+                <span className="jira-card-marks">
+                    <PriorityGlyph priority={issue.priority} />
+                </span>
+            )}
+            <span className="kanban-card-foot">
+                <IssueTypeIcon type={issue.issueType} />
+                <IssueKey issue={issue} className="kanban-key" />
+                <span className="kanban-grow" />
+                <Avatar person={issue.assignee} large />
+            </span>
+        </button>
     );
 }
