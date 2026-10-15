@@ -38,6 +38,9 @@
 .agent-glyph.git {
     color: var(--acc);
 }
+.agent-glyph.board {
+    color: color-mix(in oklab, var(--git-renamed) 76%, var(--ink));
+}
 .agent-title {
     flex: 1;
     font-weight: var(--weight-medium);
