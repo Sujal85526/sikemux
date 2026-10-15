@@ -1180,7 +1180,7 @@ impl Collisions {
             at,
         } = change;
         let project = project_of(&path, &core.workspaces.project_paths());
-        let (writer, working) = self.likely_writer(core, &project, at);
+        let (writer, working) = self.likely_writer(core, &project, &path, at);
         let shell_writer = writer
             .as_ref()
             .filter(|(_, chat)| *chat)
@@ -1299,7 +1299,7 @@ impl Collisions {
         let project = project_of(path, &core.workspaces.project_paths());
         let listed = super::messages::listed(core);
         unclaimed.into_iter().any(|at| {
-            let (shells, terminals) = self.at_work(core, &listed, &project, at);
+            let (shells, terminals) = self.at_work(core, &listed, &project, path, at);
             !shells.contains(agent_id) && !terminals.contains(agent_id)
         })
     }
@@ -1313,10 +1313,11 @@ impl Collisions {
         &self,
         core: &Core,
         project: &str,
+        path: &Path,
         at: u64,
     ) -> (Option<(String, bool)>, BTreeMap<String, String>) {
         let listed = super::messages::listed(core);
-        let (shells, terminals) = self.at_work(core, &listed, project, at);
+        let (shells, terminals) = self.at_work(core, &listed, project, path, at);
         let label = |id: &String| {
             let agent = listed.iter().find(|agent| agent.agent_id == *id);
             let name = agent
@@ -1349,14 +1350,16 @@ impl Collisions {
         })
     }
 
-    /// The agents in `project` that could have changed a file at `at` with no
-    /// edit tool: the chat agents then running a command, a subagent or a
-    /// background task, and the terminal agents then working.
+    /// The agents that could have changed `place`, a file or folder in
+    /// `project`, at `at` with no edit tool: the chat agents then running a
+    /// command, a subagent or a background task, and the terminal agents then
+    /// working, each in the checkout that holds `place`.
     pub(crate) fn at_work(
         &self,
         core: &Core,
         listed: &[super::messages::Listed],
         project: &str,
+        place: &Path,
         at: u64,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
         let in_project = |agent: &str| {
@@ -1400,6 +1403,13 @@ impl Collisions {
             })
             .map(|agent| agent.agent_id.clone())
             .collect();
+        let holds = |agent: &String| {
+            core.edits
+                .checkout_of(core, agent)
+                .is_none_or(|top| place.starts_with(&top))
+        };
+        let shells = shells.into_iter().filter(holds).collect();
+        let terminals = terminals.into_iter().filter(holds).collect();
         (shells, terminals)
     }
 }

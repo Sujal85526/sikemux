@@ -149,7 +149,8 @@ impl Outside {
         );
     }
 
-    fn top_of(&self, core: &Core, agent_id: &str) -> Option<PathBuf> {
+    /// The top folder of the checkout `agent_id` works in, none outside one.
+    pub(super) fn top_of(&self, core: &Core, agent_id: &str) -> Option<PathBuf> {
         if let Some(top) = lock(&self.tops).get(agent_id) {
             return top.clone();
         }
@@ -253,7 +254,7 @@ impl Outside {
                             .is_some_and(|at| at.as_ref() == Some(&top))
                 })
             };
-            let (shells, terminals) = core.collisions.at_work(core, agents, &project, now);
+            let (shells, terminals) = core.collisions.at_work(core, agents, &project, &top, now);
             let mut checkouts = lock(&self.checkouts);
             if !mid_turn && shells.is_empty() && terminals.is_empty() {
                 checkouts.remove(&top);
@@ -495,7 +496,8 @@ fn look(
     let changes = changes
         .into_iter()
         .map(|(edit, at)| {
-            let (shells, terminals) = core.collisions.at_work(core, listed, project, at);
+            let place = Path::new(&edit.path);
+            let (shells, terminals) = core.collisions.at_work(core, listed, project, place, at);
             let mut at_work: Vec<String> = shells.into_iter().chain(terminals).collect();
             at_work.sort_unstable();
             at_work.dedup();

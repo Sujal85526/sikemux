@@ -255,6 +255,11 @@ impl Edits {
         let _ = self.jobs.send(Job::Working(agent_id.to_owned()));
     }
 
+    /// The top folder of the checkout `agent_id` works in, none outside one.
+    pub(crate) fn checkout_of(&self, core: &Core, agent_id: &str) -> Option<PathBuf> {
+        self.store.outside.top_of(core, agent_id)
+    }
+
     /// The person saved `path` in Sikemux's editor.
     pub(crate) fn saved(&self, path: PathBuf) {
         let _ = self.jobs.send(Job::Saved(path));
