@@ -47,9 +47,7 @@ export type AcpAttachment =
           /** Set when the replay holds only the chat's last turns: `history` pages back from it. */
           olderBefore: number | null;
       }
-    | { status: "missing" }
-    /* It said more than the core keeps, so it starts again from the provider's history. */
-    | { status: "restart" };
+    | { status: "missing" };
 
 /** Turns from before what the page shows, and where the page before them starts. */
 export interface AcpHistory {

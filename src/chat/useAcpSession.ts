@@ -215,12 +215,6 @@ export function useAcpSession({
                     appliedMode = attached.permissionMode;
                     if (attached.turned && current.resumeId !== response.sessionId) cmd.attachAgentSession(current.id, response.sessionId);
                 } else {
-                    if (attached.status === "restart") {
-                        const chat = (await acpApi.list()).find((candidate) => candidate.agentId === current.id);
-                        if (chat?.running) throw new Error("The agent is still working on a turn. Try again once it finishes.");
-                        await acpApi.stop(current.id);
-                    }
-                    if (!mounted) return;
                     appliedMode = permissionModeOf(current);
                     const account = profileRef.current;
                     response = await acpApi.start({

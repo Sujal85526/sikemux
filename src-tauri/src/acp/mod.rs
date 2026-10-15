@@ -414,7 +414,6 @@ pub enum Attachment {
         older_before: Option<u64>,
     },
     Missing,
-    Restart,
 }
 
 /// Turns from before what the page shows, and where the page before them starts.
@@ -471,9 +470,9 @@ pub async fn acp_attach(
                             }
                         }
                         ChatAttachment::Missing => Attachment::Missing,
-                        // Only an attach that names a mark is resumed, and this one names none.
+                        // Only an attach that names a mark is resumed, and the core no longer restarts chats.
                         ChatAttachment::Restart | ChatAttachment::Resumed { .. } => {
-                            Attachment::Restart
+                            return Err(ClientError::UnexpectedReply)
                         }
                     })
                 }
@@ -713,10 +712,6 @@ mod tests {
                 "feed": "f",
                 "olderBefore": 7,
             })
-        );
-        assert_eq!(
-            serde_json::to_value(Attachment::Restart).unwrap(),
-            json!({ "status": "restart" })
         );
     }
 }
