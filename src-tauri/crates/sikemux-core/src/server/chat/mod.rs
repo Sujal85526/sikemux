@@ -427,10 +427,14 @@ impl Chat {
     }
 
     /// Records the files a tool call changed once `update` says it is done.
-    /// Only while the agent works, so a session's history read back again
-    /// is not counted twice.
+    /// Only while the agent works, its turn or the subagents and background
+    /// tasks that outlive it, so history read back again is not counted twice.
     pub(crate) fn note_edits(&self, update: &Value) {
-        if !self.turn_running() && !self.held.load(Ordering::Acquire) {
+        let working = self.turn_running()
+            || self.held.load(Ordering::Acquire)
+            || self.feed.running_subagents() > 0
+            || self.feed.running_tasks() > 0;
+        if !working {
             return;
         }
         let Some(core) = self.core.upgrade() else {
