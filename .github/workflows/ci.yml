@@ -51,6 +51,7 @@ jobs:
       rust: ${{ steps.areas.outputs.rust }}
       simulator: ${{ steps.areas.outputs.simulator }}
       desktop: ${{ steps.areas.outputs.desktop }}
+      perf: ${{ steps.areas.outputs.perf }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,6 +89,7 @@ jobs:
           area rust '^(src-tauri/|browser/|server/protocol/|src/test/markdownFixtures\.json$|rust-toolchain\.toml$)'
           area simulator '^(src-tauri/sim/|src-tauri/src/sim\.rs$|src-tauri/src/simulator/|src-tauri/Cargo\.(toml|lock)$|scripts/build-sim-(helper|fixture)\.mjs$|rust-toolchain\.toml$)'
           area desktop '^(src/|public/|browser/|scripts/|src-tauri/|index\.html$|package\.json$|pnpm-lock\.yaml$|vite\.config\.ts$|tsconfig\.json$|rust-toolchain\.toml$)' '^src-tauri/sim/'
+          area perf '^(src/|public/|showcase/|scripts/perf\.mjs$|package\.json$|pnpm-lock\.yaml$|vite\.config\.ts$)'
 
   frontend:
     name: Frontend quality, build, and tests
@@ -151,6 +153,43 @@ jobs:
 
       - name: Lint shell scripts
         run: brew install shellcheck && shellcheck scripts/*.sh
+
+  # Runner VMs are noisy, so each scenario gets more tries than on a laptop; one good run passes it.
+  perf:
+    name: Frontend timings in WebKit
+    needs: changes
+    if: needs.changes.outputs.perf == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install WebKit
+        run: pnpm exec playwright-core install webkit
+
+      # The showcase renders chat markdown with the app's Rust parser; built here, it never compiles while a run is timed.
+      - name: Build the markdown parser
+        run: |
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
+          cargo build --quiet --manifest-path src-tauri/Cargo.toml -p sikemux-markdown --example stdio
+
+      - name: Time the terminal and startup
+        run: pnpm perf terminal startup --runs 5
 
   rust:
     name: Rust formatting, lint, and tests
