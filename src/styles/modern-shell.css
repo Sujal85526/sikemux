@@ -847,16 +847,15 @@ textarea:focus,
     color: var(--text-primary);
 }
 
-/* The label inherits the tab's colour, so the three states are one decision
- * above rather than six rules. Weight stays put between them: a label that
- * gains 100 weight on selection reflows the strip by a pixel or two. */
+/* Every label reads at full ink; the tab's tint and border say which one is selected. Weight stays put
+ * between states: a label that gains 100 weight on selection reflows the strip by a pixel or two. */
 .tabbar.v-agent .tab-label,
 .tabbar.v-editor .tab-label,
 .tabbar.v-desk .tab-label,
 .tabbar.v-stack .tab-label {
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
-    color: inherit;
+    color: var(--text-primary);
 }
 
 .pane {

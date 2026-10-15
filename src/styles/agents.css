@@ -1034,8 +1034,7 @@
 .agent-tree .proj-child {
     cursor: default;
 }
-.agent-row:not(.recent) > .agent-row-text > .agent-title,
-.tab-wrap.agent-tab .tab-label {
+.agent-row:not(.recent) > .agent-row-text > .agent-title {
     color: var(--text-primary);
 }
 .agent-row.recent:not(:hover) {
