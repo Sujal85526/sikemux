@@ -36,7 +36,7 @@
     color: color-mix(in oklab, var(--git-modified) 76%, var(--ink-dim));
 }
 .agent-glyph.git {
-    color: color-mix(in oklab, var(--git-added) 76%, var(--ink-dim));
+    color: var(--acc);
 }
 .agent-title {
     flex: 1;
