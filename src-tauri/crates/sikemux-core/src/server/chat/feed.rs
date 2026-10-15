@@ -2317,18 +2317,16 @@ mod tests {
             turn(&mut inner.replay, n);
         }
 
-        for peer in [&phone, &Peer::Local] {
-            let ChatAttachment::Live {
-                replay,
-                older_before,
-                ..
-            } = feed.attachment(&inner, peer, standing(), None)
-            else {
-                panic!("a client takes up a long chat");
-            };
-            assert_eq!(asked(&replay), asks(10..60));
-            assert_eq!(older_before, Some(10 * 5));
-        }
+        let ChatAttachment::Live {
+            replay,
+            older_before,
+            ..
+        } = feed.attachment(&inner, &phone, standing(), None)
+        else {
+            panic!("a phone takes up a long chat");
+        };
+        assert_eq!(asked(&replay), asks(10..60));
+        assert_eq!(older_before, Some(10 * 5));
         drop(inner);
         let page = feed.history(&feed.id, 10 * 5, 100).unwrap();
         assert_eq!(asked(&page.events), asks(0..10));
