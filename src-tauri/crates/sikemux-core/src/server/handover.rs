@@ -75,6 +75,9 @@ struct HandoverState {
     /// where this core stopped reading. Read one at a time, so a damaged
     /// entry costs only its own chat. Added in format 5.
     live_chats: Vec<Value>,
+    /// A pipe holding the key agents' secrets are signed with.
+    #[serde(default)]
+    agent_key_fd: Option<RawFd>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -269,6 +272,13 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver
         chats.push(unwritable.clone());
         *chat = HandOver::Resume(Box::new(unwritable));
     }
+    let agent_key = match core.agent_key.hand_over() {
+        Ok(pipe) => Some(pipe),
+        Err(error) => {
+            eprintln!("sikemux core: agents keep running through the update but their tools stop: {error}");
+            None
+        }
+    };
     let config = &listening.config;
     let state = HandoverState {
         format: RESUME_FORMAT,
@@ -291,6 +301,7 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver
         harness: serde_json::to_value(core.harness.record()).unwrap_or(Value::Null),
         chats,
         live_chats,
+        agent_key_fd: agent_key.as_ref().map(AsRawFd::as_raw_fd),
     };
     let written = serde_json::to_vec(&state)
         .map_err(std::io::Error::other)
@@ -320,6 +331,7 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver
         command.arg("--data-dir").arg(data_dir);
     }
     let mut keep = vec![listening.listener_fd, listening.lock_fd];
+    keep.extend(state.agent_key_fd);
     if let Some(tools) = state.tools.as_ref() {
         command.arg("--tools-fd").arg(tools.fd.to_string());
         keep.push(tools.fd);
@@ -505,6 +517,24 @@ fn migrate(mut state: Value) -> Result<Value, String> {
             6 => return Ok(state),
             other => return Err(format!("it is in format {other}, not {RESUME_FORMAT}")),
         }
+    }
+}
+
+/// The pipe is not on the command line, as a core that does not know it would
+/// refuse to start, so it is checked to be one before it is read.
+fn take_over_agent_key(core: &Core, fd: RawFd) {
+    let taken = if file_type(fd) == Some(libc::S_IFIFO) {
+        // SAFETY: the replaced core kept this pipe open across `exec` for this
+        // process alone, and nothing else here has taken it.
+        let pipe = unsafe { OwnedFd::from_raw_fd(fd) };
+        core.agent_key.take_over(pipe)
+    } else {
+        Err("it was not handed over".into())
+    };
+    if let Err(error) = taken {
+        eprintln!(
+            "sikemux core: agents that kept running through the update lose their tools: {error}"
+        );
     }
 }
 
@@ -816,6 +846,9 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         accounts_api: Some(crate::accounts::api_base()),
     };
     let core = Core::new(build, config.data_dir.as_deref())?;
+    if let Some(fd) = state.as_ref().and_then(|state| state.agent_key_fd) {
+        take_over_agent_key(&core, fd);
+    }
     let mut inherited = Inherited {
         open: recovery.inherited.clone(),
         claimed: HashSet::new(),

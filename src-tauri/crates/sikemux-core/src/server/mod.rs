@@ -977,9 +977,6 @@ pub(crate) async fn run_core(
         listener_fd: listener.as_raw_fd(),
         lock_fd: lock.as_raw_fd(),
     });
-    if let Err(error) = core.agent_key.load(&agent_key::file_path(&config.socket)) {
-        eprintln!("sikemux core: agents' secrets last only until the core stops: {error}");
-    }
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
     remote::start(&core, &config).await;
