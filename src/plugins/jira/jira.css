@@ -508,16 +508,13 @@
 }
 
 .jira-fields {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
-    gap: 12px 20px;
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
     padding: 10px 12px 12px;
     border: 1px solid var(--border);
     border-radius: var(--radius-3);
-}
-
-.jira-fields-title {
-    grid-column: 1 / -1;
 }
 
 .jira-fields-title,
@@ -549,6 +546,24 @@
     gap: 6px;
     font-size: var(--text-sm);
     color: var(--text-secondary);
+}
+
+@container (min-width: 300px) {
+    .jira-field {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr);
+        column-gap: 12px;
+        align-items: start;
+    }
+
+    .jira-field-label {
+        line-height: 24px;
+    }
+
+    .jira-field-value {
+        justify-content: center;
+        min-height: 24px;
+    }
 }
 
 .jira-person {
