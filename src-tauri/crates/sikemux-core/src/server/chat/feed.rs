@@ -1354,9 +1354,8 @@ impl Feed {
         }
     }
 
-    /// A phone is sent the chat's last turns and pages back through the rest.
-    /// The host's own app reloads a chat longer than the replay from the
-    /// provider instead.
+    /// A phone, or the host's own app once the chat outgrew the replay, is sent
+    /// the chat's last turns and pages back through the rest.
     fn attachment(
         &self,
         inner: &Inner,
@@ -1367,16 +1366,15 @@ impl Feed {
         let missed = since
             .filter(|since| since.feed == self.id && since.seq <= inner.seq)
             .and_then(|since| inner.recent.since(since.seq, peer));
-        let phone = !peer.is_local() && inner.replay.keeps_history();
+        let paged = inner.replay.keeps_history() && (!peer.is_local() || inner.replay.is_trimmed());
         match (inner.start.clone(), missed) {
             _ if inner.closed => ChatAttachment::Missing,
             (Some(_), Some(events)) => ChatAttachment::Resumed {
                 events,
                 mark: self.mark(inner),
             },
-            (Some(_), None) if inner.replay.is_trimmed() && !phone => ChatAttachment::Restart,
             (Some(start), None) => {
-                let (replay, older_before) = if phone {
+                let (replay, older_before) = if paged {
                     let tail = inner.replay.tail();
                     (tail.events, tail.older_before)
                 } else {
@@ -2174,10 +2172,12 @@ mod tests {
         for n in 0..60 {
             turn(&mut inner.replay, n);
         }
-        assert!(matches!(
-            feed.attachment(&inner, &Peer::Local, standing(), None),
-            ChatAttachment::Restart
-        ));
+        let ChatAttachment::Live { older_before, .. } =
+            feed.attachment(&inner, &Peer::Local, standing(), None)
+        else {
+            panic!("the app takes up a chat longer than the replay without restarting it");
+        };
+        assert_eq!(older_before, Some(58 * 5));
         let ChatAttachment::Live { older_before, .. } =
             feed.attachment(&inner, &phone, standing(), None)
         else {
