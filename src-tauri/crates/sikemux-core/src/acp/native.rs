@@ -2,8 +2,11 @@
 //! differently, so the choices here are read from what the session offers
 //! rather than assumed.
 
+use agent_client_protocol::schema::v1::Meta;
 use serde::Serialize;
 use serde_json::{json, Value};
+
+use crate::git_guard::shim;
 
 /// The arguments that put each agent's own binary into ACP mode.
 ///
@@ -15,6 +18,16 @@ pub fn arguments(provider: &str) -> Option<&'static [&'static str]> {
         "grok" => Some(&["agent", "--no-leader", "stdio"]),
         _ => None,
     }
+}
+
+/// What a session of `provider`'s opens with beside its folder and tools.
+/// Grok loads the plugin whose hook checks its shell commands, since its
+/// login profile's PATH puts the system's git ahead of Sikemux's.
+pub fn session_meta(provider: &str) -> Option<Meta> {
+    let plugin = shim::grok_plugin().filter(|_| provider == "grok")?;
+    let mut meta = Meta::new();
+    meta.insert("pluginDirs".into(), json!([plugin]));
+    Some(meta)
 }
 
 /// Hermes lists its models beside the session instead of as a config option,

@@ -245,7 +245,9 @@ impl Acp {
         let setup = driver
             .call(
                 AGENT_METHOD_NAMES.session_new,
-                NewSessionRequest::new(&launch.cwd).mcp_servers(servers),
+                NewSessionRequest::new(&launch.cwd)
+                    .mcp_servers(servers)
+                    .meta(native::session_meta(&launch.provider)),
                 None,
             )
             .await?;
@@ -271,8 +273,9 @@ impl Acp {
         if !can_load {
             return Err("This agent cannot load existing sessions".into());
         }
-        let load =
-            LoadSessionRequest::new(existing.clone(), &launch.cwd).mcp_servers(servers.clone());
+        let load = LoadSessionRequest::new(existing.clone(), &launch.cwd)
+            .mcp_servers(servers.clone())
+            .meta(native::session_meta(&launch.provider));
         let loaded = driver
             .rpc
             .start(AGENT_METHOD_NAMES.session_load, params(load)?)

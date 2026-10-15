@@ -1,43 +1,105 @@
 //! The `git` agents Sikemux starts find first on their PATH: this binary,
 //! linked under that name. It refuses what [`super`] refuses and runs the real
 //! git for everything else, whichever harness or shell the agent runs it from.
+//!
+//! Grok and Hermes rebuild PATH from the person's login profile, which puts
+//! the system's git first, so they also check each shell command before it
+//! runs: this binary again, linked as the hook their harnesses call.
 
 use std::ffi::OsString;
+use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use serde_json::{json, Value};
+
 /// The git the shim runs, as the core found it on the person's PATH.
 const REAL_GIT: &str = "SIKEMUX_REAL_GIT";
 
+/// The name the hook is linked under, outside the agents' PATH.
+const HOOK: &str = "sikemux-git-hook";
+
 static FOLDER: OnceLock<PathBuf> = OnceLock::new();
+static GROK_PLUGIN: OnceLock<PathBuf> = OnceLock::new();
 
 /// Links this binary as `git` in a folder of `data_dir`, for agents started
-/// from now on to find first.
+/// from now on to find first, and as the hook, with the plugin Grok chats
+/// load it from.
 pub(crate) fn install(data_dir: &Path) {
     let folder = data_dir.join("agent-bin");
     if folder.to_string_lossy().contains(':') {
         return;
     }
-    match link(&folder) {
+    match link(&folder, "git") {
         Ok(()) => {
             let _ = FOLDER.set(folder);
         }
         Err(error) => eprintln!("sikemux core: agents' git commands go unchecked: {error}"),
     }
+    match install_hook(data_dir) {
+        Ok(plugin) => {
+            let _ = GROK_PLUGIN.set(plugin);
+        }
+        Err(error) => eprintln!("sikemux core: Grok's and Hermes's git go unchecked: {error}"),
+    }
 }
 
-fn link(folder: &Path) -> std::io::Result<()> {
+fn link(folder: &Path, name: &str) -> std::io::Result<()> {
     let binary = std::env::current_exe()?;
     std::fs::create_dir_all(folder)?;
-    let git = folder.join("git");
-    if std::fs::read_link(&git).is_ok_and(|target| target == binary) {
+    let path = folder.join(name);
+    if std::fs::read_link(&path).is_ok_and(|target| target == binary) {
         return Ok(());
     }
-    let fresh = folder.join(format!("git.{}", std::process::id()));
+    let fresh = folder.join(format!("{name}.{}", std::process::id()));
     let _ = std::fs::remove_file(&fresh);
     std::os::unix::fs::symlink(&binary, &fresh)?;
-    std::fs::rename(&fresh, &git)
+    std::fs::rename(&fresh, &path)
+}
+
+fn hook_folder(data_dir: &Path) -> PathBuf {
+    data_dir.join("agent-hook")
+}
+
+fn install_hook(data_dir: &Path) -> std::io::Result<PathBuf> {
+    let folder = hook_folder(data_dir);
+    link(&folder, HOOK)?;
+    let plugin = folder.join("sikemux");
+    let hooks = json!({ "hooks": grok_hooks(&quoted(&folder.join(HOOK))) });
+    sikemux_process::files::write_atomic(
+        &plugin.join("hooks").join("hooks.json"),
+        hooks.to_string().as_bytes(),
+        false,
+    )?;
+    Ok(plugin)
+}
+
+/// The command a harness runs as the hook, once the core has linked it.
+pub fn hook_command(data_dir: &Path) -> Option<String> {
+    let hook = hook_folder(data_dir).join(HOOK);
+    hook.exists().then(|| quoted(&hook))
+}
+
+/// Grok's `hooks` table with the hook on every shell command.
+pub fn grok_hooks(command: &str) -> Value {
+    json!({
+        "PreToolUse": [{
+            "matcher": "Bash",
+            "hooks": [{ "type": "command", "command": command }],
+        }],
+    })
+}
+
+/// The plugin a Grok chat loads the hook from. None before [`install`].
+pub(crate) fn grok_plugin() -> Option<&'static Path> {
+    GROK_PLUGIN.get().map(PathBuf::as_path)
+}
+
+/// `path` as one word for `sh -c`, and for Hermes, which splits a hook's
+/// command the way a shell would.
+fn quoted(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
 }
 
 /// The variables an agent runs with to find the shim first: `path`, or the
@@ -78,15 +140,44 @@ pub(crate) fn arguments(provider: &str) -> &'static [&'static str] {
     }
 }
 
-/// Runs as `git` when this binary was started under that name, and answers
-/// with its exit code. None when it was started under any other name.
+/// Runs as `git` or as the hook when this binary was started under either
+/// name, and answers with its exit code. None under any other name.
 pub fn run_if_git() -> Option<i32> {
     let mut args = std::env::args_os();
     let name = args.next()?;
-    if Path::new(&name).file_name()? != "git" {
-        return None;
+    match Path::new(&name).file_name()?.to_str()? {
+        "git" => Some(run(args.collect())),
+        HOOK => Some(run_hook()),
+        _ => None,
     }
-    Some(run(args.collect()))
+}
+
+/// Checks the shell command in the tool call a harness writes to stdin, in
+/// Claude's hook form, which Grok and Hermes share. Exit code 2 refuses it,
+/// with the reason on stderr.
+fn run_hook() -> i32 {
+    let mut input = String::new();
+    if std::io::stdin().read_to_string(&mut input).is_err() {
+        return 0;
+    }
+    let Ok(event) = serde_json::from_str::<Value>(&input) else {
+        return 0;
+    };
+    let tool = &event["tool_input"];
+    let (Some(command), Some(cwd)) = (tool["command"].as_str(), event["cwd"].as_str()) else {
+        return 0;
+    };
+    let cwd = ["workdir", "cwd"]
+        .iter()
+        .find_map(|key| tool[*key].as_str())
+        .map_or_else(|| PathBuf::from(cwd), |dir| Path::new(cwd).join(dir));
+    match super::refusal(command, &cwd) {
+        Some(refusal) => {
+            eprintln!("{refusal}");
+            2
+        }
+        None => 0,
+    }
 }
 
 fn run(args: Vec<OsString>) -> i32 {
