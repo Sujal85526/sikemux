@@ -38,6 +38,7 @@ mod tools;
 mod transcript;
 mod upgrade;
 mod wake;
+mod who_wrote;
 mod window;
 mod workspace;
 

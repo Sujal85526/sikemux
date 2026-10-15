@@ -6,7 +6,7 @@
 
 mod words;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
@@ -24,6 +24,8 @@ const MAX_NAME_CHARS: usize = 24;
 const MAX_DEPTH: usize = 2;
 const MAX_CHILDREN: usize = 6;
 const MAX_SPAWNED_PER_PROJECT: usize = 8;
+/// How many closed agents' sessions are kept, newest first.
+const MAX_CLOSED_SESSIONS: usize = 512;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +83,27 @@ struct Book {
     /// under, so the chain of leads stays whole after a lead in it closes.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     closed_leads: HashMap<String, String>,
+    /// The provider session each recently closed agent ran, so its commits
+    /// still lead back to a session that can be resumed.
+    #[serde(default, skip_serializing_if = "VecDeque::is_empty")]
+    closed_sessions: VecDeque<ClosedSession>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClosedSession {
+    agent_id: String,
+    #[serde(flatten)]
+    ran: RanSession,
+}
+
+/// The provider session an agent ran, and the project it ran in.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RanSession {
+    pub provider: String,
+    pub session_id: String,
+    pub project: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -426,6 +449,23 @@ impl Names {
             .and_then(|entry| entry.session_id.clone())
     }
 
+    /// The provider and session the agent ran, whether it is open or closed
+    /// since.
+    pub(crate) fn ran_session(&self, agent_id: &str) -> Option<RanSession> {
+        let book = self.lock();
+        if let Some(entry) = book.agents.iter().find(|entry| entry.agent_id == agent_id) {
+            return Some(RanSession {
+                provider: entry.provider.clone()?,
+                session_id: entry.session_id.clone()?,
+                project: entry.project.clone(),
+            });
+        }
+        book.closed_sessions
+            .iter()
+            .find(|closed| closed.agent_id == agent_id)
+            .map(|closed| closed.ran.clone())
+    }
+
     pub(crate) fn note_session(&self, agent_id: &str, session_id: &str) {
         let mut book = self.lock();
         let Some(entry) = book.entry_mut(agent_id) else {
@@ -520,16 +560,29 @@ impl Book {
         self.agents.retain_mut(|entry| {
             let keep = !gone(entry);
             if !keep {
-                removed.push((entry.agent_id.clone(), entry.parent.clone()));
+                removed.push(entry.clone());
             }
             keep
         });
         if removed.is_empty() {
             return false;
         }
-        for (agent_id, parent) in removed {
-            if let Some(parent) = parent {
-                self.closed_leads.insert(agent_id, parent);
+        for entry in removed {
+            if let (Some(provider), Some(session_id)) = (entry.provider, entry.session_id) {
+                self.closed_sessions
+                    .retain(|closed| closed.agent_id != entry.agent_id);
+                self.closed_sessions.push_front(ClosedSession {
+                    agent_id: entry.agent_id.clone(),
+                    ran: RanSession {
+                        provider,
+                        session_id,
+                        project: entry.project.clone(),
+                    },
+                });
+                self.closed_sessions.truncate(MAX_CLOSED_SESSIONS);
+            }
+            if let Some(parent) = entry.parent {
+                self.closed_leads.insert(entry.agent_id, parent);
             }
         }
         self.prune_closed_leads();

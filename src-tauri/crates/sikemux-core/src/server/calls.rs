@@ -16,7 +16,8 @@ use super::edits::{self, Edit, Filter, Owners};
 use super::names::{project_of, AgentName};
 use super::workspace::{self, AgentRun};
 use super::{
-    board, inbox, messages, plugins, questions, remote, saved, share, Core, CoreError, CoreResult,
+    board, inbox, messages, plugins, questions, remote, saved, share, who_wrote, Core, CoreError,
+    CoreResult,
 };
 
 pub(crate) fn needs(method: &str) -> Needs {
@@ -26,7 +27,7 @@ pub(crate) fn needs(method: &str) -> Needs {
         "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
         | "boardRetry" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" => Needs::Owner,
-        "changeOwners" => Needs::Watch,
+        "changeOwners" | "commitOwners" => Needs::Watch,
         _ => Needs::Local,
     }
 }
@@ -46,6 +47,7 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "edits"
             | "changeOwners"
             | "commitTrailers"
+            | "commitOwners"
             | "inbox"
             | "digest"
             | "pairing"
@@ -105,6 +107,7 @@ pub(crate) async fn call(
         "edits" => answer(edits(&core, parse(params)?).await?),
         "changeOwners" => answer(change_owners(&core, parse(params)?).await?),
         "commitTrailers" => answer(commit_trailers(&core, parse(params)?).await?),
+        "commitOwners" => answer(who_wrote::call(&core, parse(params)?).await?),
         "inbox" => answer(inbox(&core).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
         "plugin" => {

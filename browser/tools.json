@@ -1467,6 +1467,22 @@
       ]
     },
     {
+      "name": "who_wrote",
+      "row": {"verb": "find", "kind": "search", "icon": "search", "target": ["who wrote {target}"]},
+      "method": "agent.wrote",
+      "description": "Who wrote a change.",
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "target"
+      ]
+    },
+    {
       "name": "agent_sessions",
       "row": {"verb": "find", "kind": "search", "icon": "search", "target": ["sessions “{query}”"]},
       "method": "agent.sessions",

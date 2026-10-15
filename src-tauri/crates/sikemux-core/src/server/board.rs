@@ -27,7 +27,7 @@ use super::Core;
 
 mod auto;
 mod blind;
-mod codehost;
+pub(crate) mod codehost;
 mod finish;
 pub(crate) mod git;
 mod review;

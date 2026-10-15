@@ -1,0 +1,563 @@
+//! Who wrote a commit, some lines of a file, or a test, and how to reach them:
+//! the agent sessions a commit's signed footer names, else the person git
+//! names as its author and the pull request it came in through.
+
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+use crate::cli::protocol::HarnessRequest;
+use crate::trailers::{self, Agent};
+
+use super::board::codehost;
+use super::connection::blocking;
+use super::edits::{self, footer};
+use super::messages::{self, Listed, Reach};
+use super::{saved, Core, CoreResult};
+
+/// Commits whose footers are remembered, and sessions whose titles are.
+const MAX_REMEMBERED: usize = 4096;
+/// Commits the app may ask about at once.
+const MAX_ASKED: usize = 200;
+/// Commits one answer names.
+const MAX_COMMITS: usize = 8;
+const LATEST_PER_FILE: usize = 3;
+const MAX_TEST_FILES: usize = 3;
+const MAX_BLAMED_LINES: u64 = 5000;
+const PULL_BUDGET: Duration = Duration::from_secs(5);
+const UNCOMMITTED: &str = "0000000000000000000000000000000000000000";
+
+/// An agent a commit's footer names, as it stands here now.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentOwner {
+    pub name: String,
+    pub cli: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The agent the footer names.
+    pub chat: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The agent that has its session open now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// The project its session ran in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn remember<T: Clone>(map: &Mutex<HashMap<String, T>>, key: &str, value: &T) {
+    let mut map = lock(map);
+    if map.len() >= MAX_REMEMBERED {
+        map.clear();
+    }
+    map.insert(key.to_owned(), value.clone());
+}
+
+/// The agents `commit`'s footer names that check out, read once per commit.
+fn verified(core: &Core, dir: &Path, commit: &str) -> Vec<Agent> {
+    static VERIFIED: OnceLock<Mutex<HashMap<String, Vec<Agent>>>> = OnceLock::new();
+    let cache = VERIFIED.get_or_init(Default::default);
+    if let Some(agents) = lock(cache).get(commit) {
+        return agents.clone();
+    }
+    let Ok(agents) = footer::verified(core, dir, commit) else {
+        return Vec::new();
+    };
+    remember(cache, commit, &agents);
+    agents
+}
+
+/// What a saved session is called, looked up once per session.
+fn saved_title(core: &Core, cli: &str, session_id: &str) -> Option<String> {
+    static TITLES: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+    let cache = TITLES.get_or_init(Default::default);
+    let key = format!("{cli}\0{session_id}");
+    if let Some(title) = lock(cache).get(&key) {
+        return title.clone();
+    }
+    let title = saved::locate(core, session_id, Some(cli))
+        .ok()
+        .map(|saved| saved.title);
+    remember(cache, &key, &title);
+    title
+}
+
+/// Each of `agents` with its session, its title and the agent that has it
+/// open now, if any.
+fn owners(core: &Core, agents: Vec<Agent>, listed: &[Listed]) -> Vec<AgentOwner> {
+    let open = |agent_id: &str| {
+        listed
+            .iter()
+            .find(|open| open.agent_id == agent_id && open.reach != Reach::Stopped)
+    };
+    agents
+        .into_iter()
+        .map(|agent| {
+            let session = core.names.ran_session(&agent.chat);
+            let running = open(&agent.chat).or_else(|| {
+                let session_id = &session.as_ref()?.session_id;
+                listed.iter().find(|other| {
+                    other.reach != Reach::Stopped
+                        && core.names.session_of(&other.agent_id).as_ref() == Some(session_id)
+                })
+            });
+            let title = match (running, &session) {
+                (Some(running), _) => running.title.clone(),
+                (None, Some(ran)) => saved_title(core, &ran.provider, &ran.session_id),
+                (None, None) => None,
+            };
+            let (session_id, project) = session.map(|ran| (ran.session_id, ran.project)).unzip();
+            AgentOwner {
+                title,
+                open: running.map(|running| running.agent_id.clone()),
+                session_id,
+                project,
+                name: agent.name,
+                cli: agent.cli,
+                model: agent.model,
+                chat: agent.chat,
+            }
+        })
+        .collect()
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CommitsParams {
+    dir: PathBuf,
+    commits: Vec<String>,
+}
+
+/// The `commitOwners` call: the agents each of `commits` has a verified
+/// footer for, by commit. Commits without one are left out.
+pub(crate) async fn call(
+    core: &Arc<Core>,
+    params: CommitsParams,
+) -> CoreResult<BTreeMap<String, Vec<AgentOwner>>> {
+    let core = core.clone();
+    blocking(move || {
+        let mut found = Vec::new();
+        for commit in params.commits.iter().take(MAX_ASKED) {
+            if !is_hash(commit) {
+                continue;
+            }
+            let agents = verified(&core, &params.dir, commit);
+            if !agents.is_empty() {
+                found.push((commit.clone(), agents));
+            }
+        }
+        if found.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let listed = messages::listed(&core);
+        Ok(found
+            .into_iter()
+            .map(|(commit, agents)| (commit, owners(&core, agents, &listed)))
+            .collect())
+    })
+    .await
+}
+
+fn is_hash(text: &str) -> bool {
+    (7..=64).contains(&text.len()) && text.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Runs of line numbers, first and last.
+type Lines = Vec<(u64, u64)>;
+
+/// What the asker named, worked out to commits.
+struct Found {
+    kind: &'static str,
+    /// Each commit with the lines of the file it last changed, when blamed.
+    commits: Vec<(String, Lines)>,
+    path: Option<String>,
+    uncommitted: Lines,
+    /// Picked by matching a test's name, which may have found the wrong file.
+    guess: Option<String>,
+}
+
+impl Found {
+    fn new(kind: &'static str) -> Self {
+        Self {
+            kind,
+            commits: Vec::new(),
+            path: None,
+            uncommitted: Vec::new(),
+            guess: None,
+        }
+    }
+}
+
+fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+    edits::git(dir, args)
+}
+
+fn line_range(spec: &str) -> Option<(u64, u64)> {
+    let (start, end) = match spec.split_once(['-', ',']) {
+        Some((start, end)) => (start.trim().parse().ok()?, end.trim().parse().ok()?),
+        None => {
+            let line = spec.trim().parse().ok()?;
+            (line, line)
+        }
+    };
+    (start >= 1 && end >= start).then_some((start, end.min(start + MAX_BLAMED_LINES - 1)))
+}
+
+/// A file of the checkout `top` that `path` names, relative to `top`.
+fn file_in(top: &Path, dir: &Path, path: &str) -> Option<String> {
+    let path = Path::new(path.trim());
+    let full = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        dir.join(path)
+    };
+    let full = std::fs::canonicalize(full).ok()?;
+    if !full.is_file() {
+        return None;
+    }
+    Some(full.strip_prefix(top).ok()?.to_string_lossy().into_owned())
+}
+
+fn resolve(dir: &Path, top: &Path, target: &str) -> Result<Found, String> {
+    if let Some((path, range)) = target
+        .rsplit_once(':')
+        .and_then(|(path, spec)| Some((path, line_range(spec)?)))
+    {
+        let file = file_in(top, dir, path)
+            .ok_or_else(|| format!("{path} is not a file in this checkout"))?;
+        let mut found = blame(top, &file, range)?;
+        found.path = Some(file);
+        return Ok(found);
+    }
+    if let Some(path) = file_in(top, dir, target) {
+        let mut found = Found::new("file");
+        found.commits = latest(top, &path, MAX_COMMITS)?;
+        found.path = Some(path);
+        return Ok(found);
+    }
+    if !target.contains(char::is_whitespace) {
+        let spec = format!("{target}^{{commit}}");
+        if let Ok(hash) = git(
+            top,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "--end-of-options",
+                &spec,
+            ],
+        ) {
+            let mut found = Found::new("commit");
+            found.commits.push((hash.trim().to_owned(), Vec::new()));
+            return Ok(found);
+        }
+    }
+    test(top, target)
+}
+
+/// The commits that last changed lines `start` to `end` of `path`.
+fn blame(top: &Path, path: &str, (start, end): (u64, u64)) -> Result<Found, String> {
+    let range = format!("{start},{end}");
+    let out = git(top, &["blame", "--porcelain", "-L", &range, "--", path])?;
+    let mut lines: Vec<(String, u64)> = Vec::new();
+    for line in out.lines() {
+        let mut words = line.split(' ');
+        let (Some(hash), Some(_), Some(at)) = (words.next(), words.next(), words.next()) else {
+            continue;
+        };
+        if hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            if let Ok(at) = at.parse() {
+                lines.push((hash.to_owned(), at));
+            }
+        }
+    }
+    let mut found = Found::new("lines");
+    for (hash, at) in lines {
+        let ranges = if hash == UNCOMMITTED {
+            &mut found.uncommitted
+        } else {
+            let index = match found.commits.iter().position(|(seen, _)| *seen == hash) {
+                Some(index) => index,
+                None => {
+                    found.commits.push((hash, Vec::new()));
+                    found.commits.len() - 1
+                }
+            };
+            &mut found.commits[index].1
+        };
+        match ranges.last_mut() {
+            Some((_, last)) if *last + 1 == at => *last = at,
+            _ => ranges.push((at, at)),
+        }
+    }
+    Ok(found)
+}
+
+fn latest(top: &Path, path: &str, count: usize) -> Result<Vec<(String, Lines)>, String> {
+    let count = format!("-n{count}");
+    Ok(git(top, &["log", &count, "--format=%H", "--", path])?
+        .lines()
+        .map(|hash| (hash.to_owned(), Vec::new()))
+        .collect())
+}
+
+/// The files a test's name or path points at and the latest commits to them.
+fn test(top: &Path, target: &str) -> Result<Found, String> {
+    let name = ["::", " > ", " › ", "#"]
+        .iter()
+        .fold(target, |rest, separator| {
+            rest.rsplit(separator)
+                .find(|part| !part.trim().is_empty())
+                .unwrap_or(rest)
+        })
+        .trim()
+        .trim_matches(['"', '\'', '`']);
+    if name.is_empty() {
+        return Err("name a commit, a file, file:line, or a test".into());
+    }
+    let out = git(top, &["grep", "-l", "-F", "-e", name]).unwrap_or_default();
+    let mut files: Vec<&str> = out.lines().collect();
+    files.sort_by_key(|path| {
+        let lower = path.to_lowercase();
+        !(lower.contains("test") || lower.contains("spec"))
+    });
+    files.truncate(MAX_TEST_FILES);
+    if files.is_empty() {
+        return Err(format!(
+            "{target} is not a commit or a file here, and no file mentions {name}"
+        ));
+    }
+    let mut found = Found::new("test");
+    for path in &files {
+        for commit in latest(top, path, LATEST_PER_FILE)? {
+            if !found.commits.iter().any(|(seen, _)| *seen == commit.0) {
+                found.commits.push(commit);
+            }
+        }
+    }
+    found.guess = Some(format!(
+        "found by the name {name} in {}; check it is the test you meant",
+        files.join(", ")
+    ));
+    Ok(found)
+}
+
+/// A commit as git describes it.
+struct Described {
+    hash: String,
+    short: String,
+    author: String,
+    email: String,
+    date: String,
+    subject: String,
+    footer: bool,
+}
+
+fn describe(top: &Path, hashes: &[&str]) -> Result<Vec<Described>, String> {
+    let mut args = vec![
+        "log",
+        "--no-walk=unsorted",
+        "--date=short",
+        "--format=%H%x00%h%x00%an%x00%ae%x00%ad%x00%s%x00%B%x1e",
+        "--end-of-options",
+    ];
+    args.extend(hashes);
+    Ok(git(top, &args)?
+        .split('\x1e')
+        .filter_map(|record| {
+            let mut fields = record.trim_start_matches('\n').splitn(7, '\0');
+            let mut next = || fields.next().map(str::to_owned);
+            Some(Described {
+                hash: next()?,
+                short: next()?,
+                author: next()?,
+                email: next()?,
+                date: next()?,
+                subject: next()?,
+                footer: !trailers::agents(&next()?).is_empty(),
+            })
+        })
+        .collect())
+}
+
+fn ranges(lines: &[(u64, u64)]) -> String {
+    lines
+        .iter()
+        .map(|(start, end)| match start == end {
+            true => start.to_string(),
+            false => format!("{start}-{end}"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn agent_value(owner: &AgentOwner) -> Value {
+    let (action, how) = match (&owner.open, &owner.session_id) {
+        (Some(agent_id), _) => ("message", format!("agent_send to {agent_id}")),
+        (None, Some(session_id)) => (
+            "resume",
+            format!("agent_spawn with cli {} and resume {session_id}", owner.cli),
+        ),
+        (None, None) => (
+            "ask the person",
+            "its session is not known here any more".to_owned(),
+        ),
+    };
+    json!({
+        "kind": "agent",
+        "name": owner.name,
+        "cli": owner.cli,
+        "model": owner.model,
+        "title": owner.title,
+        "openNow": owner.open,
+        "sessionId": owner.session_id,
+        "action": action,
+        "how": how,
+    })
+}
+
+/// What `who_wrote` answers.
+pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
+    let target = request
+        .params
+        .get("target")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|target| !target.is_empty())
+        .ok_or("target must be a commit, a file, file:line, file:start-end, or a test")?
+        .to_owned();
+    let (core, dir) = (core.clone(), PathBuf::from(&request.project));
+    let (found, mut commits, origin) = blocking(move || {
+        let top = PathBuf::from(git(&dir, &["rev-parse", "--show-toplevel"])?.trim());
+        let found = resolve(&dir, &top, &target)?;
+        let hashes: Vec<&str> = found
+            .commits
+            .iter()
+            .take(MAX_COMMITS)
+            .map(|(hash, _)| hash.as_str())
+            .collect();
+        let described = if hashes.is_empty() {
+            Vec::new()
+        } else {
+            describe(&top, &hashes)?
+        };
+        let listed = messages::listed(&core);
+        let commits: Vec<(Described, Vec<AgentOwner>)> = described
+            .into_iter()
+            .map(|commit| {
+                let agents = match commit.footer {
+                    true => verified(&core, &top, &commit.hash),
+                    false => Vec::new(),
+                };
+                let owners = owners(&core, agents, &listed);
+                (commit, owners)
+            })
+            .collect();
+        let origin = git(&top, &["remote", "get-url", "origin"])
+            .ok()
+            .map(|url| url.trim().to_owned());
+        Ok((found, commits, origin))
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    let mut pulls: HashMap<String, Value> = HashMap::new();
+    if let Some(origin) = origin {
+        let mut asked = tokio::task::JoinSet::new();
+        for (commit, _) in commits.iter().filter(|(_, owners)| owners.is_empty()) {
+            let (origin, hash) = (origin.clone(), commit.hash.clone());
+            asked.spawn(async move {
+                let found = codehost::pulls_of(&origin, &hash).await.ok()?;
+                Some((hash, found.into_iter().next()?))
+            });
+        }
+        let _ = tokio::time::timeout(PULL_BUDGET, async {
+            while let Some(answer) = asked.join_next().await {
+                if let Ok(Some((hash, pull))) = answer {
+                    pulls.insert(hash, pull);
+                }
+            }
+        })
+        .await;
+    }
+    let lines_of: HashMap<&str, &Lines> = found
+        .commits
+        .iter()
+        .map(|(hash, lines)| (hash.as_str(), lines))
+        .collect();
+    let answered: Vec<Value> = commits
+        .drain(..)
+        .map(|(commit, owners)| {
+            let owners: Vec<Value> = if owners.is_empty() {
+                let pull = pulls.get(&commit.hash).map(|pull| {
+                    json!({
+                        "number": pull["number"],
+                        "title": pull["title"],
+                        "state": pull["state"],
+                        "url": pull["url"],
+                    })
+                });
+                let action = match pull {
+                    Some(_) => "comment on the pull request",
+                    None => "ask the person",
+                };
+                vec![json!({
+                    "kind": "person",
+                    "name": commit.author,
+                    "email": commit.email,
+                    "footer": commit.footer.then_some("its agent footer does not check out here, so it counts for nothing"),
+                    "pull": pull,
+                    "action": action,
+                })]
+            } else {
+                owners.iter().map(agent_value).collect()
+            };
+            let lines = lines_of
+                .get(commit.hash.as_str())
+                .filter(|lines| !lines.is_empty())
+                .map(|lines| ranges(lines));
+            json!({
+                "commit": commit.short,
+                "subject": commit.subject,
+                "date": commit.date,
+                "lines": lines,
+                "owners": owners,
+            })
+        })
+        .collect();
+    let mut note = String::new();
+    if found.commits.len() > MAX_COMMITS {
+        note.push_str(&format!(
+            "Showing {MAX_COMMITS} of {} commits; ask about fewer lines for the rest. ",
+            found.commits.len()
+        ));
+    }
+    if !found.uncommitted.is_empty() {
+        note.push_str(&format!(
+            "Lines {} are not committed yet. ",
+            ranges(&found.uncommitted)
+        ));
+    }
+    if answered.is_empty() && found.uncommitted.is_empty() {
+        note.push_str("No commit touched it. ");
+    }
+    Ok(json!({
+        "target": found.kind,
+        "path": found.path,
+        "guess": found.guess,
+        "commits": answered,
+        "note": note.trim_end(),
+    }))
+}

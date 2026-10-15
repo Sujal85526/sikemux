@@ -88,6 +88,14 @@ pub(super) async fn find(url: &str) -> Result<Repo, String> {
     )
 }
 
+/// The pull requests the commit `sha` came in through, the merged one first,
+/// when the code host the remote `url` is on can tell.
+pub(crate) async fn pulls_of(url: &str, sha: &str) -> Result<Vec<Value>, String> {
+    let repo = find(url).await?;
+    let found = plugins::call(repo.host, "commitPulls", repo.params(json!({ "sha": sha }))).await?;
+    Ok(found.as_array().cloned().unwrap_or_default())
+}
+
 fn pull_of(repo: &Repo, found: &Value) -> Result<Pull, String> {
     let number = found["number"]
         .as_u64()

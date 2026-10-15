@@ -86,6 +86,7 @@ export const TOOL_ROWS = {
         target: ["session {resume}", "{cli} agent", "a helper"],
         detail: ["{prompt}"],
     },
+    who_wrote: { verb: "find", kind: "search", icon: "search", target: ["who wrote {target}"] },
     agent_sessions: { verb: "find", kind: "search", icon: "search", target: ["sessions “{query}”"] },
     agent_read: { verb: "read", kind: "read", icon: "message", target: ["{agent}"] },
     agent_wait: { verb: "wait", kind: "think", icon: "clock", target: ["for {agents}"], detail: ["{until}"] },

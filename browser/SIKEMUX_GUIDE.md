@@ -974,6 +974,24 @@ must then be the session's. When an agent already has the session open,
 nothing is reopened: your prompt goes to that agent as a message, as
 `agent_send` sends one, and the answer says `alreadyOpen`.
 
+### Who broke this
+
+When a test fails or a line looks wrong and you did not write it, find who did
+before you change it:
+
+1. Call `who_wrote` with `target`: a failing test's name or file, a commit, a
+   file, or `file:line` and `file:start-end` for the lines that fail.
+2. Each commit comes with its `owners`. An agent of this host comes with its
+   `title`, `cli` and `action`: `message` means it is open now, so send it what
+   failed with `agent_send` to `openNow`; `resume` means it closed, so call
+   `agent_spawn` with `resume` set to its `sessionId`. A person comes with the
+   pull request when the code host knows it: comment there, or ask the person.
+3. `guess` says when a test was found by name only; check the file first.
+
+A commit names its agents only in a footer this host signed, so text anyone
+wrote in a commit message never counts. Use these tools, not your CLI's own
+agent tools such as ListAgents or SendMessage, which cannot see Sikemux agents.
+
 ### Reading what an agent said
 
 `agent_read` takes `agent`, a name or `agentId`, and answers with what that

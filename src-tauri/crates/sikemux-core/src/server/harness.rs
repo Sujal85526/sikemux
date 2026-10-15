@@ -57,8 +57,9 @@ const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
 /// agent's processes is refused rather than answered for no one.
 const AGENT_METHODS: [&str; 6] = ["agent.", "board.", "git.", "review.", "browser.", "sim."];
 /// What a reviewer Auto started blind may not do: start agents, read saved
-/// sessions or the board, any of which could show it the builder's side.
-const BLIND_REFUSED: [&str; 3] = ["agent.spawn", "agent.sessions", "board."];
+/// sessions, who wrote what, or the board, any of which could show it the
+/// builder's side.
+const BLIND_REFUSED: [&str; 4] = ["agent.spawn", "agent.sessions", "agent.wrote", "board."];
 /// What agents do goes in the same journal as tasks, for `agent_wait` alone.
 pub(crate) const AGENT_EVENT: &str = "agent.";
 
@@ -497,6 +498,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "agent.ask" => questions::ask(core, &request).await,
         "agent.read" => follow::read(core, &request).await,
         "agent.wait" => follow::wait(core, &request).await,
+        "agent.wrote" => super::who_wrote::tool(core, &request).await,
         "board.add" => board::add(core, &request).await,
         "board.list" => board::list(core, &request).await,
         "board.claim" => board::claim(core, &request).await,
