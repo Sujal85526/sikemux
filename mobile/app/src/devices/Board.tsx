@@ -203,6 +203,8 @@ function CardRow({
   const cli = chat?.provider ?? terminal?.agentType ?? card.ownerCli;
   const question = column === 'needs' ? cardQuestion(card, questions) : undefined;
   const handedBack = card.auto && RUN_WAITS_ON_PERSON.has(card.auto.stage) && card.status !== 'done' ? card.auto.note : null;
+  const reviewing = card.auto?.stage === 'reviewing' ? card.auto.note : null;
+  const acceptance = card.acceptance && card.status !== 'done' ? `Done when: ${card.acceptance}` : null;
   const under = cards.filter((other) => other.parent === card.id);
   const done = under.filter((other) => other.status === 'done').length;
   const waits = card.waitsOn.map((id) => byId.get(id)).filter((other): other is BoardCard => !!other);
@@ -252,7 +254,7 @@ function CardRow({
             <Text style={styles.owner}>{question.name}</Text> asks: {question.text}
           </>
         ) : (
-          (handedBack ?? undefined)
+          (handedBack ?? reviewing ?? acceptance ?? undefined)
         )
       }
       detailLines={2}
