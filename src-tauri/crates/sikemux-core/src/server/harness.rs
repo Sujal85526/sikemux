@@ -53,8 +53,9 @@ const PLUGIN_SETTLE: Duration = Duration::from_secs(1);
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const TOOL_CALLS_FILE: &str = "agent-tool-calls.json";
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
-/// Tools only an agent that proves who it is may call.
-const AGENT_METHODS: [&str; 4] = ["agent.", "board.", "git.", "review."];
+/// Tools that act as the agent calling them, so a call from outside every
+/// agent's processes is refused rather than answered for no one.
+const AGENT_METHODS: [&str; 6] = ["agent.", "board.", "git.", "review.", "browser.", "sim."];
 /// What a reviewer Auto started blind may not do: start agents, read saved
 /// sessions or the board, any of which could show it the builder's side.
 const BLIND_REFUSED: [&str; 3] = ["agent.spawn", "agent.sessions", "board."];
@@ -420,7 +421,8 @@ async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> 
 }
 
 /// Answers one tool call from the client at `peer` on the tool endpoint's
-/// `port`. The call is counted whether or not it succeeds.
+/// `port`, as the agent whose processes hold that connection, whatever agent
+/// it names. The call is counted whether or not it succeeds.
 pub(crate) async fn call(
     core: &Arc<Core>,
     mut request: HarnessRequest,
@@ -428,21 +430,19 @@ pub(crate) async fn call(
     port: u16,
 ) -> Result<Value, String> {
     validate_harness(&request)?;
-    if AGENT_METHODS
-        .iter()
-        .any(|prefix| request.method.starts_with(prefix))
+    request.agent_id = tokio::task::spawn_blocking(move || super::callers::identify(peer, port))
+        .await
+        .ok()
+        .flatten();
+    if request.agent_id.is_none()
+        && AGENT_METHODS
+            .iter()
+            .any(|prefix| request.method.starts_with(prefix))
     {
-        let caller = tokio::task::spawn_blocking(move || super::callers::identify(peer, port))
-            .await
-            .ok()
-            .flatten();
-        let Some(caller) = caller else {
-            return Err(format!(
-                "{} works only for an agent Sikemux started, and this call came from outside every agent's processes; start this agent from Sikemux again",
-                request.method.replace('.', "_")
-            ));
-        };
-        request.agent_id = Some(caller);
+        return Err(format!(
+            "{} works only for an agent Sikemux started, and this call came from outside every agent's processes; start this agent from Sikemux again",
+            request.method.replace('.', "_")
+        ));
     }
     let tool = tool_name(&request);
     let result = dispatch(core, request).await;

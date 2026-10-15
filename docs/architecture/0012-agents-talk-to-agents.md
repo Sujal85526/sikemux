@@ -31,10 +31,12 @@ MCP server every agent is launched with.
   gets a new one. Leads do not choose names. The person can rename one. Tools, `@`
   mentions in the composer, tabs and the rail all use the name.
 - **The core knows who is calling from the processes it started.** The core starts every
-  agent and records its process and start time. A call that needs an agent identity is
-  answered only when the process holding the connection descends from one of those
-  processes, and it is that agent's call whatever agent id it states. A process outside
-  every agent's tree, including one re-parented to launchd or init, is refused. Nothing
+  agent and records its process and start time. Every tool call is the call of the agent
+  whose process tree holds the connection, whatever agent id it states. A call from outside
+  every agent's tree, including one re-parented to launchd or init, is no agent's: the
+  tools that act as an agent (agents, board, git, review, browser and simulator) refuse it,
+  and the rest, such as tasks, `workspace_inspect` and `ui_open`, answer it with no agent,
+  as they answer the person's own `sikemux tool` in a terminal. Nothing
   secret travels in an agent's environment or tool config, where any process of the same
   user could read it. An update runs the new core in the same process, so the agents stay
   its children and it records them again as it takes them up.
