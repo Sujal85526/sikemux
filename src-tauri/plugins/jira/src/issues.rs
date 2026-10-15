@@ -20,6 +20,9 @@ const DEFAULT_LIMIT: u64 = 20;
 const MAX_LIMIT: u64 = 100;
 const MAX_COMMENTS: usize = 50;
 const COMMENTS_PER_HIT: usize = 5;
+const MAX_CHANGES: usize = 50;
+/// Longer values are cut, so a rewritten field does not carry its whole text twice.
+const CHANGE_VALUE_CHARS: usize = 200;
 pub(crate) const SUMMARY_FIELDS: &str =
     "summary,status,priority,assignee,issuetype,updated,parent,duedate";
 
@@ -65,8 +68,29 @@ pub struct Parent {
 pub struct Comment {
     pub id: String,
     pub author: String,
+    pub author_avatar_url: Option<String>,
     pub created: String,
     pub body: String,
+}
+
+/// One edit to an issue: who made it, when, and the fields it changed.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Change {
+    pub id: String,
+    pub author: String,
+    pub author_avatar_url: Option<String>,
+    pub created: String,
+    pub fields: Vec<FieldChange>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldChange {
+    pub field: String,
+    /// Absent when the field was empty, or is long text such as the description.
+    pub from: Option<String>,
+    pub to: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -93,6 +117,8 @@ pub struct IssueDetail {
     pub comments: Vec<Comment>,
     /// How many comments there are, which can be more than are shown.
     pub comment_count: u64,
+    /// The latest edits, newest first.
+    pub history: Vec<Change>,
     pub transitions: Vec<Transition>,
     pub subtasks: Vec<IssueSummary>,
     /// The keys of the issues this one is blocked by.
@@ -186,12 +212,62 @@ pub fn comments(body: &Value) -> Vec<Comment> {
                     id: text(comment.get("id")).unwrap_or_default(),
                     author: text(comment.pointer("/author/displayName"))
                         .unwrap_or_else(|| "someone".into()),
+                    author_avatar_url: text(comment.pointer("/author/avatarUrls/48x48")),
                     created: text(comment.get("created")).unwrap_or_default(),
                     body: adf::to_markdown(comment.get("body").unwrap_or(&Value::Null)),
                 })
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// The edits in an issue's changelog, as Jira lists them: newest first.
+pub fn history(changelog: &Value) -> Vec<Change> {
+    changelog
+        .get("histories")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(MAX_CHANGES)
+        .map(|entry| Change {
+            id: text(entry.get("id")).unwrap_or_default(),
+            author: text(entry.pointer("/author/displayName")).unwrap_or_else(|| "Jira".into()),
+            author_avatar_url: text(entry.pointer("/author/avatarUrls/48x48")),
+            created: text(entry.get("created")).unwrap_or_default(),
+            fields: entry
+                .get("items")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|item| {
+                    let field = text(item.get("field")).unwrap_or_default();
+                    let long = field.eq_ignore_ascii_case("description");
+                    let value = |key: &str| {
+                        if long {
+                            return None;
+                        }
+                        text(item.get(key))
+                            .filter(|value| !value.is_empty())
+                            .map(|value| {
+                                if value.chars().count() > CHANGE_VALUE_CHARS {
+                                    let cut: String =
+                                        value.chars().take(CHANGE_VALUE_CHARS).collect();
+                                    format!("{cut}…")
+                                } else {
+                                    value
+                                }
+                            })
+                    };
+                    FieldChange {
+                        from: value("fromString"),
+                        to: value("toString"),
+                        field,
+                    }
+                })
+                .collect(),
+        })
+        .filter(|change| !change.fields.is_empty())
+        .collect()
 }
 
 /// The newest comments the search returned with an issue, oldest first.
@@ -455,7 +531,7 @@ pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDe
         &credentials,
         Method::GET,
         &path,
-        &[("fields", fields)],
+        &[("fields", fields), ("expand", "changelog".into())],
         None,
     )
     .await?;
@@ -504,6 +580,7 @@ pub async fn issue(data_dir: &Path, request: IssueRequest) -> JiraResult<IssueDe
             .and_then(Value::as_u64)
             .unwrap_or(comments.len() as u64),
         comments,
+        history: history(found.get("changelog").unwrap_or(&Value::Null)),
         transitions: transitions(&moves),
         subtasks: all
             .get("subtasks")
@@ -542,6 +619,7 @@ pub async fn comment(data_dir: &Path, request: CommentRequest) -> JiraResult<Com
     Ok(Comment {
         id: text(posted.get("id")).unwrap_or_default(),
         author: text(posted.pointer("/author/displayName")).unwrap_or_default(),
+        author_avatar_url: text(posted.pointer("/author/avatarUrls/48x48")),
         created: text(posted.get("created")).unwrap_or_default(),
         body: adf::to_markdown(posted.get("body").unwrap_or(&Value::Null)),
     })
@@ -1310,6 +1388,7 @@ mod tests {
             [Comment {
                 id: "9".into(),
                 author: "Ana".into(),
+                author_avatar_url: None,
                 created: "2026-10-04".into(),
                 body: "Looks good".into()
             }]

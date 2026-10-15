@@ -56,9 +56,19 @@ export interface JiraParent {
 export interface JiraComment {
     id: string;
     author: string;
+    authorAvatarUrl: string | null;
     created: string;
     /** Markdown. */
     body: string;
+}
+
+/** One edit to an issue and the fields it changed. */
+export interface JiraChange {
+    id: string;
+    author: string;
+    authorAvatarUrl: string | null;
+    created: string;
+    fields: { field: string; from: string | null; to: string | null }[];
 }
 
 export interface JiraTransition {
@@ -77,6 +87,8 @@ export interface JiraIssue extends JiraIssueSummary {
     description: string;
     comments: JiraComment[];
     commentCount: number;
+    /** The latest edits, newest first. */
+    history: JiraChange[];
     transitions: JiraTransition[];
     subtasks: JiraIssueSummary[];
     /** The keys of the issues this one is blocked by. */

@@ -22,7 +22,7 @@
       "name": "jira_issue",
       "row": {"verb": "read", "kind": "read", "icon": "issue", "target": ["{key}"], "detail": ["{site}"]},
       "method": "issue",
-      "description": "One Jira issue by key (ABC-123): its fields, description and comments as markdown, and the transitions it can take next.",
+      "description": "One Jira issue by key (ABC-123): its fields, description and comments as markdown, its recent field changes, and the transitions it can take next.",
       "properties": {
         "key": { "type": "string" },
         "site": { "type": "string" }

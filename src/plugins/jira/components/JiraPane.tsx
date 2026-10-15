@@ -40,6 +40,7 @@ import { copyIssue, issueMenu, openIssue } from "../issueLinks";
 import { jiraSettings, jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
 import { statusCounts, withStatuses } from "../statusFilter";
 import { JiraBoard } from "./JiraBoard";
+import { JiraActivity } from "./JiraActivity";
 import { Avatar, ProjectAvatar } from "./JiraFace";
 import { DueChip, EpicChip, IssueKey, IssueTypeIcon, PriorityGlyph } from "./JiraGlyphs";
 import { JiraMark } from "./JiraMark";
@@ -487,7 +488,6 @@ function IssueDetail({ active, issueKey, site, onClose }: { active: boolean; iss
 
 function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: string; refresh: () => void; onClose: () => void }) {
     const [menu, setMenu] = useMenu();
-    const [comment, setComment] = useState("");
     const [busy, setBusy] = useState(false);
     const [assigning, setAssigning] = useState(false);
     const [people, setPeople] = useState<JiraPerson[]>([]);
@@ -512,8 +512,10 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
         try {
             await work();
             changed();
+            return true;
         } catch (error) {
             notify("error", `${label}: ${failureMessage(error)}`);
+            return false;
         } finally {
             setBusy(false);
         }
@@ -702,48 +704,11 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                         )}
                     </section>
                     <ProjectCommits issueKey={issue.key} />
-                    <section className="jira-comments" aria-label="Comments">
-                        <div className="jira-section-title">
-                            Comments
-                            {issue.commentCount > issue.comments.length && (
-                                <span className="jira-meta">
-                                    latest {issue.comments.length} of {issue.commentCount}
-                                </span>
-                            )}
-                        </div>
-                        {issue.comments.map((entry) => (
-                            <div key={entry.id} className="jira-comment">
-                                <Avatar person={{ name: entry.author, avatarUrl: null }} large />
-                                <div className="jira-comment-body">
-                                    <div className="jira-comment-head">
-                                        <b>{entry.author}</b>
-                                        <span className="jira-meta">{whenOf(entry.created)}</span>
-                                    </div>
-                                    <Markdown>{entry.body}</Markdown>
-                                </div>
-                            </div>
-                        ))}
-                        <div className="jira-compose">
-                            <textarea
-                                value={comment}
-                                onChange={(event) => setComment(event.target.value)}
-                                placeholder="Add a comment in markdown"
-                                rows={3}
-                            />
-                            <button
-                                type="button"
-                                className="jira-chip primary"
-                                disabled={busy || !comment.trim()}
-                                onClick={() =>
-                                    void run("Comment", async () => {
-                                        await jiraApi.comment(issue.key, comment, site || undefined);
-                                        setComment("");
-                                    })
-                                }>
-                                Comment
-                            </button>
-                        </div>
-                    </section>
+                    <JiraActivity
+                        issue={issue}
+                        busy={busy}
+                        onComment={(body) => run("Comment", () => jiraApi.comment(issue.key, body, site || undefined))}
+                    />
                 </div>
             </div>
         </article>
@@ -758,8 +723,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
         </div>
     );
 }
-
-const whenOf = (stamp: string) => new Date(stamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 /** The open project's recent commits that name the issue in their message. */
 function ProjectCommits({ issueKey }: { issueKey: string }) {
