@@ -8,7 +8,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
@@ -33,6 +33,9 @@ const MAX_IGNORED: usize = 1024;
 /// Changes at once past which folders git ignores are looked for first, as a
 /// build fills one.
 const MANY: usize = 64;
+/// Changes looked at together, whose files' last commit copies are held at
+/// once.
+const AT_ONCE: usize = 256;
 const MAX_AGENTS: usize = 256;
 
 #[derive(Default)]
@@ -231,11 +234,11 @@ impl Outside {
                     !ready
                 });
                 let mut moved = |at: &mut Option<u64>| {
-                    let ready = at.take_if(|at| *at + GRACE_MS <= now).is_some();
+                    let ready = at.take_if(|at| *at + GRACE_MS <= now);
                     next = sooner(next, at.map(|at| at + GRACE_MS));
                     ready
                 };
-                let committed = moved(&mut seen.committed);
+                let committed = moved(&mut seen.committed).is_some();
                 let overflowed = moved(&mut seen.overflowed);
                 (due, committed, overflowed)
             };
@@ -248,9 +251,11 @@ impl Outside {
             if !due.is_empty() {
                 look(core, store, &top, &project, &seen, due, &mut agents);
             }
-            if overflowed {
-                let since = SystemTime::now();
+            if let Some(at) = overflowed {
+                let since = UNIX_EPOCH + Duration::from_millis(at.saturating_sub(GRACE_MS));
                 reconcile(store, &top, &project, &seen, Look::Whole { since });
+                let found = lock(&seen).changed.values().min().copied();
+                next = sooner(next, found.map(|at| at + GRACE_MS));
             }
             if now < worked_at + IDLE_MS || !lock(&seen).idle() {
                 next = sooner(next, Some(worked_at + IDLE_MS));
@@ -468,9 +473,29 @@ fn look(
         let seen = lock(seen);
         due.retain(|(_, path, _)| !seen.ignored.iter().any(|ignored| path.starts_with(ignored)));
     }
+    for due in due.chunks(AT_ONCE) {
+        look_at(core, store, top, project, seen, due, agents);
+    }
+}
+
+/// Records `due`, a share of [`look`]'s changes small enough to hold the
+/// last commit's copies of at once.
+fn look_at(
+    core: &Core,
+    store: &Store,
+    top: &Path,
+    project: &str,
+    seen: &Mutex<Seen>,
+    due: &[(String, PathBuf, u64)],
+    agents: &mut Option<Vec<Listed>>,
+) {
     let asked: Vec<&str> = store.priors(project, |priors| {
         due.iter()
-            .filter(|(_, path, _)| !priors.knows(&path.to_string_lossy()) && path.is_file())
+            .filter(|(_, path, _)| {
+                !priors.knows(&path.to_string_lossy())
+                    && std::fs::metadata(path)
+                        .is_ok_and(|meta| meta.is_file() && meta.len() <= MAX_FILE_BYTES)
+            })
             .map(|(inside, ..)| inside.as_str())
             .collect()
     });
