@@ -79,7 +79,9 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
 pub fn git_program() -> Option<PathBuf> {
     static FOUND: Mutex<Option<(OsString, PathBuf)>> = Mutex::new(None);
     let path = var_os("PATH").unwrap_or_default();
-    let mut found = FOUND.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut found = FOUND
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some((searched, git)) = found.as_ref() {
         if *searched == path && git.is_file() {
             return Some(git.clone());
