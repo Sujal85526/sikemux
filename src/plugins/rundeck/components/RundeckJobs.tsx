@@ -238,8 +238,7 @@ function JobList({
                     <tr>
                         <th>Job</th>
                         <th>Branch</th>
-                        <th>Last run</th>
-                        <th>By</th>
+                        <th>Last run by</th>
                         <th className="r">When</th>
                         <th className="r">Took</th>
                         <th />
@@ -272,6 +271,7 @@ function JobList({
                                             onKeyDown={(e) => onKey(e, cell)}>
                                             <td>
                                                 <span className="rnd-name-row">
+                                                    <Status status={cell.latest?.status} label="" />
                                                     <span className="rnd-name">{cell.name}</span>
                                                     {cell.scheduled && <Tag>scheduled</Tag>}
                                                     {disabled && <Tag tone="muted">disabled</Tag>}
@@ -281,10 +281,9 @@ function JobList({
                                             <td>
                                                 <BranchChip branch={cell.latest?.branch ?? cell.deployed?.branch} />
                                             </td>
-                                            <td>
-                                                {cell.latest ? <Status status={cell.latest.status} /> : <span className="rnd-dim">Never run</span>}
+                                            <td className="rnd-cell-sub">
+                                                {cell.latest ? (cell.latest.user ?? "—") : <span className="rnd-dim">Never run</span>}
                                             </td>
-                                            <td className="rnd-cell-sub">{cell.latest?.user ?? "—"}</td>
                                             <td className="r rnd-cell-dim">{when ? formatAgo(when, now) : "—"}</td>
                                             <td className="r rnd-cell-dim">
                                                 {cell.latest ? duration(cell.latest.started_at, cell.latest.ended_at, now) || "—" : "—"}
@@ -317,11 +316,10 @@ function JobList({
 function JobCols() {
     return (
         <colgroup>
-            <col style={{ width: "28%" }} />
-            <col style={{ width: "22%" }} />
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "11%" }} />
+            <col style={{ width: "36%" }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "12%" }} />
             <col style={{ width: "10%" }} />
             <col style={{ width: "96px" }} />
         </colgroup>
@@ -345,7 +343,7 @@ function SectionRows({
         <>
             {showHead && (
                 <tr className="rnd-section-row">
-                    <td colSpan={7}>
+                    <td colSpan={6}>
                         {onOpenFolder ? (
                             <button className={`rnd-section-link${prod ? " prod" : ""}`} onClick={onOpenFolder} title="Open this folder">
                                 {label}
