@@ -643,7 +643,7 @@ pub(crate) struct Listed {
     pub name: Option<String>,
     pub project: String,
     pub cli: String,
-    title: Option<String>,
+    pub title: Option<String>,
     pub status: AgentStatus,
     parent: Option<String>,
     active_at: Option<u64>,

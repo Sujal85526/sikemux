@@ -12,7 +12,7 @@ mod fragile;
 mod merge;
 mod watch;
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
@@ -98,6 +98,9 @@ struct Call {
 /// burst of edits before the note goes out.
 struct Overlap {
     project: String,
+    /// The agents at work when no one agent could have made the change, each
+    /// by its title and name.
+    working: Vec<String>,
     lines: Vec<(u64, u64)>,
     first: u64,
     last: u64,
@@ -570,7 +573,7 @@ impl Collisions {
                 if touched.is_empty() || core.names.get(owner).is_none() {
                     continue;
                 }
-                self.overlapped(project, &path, &edit.agent_id, owner, &touched);
+                self.overlapped(project, &path, &edit.agent_id, &[], owner, &touched);
             }
         }
     }
@@ -582,6 +585,7 @@ impl Collisions {
         project: &str,
         path: &Path,
         writer: &str,
+        working: &[String],
         owner: &str,
         lines: &[(u64, u64)],
     ) {
@@ -592,10 +596,16 @@ impl Collisions {
             .entry((path.to_path_buf(), writer.to_owned(), owner.to_owned()))
             .or_insert_with(|| Overlap {
                 project: project.to_owned(),
+                working: Vec::new(),
                 lines: Vec::new(),
                 first: now,
                 last: now,
             });
+        for label in working {
+            if !overlap.working.contains(label) {
+                overlap.working.push(label.clone());
+            }
+        }
         overlap.lines.extend_from_slice(lines);
         overlap.last = now;
         drop(state);
@@ -1092,10 +1102,15 @@ fn warn(
     let lines = spoken(&overlap.lines);
     let owner_name = name(owner);
     if writer.is_empty() {
+        let by = match overlap.working.as_slice() {
+            [] => "by the person or a command no agent ran".to_owned(),
+            [only] => format!("while {only} was at work"),
+            [rest @ .., last] => format!("while {} and {last} were at work", rest.join(", ")),
+        };
         tell(
             state,
             owner,
-            format!("{lines} of {file}, which you have uncommitted, were just changed outside the agents' edit tools: by the person, a command or an agent in a terminal. Read the file again before you edit it."),
+            format!("{lines} of {file}, which you have uncommitted, were just changed outside the agents' edit tools, {by}. Read the file again before you edit it."),
         );
         mark(state, owner, Vec::new(), file, false);
         return;
@@ -1142,7 +1157,7 @@ impl Collisions {
             at,
         } = change;
         let project = project_of(&path, &core.workspaces.project_paths());
-        let writer = self.likely_writer(core, &project, at);
+        let (writer, working) = self.likely_writer(core, &project, at);
         let shell_writer = writer
             .as_ref()
             .filter(|(_, chat)| *chat)
@@ -1175,7 +1190,7 @@ impl Collisions {
         let writer_id = writer.map(|(agent, _)| agent).unwrap_or_default();
         let owned: HashMap<u64, &str> = lines
             .iter()
-            .filter(|line| line.agent_id != writer_id)
+            .filter(|line| line.agent_id != writer_id && !working.contains_key(&line.agent_id))
             .map(|line| (line.line, line.agent_id.as_str()))
             .collect();
         if owned.is_empty() {
@@ -1210,21 +1225,30 @@ impl Collisions {
                 .map(|(_, start, end)| (*start, *end))
                 .collect();
             if !touched.is_empty() && core.names.get(owner).is_some() {
-                self.overlapped(&project, &path, &writer_id, owner, &touched);
+                let labels: Vec<String> = working.values().cloned().collect();
+                self.overlapped(&project, &path, &writer_id, &labels, owner, &touched);
             }
         }
     }
 
     /// The agent that most likely changed a file in `project` at `at` with
-    /// no edit tool: the one chat agent then running a command, else the one
-    /// terminal agent then working. Whether it is a chat comes with it.
-    fn likely_writer(&self, core: &Core, project: &str, at: u64) -> Option<(String, bool)> {
+    /// no edit tool, and whether it is a chat: the one chat agent then running
+    /// a command, a subagent or a background task, else the one terminal agent
+    /// then working. With it, every agent then at work, each by its title and
+    /// name.
+    fn likely_writer(
+        &self,
+        core: &Core,
+        project: &str,
+        at: u64,
+    ) -> (Option<(String, bool)>, BTreeMap<String, String>) {
+        let listed = super::messages::listed(core);
         let in_project = |agent: &str| {
             core.names
                 .get(agent)
                 .is_some_and(|named| named.project == project)
         };
-        let shells: HashSet<String> = {
+        let shells: BTreeSet<String> = {
             let state = self.lock();
             state
                 .calls
@@ -1238,30 +1262,46 @@ impl Collisions {
                         .filter(|(_, ended)| at.saturating_sub(GRACE_MS) <= **ended)
                         .map(|(agent, _)| agent.clone()),
                 )
+                .chain(
+                    core.chats
+                        .list()
+                        .into_iter()
+                        .filter(|chat| chat.subagents > 0 || chat.tasks > 0)
+                        .map(|chat| chat.agent_id),
+                )
+                .filter(|agent| in_project(agent))
                 .collect()
         };
-        let shells: Vec<String> = shells
-            .into_iter()
-            .filter(|agent| in_project(agent))
-            .collect();
-        if let [agent] = shells.as_slice() {
-            return Some((agent.clone(), true));
-        }
-        if !shells.is_empty() {
-            return None;
-        }
-        let terminals: Vec<String> = super::messages::listed(core)
-            .into_iter()
+        let terminals: BTreeSet<String> = listed
+            .iter()
             .filter(|agent| {
                 agent.reach == super::messages::Reach::Terminal
                     && agent.project == project
                     && agent.status == crate::protocol::AgentStatus::Working
             })
-            .map(|agent| agent.agent_id)
+            .map(|agent| agent.agent_id.clone())
             .collect();
-        match terminals.as_slice() {
-            [agent] => Some((agent.clone(), false)),
+        let label = |id: &String| {
+            let agent = listed.iter().find(|agent| agent.agent_id == *id);
+            let name = agent
+                .and_then(|agent| agent.name.clone())
+                .or_else(|| core.names.name(id))
+                .unwrap_or_else(|| id.clone());
+            match agent.and_then(|agent| agent.title.as_deref()) {
+                Some(title) => format!("{title} ({name})"),
+                None => name,
+            }
+        };
+        let working = shells
+            .iter()
+            .chain(&terminals)
+            .map(|id| (id.clone(), label(id)))
+            .collect();
+        let likely = match (shells.len(), terminals.len()) {
+            (1, _) => shells.into_iter().next().map(|agent| (agent, true)),
+            (0, 1) => terminals.into_iter().next().map(|agent| (agent, false)),
             _ => None,
-        }
+        };
+        (likely, working)
     }
 }
