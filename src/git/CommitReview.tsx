@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { git } from "../api/git";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { git, type CommitOwner } from "../api/git";
+import { commitOwnedFile } from "./changeOwners";
 import { DiffEditor } from "./DiffEditor";
 import { IconChevron } from "../ui/Icons";
 import { FileIcon } from "../ui/FileIcon";
@@ -14,6 +15,7 @@ export function CommitReview({
     head,
     range,
     focusPath,
+    owners,
     onOpenFile,
 }: {
     repo: string;
@@ -26,12 +28,15 @@ export function CommitReview({
     range?: { base: string; files: readonly string[] };
     /** Opens this file and scrolls to it. */
     focusPath?: string | null;
+    /** The agents the commit's footer names, with the lines its note gives each. */
+    owners?: CommitOwner[];
     onOpenFile: (abs: string) => void;
 }) {
     const [files, setFiles] = useState<string[]>([]);
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const stackRef = useRef<HTMLDivElement>(null);
     const rangeFiles = range?.files;
+    const owned = useMemo(() => new Map(files.map((file) => [file, commitOwnedFile(owners, file)])), [files, owners]);
 
     useEffect(() => {
         if (rangeFiles) {
@@ -113,7 +118,15 @@ export function CommitReview({
                                 <span className="acc-grow" />
                             </div>
                             {open && (
-                                <DiffEditor repo={repo} path={f} baseRev={range?.base ?? `${rev}~1`} headRev={rev} editable={false} autoHeight />
+                                <DiffEditor
+                                    repo={repo}
+                                    path={f}
+                                    baseRev={range?.base ?? `${rev}~1`}
+                                    headRev={rev}
+                                    editable={false}
+                                    autoHeight
+                                    owned={range ? undefined : owned.get(f)}
+                                />
                             )}
                         </div>
                     );

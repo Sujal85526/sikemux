@@ -1511,6 +1511,7 @@ function GitWorkbench({
                     title={selectedCommit.hash}
                     subtitle={selectedCommit.subject}
                     head={commitHead(selectedCommit)}
+                    owners={commitOwners?.[selectedCommit.full_hash]}
                     onOpenFile={cmd.requestOpenFile}
                 />
             ) : filteredFiles.length > 0 ? (
@@ -1532,6 +1533,7 @@ function GitWorkbench({
                     title={latest.hash}
                     subtitle={latest.subject}
                     head={commitHead(latest)}
+                    owners={commitOwners?.[latest.full_hash]}
                     onOpenFile={cmd.requestOpenFile}
                 />
             ) : (

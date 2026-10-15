@@ -1,4 +1,4 @@
-import { DIFF_ROW, type ChangeOwners, type DiffRow, type FileOwners, type OwnedLines } from "../api/git";
+import { DIFF_ROW, type ChangeOwners, type CommitOwner, type DiffRow, type FileOwners, type OwnedLines } from "../api/git";
 import { useCachedResourceEnabled } from "../state/resources";
 import { gitChangeOwnersR } from "../state/resources.defs";
 
@@ -31,6 +31,39 @@ export function ownedFile(owners: ChangeOwners | undefined, path: string): Owned
         ownedFiles.set(owners, files);
     }
     return files.get(path);
+}
+
+/** The lines of `path` a commit's note gives each of its agents, read as the uncommitted ones are; lines several share name them all. */
+export function commitOwnedFile(owners: readonly CommitOwner[] | undefined, path: string): OwnedFile | undefined {
+    if (!owners?.some((owner) => owner.lines?.[path])) return undefined;
+    const writers = new Map<number, number[]>();
+    owners.forEach((owner, index) => {
+        for (const [first, last] of owner.lines?.[path] ?? []) {
+            for (let line = first; line <= last; line++) {
+                const at = writers.get(line);
+                if (at) at.push(index);
+                else writers.set(line, [index]);
+            }
+        }
+    });
+    const names: string[] = [];
+    const nameIndex = new Map<string, number>();
+    const lines: OwnedLines[] = [];
+    for (const line of [...writers.keys()].sort((a, b) => a - b)) {
+        const name = writers
+            .get(line)!
+            .map((index) => owners[index].name)
+            .join(" or ");
+        let author = nameIndex.get(name);
+        if (author === undefined) {
+            author = names.push(name) - 1;
+            nameIndex.set(name, author);
+        }
+        const run = lines[lines.length - 1];
+        if (run && run.author === author && run.start + run.count === line) run.count++;
+        else lines.push({ start: line, count: 1, author });
+    }
+    return { file: { path, lines, removed: [] }, names };
 }
 
 /** The names of the agents that wrote some of a file's changes, in the order they first appear. */

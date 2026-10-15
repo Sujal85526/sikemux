@@ -83,6 +83,8 @@ export interface CommitOwner {
     sessionId?: string;
     /** The project its session ran in. */
     project?: string;
+    /** The lines it wrote, first and last of each run by path, as the commit numbers them, when the commit's note says so because it holds others' lines too. */
+    lines?: Record<string, [number, number][]>;
 }
 
 export interface GitCompare {
