@@ -987,7 +987,6 @@ describe("frontend persistence", () => {
             activeProject: "channeliq",
             activeGroup: "dev",
             prodEnvs: ["prod"],
-            branchOptions: ["BRANCH", "GIT_BRANCH", "GIT_REF", "REF"],
             deployTargets: {},
             treeHidden: false,
             notifyWhenDone: true,
