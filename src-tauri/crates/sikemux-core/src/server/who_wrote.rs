@@ -45,13 +45,14 @@ pub(crate) struct AgentOwner {
     /// The version of Sikemux the agent ran in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sikemux: Option<String>,
-    /// The agent the footer names.
+    /// The agent the footer names, which stands for the session until it is known.
     pub chat: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// The agent that has its session open now.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub open: Option<String>,
+    /// The CLI's own session, which resuming the agent needs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// The project its session ran in.
@@ -91,46 +92,61 @@ fn verified(core: &Core, dir: &Path, commit: &str) -> Vec<Agent> {
     agents
 }
 
-/// What a saved session is called, looked up once per session.
-fn saved_title(core: &Core, cli: &str, session_id: &str) -> Option<String> {
-    static TITLES: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
-    let cache = TITLES.get_or_init(Default::default);
+type TitleAndProject = (String, String);
+
+/// What a saved session is called and the project it ran in, looked up once
+/// per session.
+fn saved_session(core: &Core, cli: &str, session_id: &str) -> Option<TitleAndProject> {
+    static SAVED: OnceLock<Mutex<HashMap<String, Option<TitleAndProject>>>> = OnceLock::new();
+    let cache = SAVED.get_or_init(Default::default);
     let key = format!("{cli}\0{session_id}");
-    if let Some(title) = lock(cache).get(&key) {
-        return title.clone();
+    if let Some(saved) = lock(cache).get(&key) {
+        return saved.clone();
     }
-    let title = saved::locate(core, session_id, Some(cli))
+    let saved = saved::locate(core, session_id, Some(cli))
         .ok()
-        .map(|saved| saved.title);
-    remember(cache, &key, &title);
-    title
+        .map(|saved| (saved.title, saved.project.to_string_lossy().into_owned()));
+    remember(cache, &key, &saved);
+    saved
 }
 
-/// Each of `agents` with its session, its title and the agent that has it
-/// open now, if any.
-fn owners(core: &Core, agents: Vec<Agent>, listed: &[Listed]) -> Vec<AgentOwner> {
-    let open = |agent_id: &str| {
-        listed
-            .iter()
-            .find(|open| open.agent_id == agent_id && open.reach != Reach::Stopped)
-    };
+/// Each of `agents` with its session, its title, the agent that has it open
+/// now, if any, and the lines the commit's `note` gives it.
+fn owners(
+    core: &Core,
+    agents: Vec<Agent>,
+    listed: &[Listed],
+    mut note: Option<Note>,
+) -> Vec<AgentOwner> {
     agents
         .into_iter()
         .map(|agent| {
-            let session = core.names.ran_session(&agent.chat);
-            let running = open(&agent.chat).or_else(|| {
-                let session_id = &session.as_ref()?.session_id;
-                listed.iter().find(|other| {
-                    other.reach != Reach::Stopped
-                        && core.names.session_of(&other.agent_id).as_ref() == Some(session_id)
-                })
-            });
-            let title = match (running, &session) {
-                (Some(running), _) => running.title.clone(),
-                (None, Some(ran)) => saved_title(core, &ran.provider, &ran.session_id),
-                (None, None) => None,
+            let lines = note.as_mut().and_then(|note| note.remove(agent.key()));
+            let session_id = agent
+                .session
+                .clone()
+                .or_else(|| core.names.last_session(&agent.chat));
+            let open = listed.iter().filter(|open| open.reach != Reach::Stopped);
+            let running = open
+                .clone()
+                .find(|open| open.agent_id == agent.chat)
+                .or_else(|| {
+                    let session_id = session_id.as_ref()?;
+                    open.clone().find(|other| {
+                        core.names.session_of(&other.agent_id).as_ref() == Some(session_id)
+                    })
+                });
+            let saved = session_id
+                .as_deref()
+                .filter(|_| running.is_none())
+                .and_then(|session_id| saved_session(core, &agent.cli, session_id));
+            let title = match running {
+                Some(running) => running.title.clone(),
+                None => saved.as_ref().map(|(title, _)| title.clone()),
             };
-            let (session_id, project) = session.map(|ran| (ran.session_id, ran.project)).unzip();
+            let project = saved
+                .map(|(_, project)| project)
+                .or_else(|| core.names.ran_session(&agent.chat).map(|ran| ran.project));
             AgentOwner {
                 title,
                 open: running.map(|running| running.agent_id.clone()),
@@ -142,7 +158,7 @@ fn owners(core: &Core, agents: Vec<Agent>, listed: &[Listed]) -> Vec<AgentOwner>
                 model: agent.model,
                 sikemux: agent.sikemux,
                 chat: agent.chat,
-                lines: None,
+                lines,
             }
         })
         .collect()
@@ -162,7 +178,7 @@ fn noted<'a>(
     let mut notes = note::read(dir, &hashes, &core.remote.host_keys());
     notes.retain(|commit, note| {
         let agents = commits.get(commit.as_str()).copied().unwrap_or_default();
-        note.retain(|chat, _| agents.iter().any(|agent| agent.chat == *chat));
+        note.retain(|key, _| agents.iter().any(|agent| agent.key() == key));
         !note.is_empty()
     });
     notes
@@ -206,12 +222,7 @@ pub(crate) async fn call(
         Ok(found
             .into_iter()
             .map(|(commit, agents)| {
-                let mut owners = owners(&core, agents, &listed);
-                if let Some(note) = notes.get_mut(&commit) {
-                    for owner in &mut owners {
-                        owner.lines = note.remove(&owner.chat);
-                    }
-                }
+                let owners = owners(&core, agents, &listed, notes.remove(&commit));
                 (commit, owners)
             })
             .collect())
@@ -618,12 +629,7 @@ pub(crate) async fn tool(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         let commits: Vec<(Described, Vec<AgentOwner>)> = agents
             .into_iter()
             .map(|(commit, agents)| {
-                let mut owners = owners(&core, agents, &listed);
-                if let Some(note) = notes.get_mut(&commit.hash) {
-                    for owner in &mut owners {
-                        owner.lines = note.remove(&owner.chat);
-                    }
-                }
+                let owners = owners(&core, agents, &listed, notes.remove(&commit.hash));
                 (commit, owners)
             })
             .collect();

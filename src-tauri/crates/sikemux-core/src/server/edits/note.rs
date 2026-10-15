@@ -10,25 +10,25 @@ use std::path::Path;
 use iroh::PublicKey;
 
 use super::owners::{run, Diff, Owners};
-use crate::trailers::{verify_note, Agent, Commit, NOTES_REF};
+use crate::trailers::{verify_note, Commit, NOTES_REF};
 
 /// Runs of lines, first and last, by path.
 pub(crate) type Wrote = BTreeMap<String, Vec<[u64; 2]>>;
 
-/// What each agent wrote, by its chat.
+/// What each agent wrote, by its session, or its chat when its session was
+/// not known.
 pub(crate) type Note = BTreeMap<String, Wrote>;
 
 /// The note for a commit of what `diff` says was staged, when its lines are
 /// not all one agent's: the person's commit holding some lines no agent wrote,
-/// or any commit holding lines of several. It names only `agents`, those the
-/// commit's footer names.
+/// or any commit holding lines of several. It names only the agents the
+/// commit's footer names, by their `keys`, given by chat.
 pub(super) fn of(
     owners: &Owners,
     diff: &Diff,
-    agents: &[Agent],
+    keys: &HashMap<&str, &str>,
     by_person: bool,
 ) -> Option<String> {
-    let named: HashSet<&str> = agents.iter().map(|agent| agent.chat.as_str()).collect();
     let mut note = Note::new();
     let mut owned = 0;
     for file in owners
@@ -39,13 +39,14 @@ pub(super) fn of(
         for run in &file.lines {
             let last = run.start + run.count - 1;
             let mut counted = false;
-            for chat in owners.authors[run.author].agents() {
-                if !named.contains(chat) {
-                    continue;
-                }
+            let authors: HashSet<&str> = owners.authors[run.author]
+                .agents()
+                .filter_map(|chat| keys.get(chat).copied())
+                .collect();
+            for key in authors {
                 counted = true;
                 let runs = note
-                    .entry(chat.to_owned())
+                    .entry(key.to_owned())
                     .or_default()
                     .entry(file.path.clone())
                     .or_default();

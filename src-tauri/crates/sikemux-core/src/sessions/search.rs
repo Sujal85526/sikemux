@@ -182,7 +182,7 @@ pub fn locate(providers: &[RecentProvider], session_id: &str) -> Option<SessionM
         return Some(found);
     }
     let exclude = HashSet::new();
-    providers.par_iter().find_map_any(|provider| {
+    let found = providers.par_iter().find_map_any(|provider| {
         let scan = PageScan::all(provider.agent, None, MAX_CANDIDATES, &exclude);
         provider_hits(provider, &scan)
             .into_iter()
@@ -197,7 +197,9 @@ pub fn locate(providers: &[RecentProvider], session_id: &str) -> Option<SessionM
                 score: 0.0,
                 config_path: provider.config_path.clone(),
             })
-    })
+    })?;
+    remember(std::slice::from_ref(&found));
+    Some(found)
 }
 
 const MAX_REMEMBERED: usize = 256;

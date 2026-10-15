@@ -2,13 +2,18 @@
 //! holds, then the host's signature over them.
 //!
 //! ```text
-//! Agent: Otter (claude 2.1.257, opus 4.7, sikemux 0.5.3, chat 0199…, host 7f3a9c21d0e4b5a6)
+//! Agent: Otter (claude 2.1.257, opus 4.7, sikemux 0.5.3, session 5f0c…, chat 0199…, host 7f3a9c21d0e4b5a6)
 //! Agent-Signature: <ed25519 signature in base64>
 //! ```
 //!
 //! The host signs every field of every line with the commit's tree and
 //! parents, so a footer written or edited by hand, or copied onto another
 //! commit, does not check out. A field the host did not know is left out.
+//!
+//! An agent is known by the session its CLI keeps, which resuming it needs and
+//! which outlives the chat. The chat is Sikemux's agent, a new one each time
+//! the session is opened again, and stands in for the session until the CLI
+//! has said which it runs.
 
 use base64::engine::general_purpose::STANDARD_NO_PAD as BASE64;
 use base64::Engine;
@@ -18,6 +23,8 @@ use serde::{Deserialize, Serialize};
 const AGENT: &str = "Agent: ";
 const SIGNATURE: &str = "Agent-Signature: ";
 const SIKEMUX: &str = "sikemux ";
+const SESSION: &str = "session ";
+const CHAT: &str = "chat ";
 /// How much of the host's key an agent line shows, enough to pick it out of
 /// the hosts a reader knows.
 const HOST_CHARS: usize = 16;
@@ -47,24 +54,35 @@ pub struct Agent {
     pub model: Option<String>,
     /// The version of Sikemux the agent ran in.
     pub sikemux: Option<String>,
+    /// The CLI's own session.
+    pub session: Option<String>,
     pub chat: String,
 }
 
 impl Agent {
+    /// What the agent is known by: its session, else its chat.
+    pub fn key(&self) -> &str {
+        self.session.as_deref().unwrap_or(&self.chat)
+    }
+
     /// `self` with every field as its line can show it, so the line reads
     /// back as the agent it was written from.
     fn shown(&self) -> Self {
         let optional = |text: Option<&String>, read: fn(&str) -> String| {
             text.map(|text| read(text)).filter(|text| !text.is_empty())
         };
-        let model =
-            optional(self.model.as_ref(), words).filter(|model| !model.starts_with(SIKEMUX));
+        let model = optional(self.model.as_ref(), words).filter(|model| {
+            ![SIKEMUX, SESSION, CHAT]
+                .iter()
+                .any(|label| model.starts_with(label))
+        });
         Self {
             name: words(&self.name),
             cli: one_word(&self.cli),
             cli_version: optional(self.cli_version.as_ref(), one_word),
             model,
             sikemux: optional(self.sikemux.as_ref(), one_word),
+            session: optional(self.session.as_ref(), one_word),
             chat: one_word(&self.chat),
         }
     }
@@ -124,15 +142,21 @@ fn agent_line(agent: &Agent, host: Option<&PublicKey>) -> String {
         .sikemux
         .as_ref()
         .map(|version| format!("{SIKEMUX}{version}"));
-    let chat = format!("chat {}", agent.chat);
+    let session = agent
+        .session
+        .as_ref()
+        .map(|session| format!("{SESSION}{session}"));
+    let chat = format!("{CHAT}{}", agent.chat);
     let host = host.map(|host| format!("host {}", short(host)));
     let parts: Vec<&str> = [
         Some(cli.as_str()),
         agent.model.as_deref(),
         sikemux.as_deref(),
+        session.as_deref(),
+        Some(chat.as_str()),
+        host.as_deref(),
     ]
     .into_iter()
-    .chain([Some(chat.as_str()), host.as_deref()])
     .flatten()
     .collect();
     format!("{AGENT}{} ({})", agent.name, parts.join(", "))
@@ -160,15 +184,16 @@ fn signed_commit(kind: &str, commit: &Commit, host: &PublicKey) -> String {
 /// What the host signs of a footer.
 fn signed(commit: &Commit, host: &PublicKey, agents: &[Agent]) -> String {
     let optional = |text: &Option<String>| field(text.as_deref().unwrap_or_default());
-    let mut text = signed_commit("footer 2", commit, host);
+    let mut text = signed_commit("footer 3", commit, host);
     for agent in agents {
         text.push_str(&format!(
-            "agent {} {} {} {} {} {}\n",
+            "agent {} {} {} {} {} {} {}\n",
             field(&agent.name),
             field(&agent.cli),
             optional(&agent.cli_version),
             optional(&agent.model),
             optional(&agent.sikemux),
+            optional(&agent.session),
             field(&agent.chat),
         ));
     }
@@ -203,7 +228,7 @@ pub fn verify_note<'a>(blob: &'a str, commit: &Commit, hosts: &[PublicKey]) -> O
 }
 
 fn note_signed(note: &str, commit: &Commit, host: &PublicKey) -> String {
-    let mut text = signed_commit("note 1", commit, host);
+    let mut text = signed_commit("note 2", commit, host);
     text.push_str(&format!("note {}\n", field(note)));
     text
 }
@@ -269,7 +294,14 @@ fn parse_agent(value: &str) -> Option<(Agent, Option<String>)> {
         }
         None => None,
     };
-    let chat = parts.pop()?.strip_prefix("chat ")?.to_owned();
+    let chat = parts.pop()?.strip_prefix(CHAT)?.to_owned();
+    let session = match parts.last()?.strip_prefix(SESSION) {
+        Some(session) if parts.len() > 1 => {
+            parts.pop();
+            Some(session.to_owned())
+        }
+        _ => None,
+    };
     let sikemux = match parts.last()?.strip_prefix(SIKEMUX) {
         Some(version) if parts.len() > 1 => {
             parts.pop();
@@ -294,6 +326,7 @@ fn parse_agent(value: &str) -> Option<(Agent, Option<String>)> {
             cli_version,
             model,
             sikemux,
+            session,
             chat,
         };
         (agent, host)

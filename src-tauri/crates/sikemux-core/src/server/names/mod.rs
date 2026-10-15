@@ -466,6 +466,32 @@ impl Names {
             .map(|closed| closed.ran.clone())
     }
 
+    /// The provider session the agent ran, whether it is open or closed since,
+    /// for one whose provider is not known too.
+    pub(crate) fn last_session(&self, agent_id: &str) -> Option<String> {
+        let book = self.lock();
+        match book.agents.iter().find(|entry| entry.agent_id == agent_id) {
+            Some(entry) => entry.session_id.clone(),
+            None => book
+                .closed_sessions
+                .iter()
+                .find(|closed| closed.agent_id == agent_id)
+                .map(|closed| closed.ran.session_id.clone()),
+        }
+    }
+
+    /// Whether an agent here runs or recently ran `session_id`.
+    pub(crate) fn knows_session(&self, session_id: &str) -> bool {
+        let book = self.lock();
+        book.agents
+            .iter()
+            .any(|entry| entry.session_id.as_deref() == Some(session_id))
+            || book
+                .closed_sessions
+                .iter()
+                .any(|closed| closed.ran.session_id == session_id)
+    }
+
     pub(crate) fn note_session(&self, agent_id: &str, session_id: &str) {
         let mut book = self.lock();
         let Some(entry) = book.entry_mut(agent_id) else {

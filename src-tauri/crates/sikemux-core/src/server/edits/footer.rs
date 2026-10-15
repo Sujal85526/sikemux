@@ -3,6 +3,7 @@
 //! agent's own `git commit` through the git shim.
 
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ use crate::cli::protocol::HarnessRequest;
 use crate::server::callers::{self, CommitGrant};
 use crate::server::connection::blocking;
 use crate::server::names::project_of;
+use crate::server::saved;
 use crate::server::Core;
 use crate::trailers::{self, Agent, Commit, PendingNote};
 
@@ -56,18 +58,24 @@ fn footer(
             .collect(),
         (None, Err(error)) => return Err(error.clone()),
     };
-    let mut agents = if amend {
+    let mut named = if amend {
         verified(core, dir, "HEAD")?
     } else {
         Vec::new()
     };
-    for writer in writers {
-        if !agents.iter().any(|agent| agent.chat == writer.chat) {
-            agents.push(writer);
-        }
+    named.extend(writers);
+    if named.is_empty() {
+        named.extend(fallback.and_then(|id| known(core, dir, id)));
     }
-    if agents.is_empty() {
-        agents.extend(fallback.and_then(|id| known(core, dir, id)));
+    let keys: HashMap<&str, &str> = named
+        .iter()
+        .map(|agent| (agent.chat.as_str(), agent.key()))
+        .collect();
+    let mut agents: Vec<Agent> = Vec::new();
+    for agent in &named {
+        if !agents.iter().any(|kept| kept.key() == agent.key()) {
+            agents.push(agent.clone());
+        }
     }
     let commit = Commit {
         tree: &tree,
@@ -76,7 +84,7 @@ fn footer(
     let key = core.remote.host_key();
     let note = staged
         .ok()
-        .and_then(|(owners, diff)| note::of(&owners, &diff, &agents, fallback.is_none()))
+        .and_then(|(owners, diff)| note::of(&owners, &diff, &keys, fallback.is_none()))
         .zip(key.as_ref())
         .map(|(note, key)| trailers::signed_note(&note, &commit, key));
     let footer = trailers::footer(&agents, &commit, key.as_ref());
@@ -130,6 +138,7 @@ pub(super) fn agent(core: &Core, author: &Author) -> Agent {
             .and_then(|chat| chat.current_launch().model)
             .or_else(|| author.model.clone()),
         sikemux: Some(core.build.version.clone()),
+        session: core.names.last_session(&author.agent_id),
         chat: author.agent_id.clone(),
     }
 }
@@ -157,14 +166,15 @@ pub(super) fn known(core: &Core, dir: &Path, agent_id: &str) -> Option<Agent> {
         cli_version: chat.as_ref().and_then(|chat| chat.cli_version()),
         model: chat.and_then(|chat| chat.current_launch().model),
         sikemux: Some(core.build.version.clone()),
+        session: core.names.last_session(agent_id),
         chat: agent_id.to_owned(),
     })
 }
 
 /// The agents `commit`'s footer names, when it checks out: signed by this
 /// host or one linked with it, over the commit's own tree and parents, and
-/// naming only chats this host recorded. Anything else is text anyone could
-/// have written.
+/// naming only agents this host knows: a session one of its CLIs keeps, or a
+/// chat it recorded. Anything else is text anyone could have written.
 pub(crate) fn verified(core: &Core, dir: &Path, commit: &str) -> Result<Vec<Agent>, String> {
     let object = git(dir, &["cat-file", "commit", commit])?;
     let (header, message) = object.split_once("\n\n").unwrap_or((&object, ""));
@@ -187,17 +197,26 @@ pub(crate) fn verified(core: &Core, dir: &Path, commit: &str) -> Result<Vec<Agen
     let project = project_of(dir, &core.workspaces.project_paths());
     Ok(agents
         .into_iter()
-        .filter(|agent| recorded(core, &project, &agent.chat))
+        .filter(|agent| recorded(core, &project, agent))
         .collect())
 }
 
-fn recorded(core: &Core, project: &str, chat: &str) -> bool {
-    core.names.name(chat).is_some()
-        || core.names.ran_session(chat).is_some()
+fn recorded(core: &Core, project: &str, agent: &Agent) -> bool {
+    let chat = agent.chat.as_str();
+    agent
+        .session
+        .as_deref()
+        .is_some_and(|session| core.names.knows_session(session))
+        || core.names.name(chat).is_some()
+        || core.names.last_session(chat).is_some()
         || !core
             .edits
             .matching(project, |edit| edit.agent_id == chat)
             .is_empty()
+        || agent
+            .session
+            .as_deref()
+            .is_some_and(|session| saved::locate(core, session, Some(&agent.cli)).is_ok())
 }
 
 #[derive(Deserialize)]
