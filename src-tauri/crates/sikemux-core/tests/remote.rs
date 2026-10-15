@@ -463,7 +463,7 @@ async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_repl
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_long_chat_is_sent_as_its_last_turns_and_pages_back_to_its_start() {
+async fn a_phone_is_sent_a_long_chat_s_last_turns_and_pages_back_to_its_start() {
     let core_key = SecretKey::generate();
     let phone = Device::new("Phone", DeviceAccess::Watch);
     let core = start_core_with(&core_key, &[&phone], true);
@@ -553,8 +553,8 @@ async fn a_long_chat_is_sent_as_its_last_turns_and_pages_back_to_its_start() {
     else {
         panic!("the app takes the chat up");
     };
-    assert_eq!(prompts(&replay), turns(5..55));
-    assert_eq!(older_before, Some(before));
+    assert_eq!(prompts(&replay), turns(0..55));
+    assert_eq!(older_before, None);
 }
 
 #[tokio::test(flavor = "multi_thread")]
