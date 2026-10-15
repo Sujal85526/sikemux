@@ -629,6 +629,8 @@ export function ChatComposer({
                     profile={profile}
                     setup={setup}
                     agentLocked={agentLocked}
+                    running={running}
+                    moveDisabled={connection !== "ready" || changingPermissions || changingConfig}
                     disabled={connection !== "ready" || running || changingPermissions || changingConfig || awaitingPermission}
                     onAgent={(type, profileId, model, modelProvider) => {
                         if (agentLocked || running || awaitingPermission) return;

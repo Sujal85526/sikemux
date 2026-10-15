@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from "react";
 import { agentApi } from "../api/agents";
-import type { AcpAccount } from "../api/acp";
+import { acpApi, type AcpAccount } from "../api/acp";
 import { invalidate } from "../state/resources";
+import { reportError } from "../state/toast";
 import { hasAccounts, type AccountAgentType } from "./catalog";
-import type { AgentProvider, AgentType, ProviderProfile } from "../state/types";
+import type { Agent, AgentProvider, AgentType, ProviderProfile } from "../state/types";
 
 /* An account is a provider profile: its directory holds one sign-in. */
 
@@ -19,6 +20,11 @@ export function accountsOf(provider: AccountProvider, profiles: readonly Provide
 
 export function acpAccount(profile: ProviderProfile): AcpAccount {
     return { id: profile.id, label: profile.name, configPath: profile.configPath };
+}
+
+/** Carries the chat on to `account`. A turn in progress stops and carries on there. */
+export function moveChat(agent: Agent, account: ProviderProfile): void {
+    void acpApi.switchAccount(agent.id, agent.type, acpAccount(account)).catch(reportError("Switch account"));
 }
 
 const sameDirectory = (a: string | null | undefined, b: string | null | undefined) => (a || null) === (b || null);

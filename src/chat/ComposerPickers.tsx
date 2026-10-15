@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentIcon, IconChevron } from "../ui/Icons";
 import type { ChatAgentType } from "../agents/agentLaunch";
 import { agentLabel } from "../agents/catalog";
 import { modelProvidersApi, modelWords, type ModelProvider, type ServedModels } from "../api/modelProviders";
+import { accountsOf, isAccountProvider, moveChat } from "../agents/accounts";
+import { fetchResource, peekResource } from "../state/resources";
+import { agentAccountR } from "../state/resources.defs";
+import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
 import type { Agent, ProviderProfile } from "../state/types";
 import PickerMenu, { type AgentChoicesProps, type Choice } from "./PickerMenu";
@@ -189,11 +193,78 @@ function PayerChoices({
     );
 }
 
+interface Movable {
+    account: ProviderProfile;
+    email?: string;
+}
+
+/** The person's other accounts with this chat's provider that can take the
+    chat over: signed in, and keeping chats where this one does. */
+function useMovable(agent: Agent, profile: ProviderProfile | undefined): [Movable[], (fresh: boolean) => void] {
+    const profiles = useStore((s) => s.providerProfiles);
+    const [movable, setMovable] = useState<Movable[]>([]);
+    const provider = isAccountProvider(agent.type) ? agent.type : undefined;
+    const accounts = useMemo(() => (provider ? accountsOf(provider, profiles) : []), [provider, profiles]);
+    const load = useCallback(
+        (fresh: boolean) => {
+            if (!provider || !profile) return;
+            const read = (account: ProviderProfile) =>
+                (!fresh && peekResource(agentAccountR, provider, account.configPath)) || fetchResource(agentAccountR, provider, account.configPath);
+            void Promise.all(
+                accounts.map((account) =>
+                    Promise.resolve(read(account))
+                        .then((status) => ({ account, status }))
+                        .catch(() => undefined),
+                ),
+            ).then((rows) => {
+                const sessions = rows.find((row) => row?.account.id === profile.id)?.status.sessions;
+                setMovable(
+                    rows.flatMap((row) =>
+                        row && row.status.signedIn && sessions && row.status.sessions === sessions
+                            ? [{ account: row.account, email: row.status.email ?? undefined }]
+                            : [],
+                    ),
+                );
+            });
+        },
+        [provider, profile, accounts],
+    );
+    useEffect(() => load(false), [load]);
+    return [movable, load];
+}
+
+/** Moves a chat that has started to another of the person's accounts, even in
+    the middle of a turn. */
+function AccountPicker({ agent, profile, running, disabled }: { agent: Agent; profile: ProviderProfile; running: boolean; disabled: boolean }) {
+    const [movable, load] = useMovable(agent, profile);
+    if (!movable.some((row) => row.account.id !== profile.id)) return null;
+    return (
+        <Picker
+            name="Account"
+            label={profile.name}
+            value={profile.id}
+            options={movable.map(({ account, email }) => ({
+                value: account.id,
+                label: account.name,
+                description: account.id !== profile.id && running ? "Stops this turn and carries it on here" : email,
+            }))}
+            disabled={disabled}
+            onOpen={() => load(true)}
+            onSelect={(id) => {
+                const next = movable.find((row) => row.account.id === id)?.account;
+                if (next && next.id !== profile.id) moveChat(agent, next);
+            }}
+        />
+    );
+}
+
 export function ComposerPickers({
     agent,
     profile,
     setup,
     disabled,
+    running = false,
+    moveDisabled = true,
     agentLocked = false,
     onConfig,
     onAgent,
@@ -202,6 +273,9 @@ export function ComposerPickers({
     profile?: ProviderProfile;
     setup: Record<string, unknown>;
     disabled: boolean;
+    running?: boolean;
+    /** Whether the chat cannot move to another account now, which it can while a turn runs. */
+    moveDisabled?: boolean;
     agentLocked?: boolean;
     onAgent: (type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string) => void;
     onConfig: (config: SessionConfig, value: string) => void;
@@ -268,6 +342,7 @@ export function ComposerPickers({
                     />
                 );
             })}
+            {agentLocked && profile && <AccountPicker agent={agent} profile={profile} running={running} disabled={moveDisabled} />}
         </div>
     );
 }

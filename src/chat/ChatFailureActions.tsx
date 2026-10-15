@@ -1,7 +1,6 @@
-import { acpApi } from "../api/acp";
 import { agentApi } from "../api/agents";
 import { AccountSignIn } from "../agents/AccountSignIn";
-import { accountsOf, acpAccount, isAccountProvider } from "../agents/accounts";
+import { accountsOf, isAccountProvider, moveChat } from "../agents/accounts";
 import { useResource } from "../state/resources";
 import { agentAccountR } from "../state/resources.defs";
 import { useStore } from "../state/store";
@@ -9,19 +8,13 @@ import { reportError } from "../state/toast";
 import type { Agent, ProviderProfile } from "../state/types";
 import type { ChatFailure } from "./types";
 
-/* Carries the chat on to `account`. The core sends the failed prompt again
-   once the agent is up there. */
-function moveTo(agent: Agent, account: ProviderProfile): void {
-    void acpApi.switchAccount(agent.id, agent.type, acpAccount(account)).catch(reportError("Switch account"));
-}
-
 /** What the person can do about a turn that failed because of its account. */
 export function ChatFailureActions({ agent, profile, failure }: { agent: Agent; profile: ProviderProfile; failure: ChatFailure }) {
     if (!isAccountProvider(profile.provider)) return null;
     if (failure.kind === "signIn") {
         return (
             <span className="chat-error-actions">
-                <AccountSignIn profile={profile} label={`Sign in to ${profile.name}`} onSignedIn={() => moveTo(agent, profile)} />
+                <AccountSignIn profile={profile} label={`Sign in to ${profile.name}`} onSignedIn={() => moveChat(agent, profile)} />
             </span>
         );
     }
@@ -63,7 +56,7 @@ function ContinueOn({ agent, account, sessions }: { agent: Agent; account: Provi
     const status = useResource(agentAccountR, provider, account.configPath);
     if (!status.data?.signedIn || status.data.sessions !== sessions) return null;
     return (
-        <button type="button" onClick={() => moveTo(agent, account)}>
+        <button type="button" onClick={() => moveChat(agent, account)}>
             Continue on {account.name}
         </button>
     );
