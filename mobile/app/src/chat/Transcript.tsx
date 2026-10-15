@@ -352,7 +352,14 @@ export function Message({
       <Pressable onPress={tap} onLongPress={keepLongPress} accessibilityHint={tap ? 'Tap for copy and the time it came' : undefined}>
         {letters.map((letter, index) =>
           letter.kind === 'answer' ? (
-            <AnsweredQuestion key={index} asker={letter.asker} cli={letter.cli} question={letter.question} answer={letter.text} />
+            <AnsweredQuestion
+              key={index}
+              asker={letter.asker}
+              cli={letter.cli}
+              question={letter.question}
+              answer={letter.text}
+              secret={letter.secret}
+            />
           ) : (
             <View key={index}>
               <View style={styles.letterFrom}>

@@ -144,7 +144,7 @@ const InboxRow = memo(function InboxRow({
             {question.choices.map((choice, index) => (
               <Chip key={index} title={choice.label} busy={busy} onPress={() => onAct({ item, given: { choice: index } })} />
             ))}
-            <Chip title="Reply…" onPress={() => onOpen(item)} />
+            <Chip title={question.secret ? 'Answer privately…' : 'Reply…'} onPress={() => onOpen(item)} />
           </View>
         ) : null}
         {item.kind === 'assumption' && full ? (

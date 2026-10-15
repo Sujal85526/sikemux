@@ -11,7 +11,10 @@ export type ChatQuestions = {
   /** Answered from this phone, until the transcript holds the answer. */
   answered: { question: AgentQuestion; answer: string }[];
   busy: string | null;
-  /** The question whatever the composer sends answers, while one is open and the person has not taken the chip off. */
+  /**
+   * The question whatever the composer sends answers, while one is open and the person has not taken the chip off; never
+   * a secret one, which has its own masked field.
+   */
   composing: AgentQuestion | null;
   /** The person chose to write the answer. */
   writing: boolean;
@@ -64,8 +67,8 @@ export function useQuestions(
     () => sent.flatMap(({ question, answer }) => (answer === null || arrived.has(question.asked) ? [] : [{ question, answer }])),
     [sent, arrived],
   );
-  const writing = unanswered.find((question) => question.id === writingId) ?? null;
-  const composing = writing ?? open.find((question) => !dismissed.has(question.id)) ?? null;
+  const writing = unanswered.find((question) => question.id === writingId && !question.secret) ?? null;
+  const composing = writing ?? open.find((question) => !question.secret && !dismissed.has(question.id)) ?? null;
 
   const answer = useCallback(
     async (question: AgentQuestion, given: QuestionAnswer, shown: string | null) => {

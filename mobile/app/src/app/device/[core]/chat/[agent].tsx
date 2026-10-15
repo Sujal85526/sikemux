@@ -390,6 +390,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                               cli={question.cli}
                               question={question.asked}
                               answer={answer}
+                              secret={question.secret}
                             />
                           ))}
                           {questions.open.map((question) => (
@@ -404,6 +405,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                 questions.write(question);
                                 input.current?.focus();
                               }}
+                              onSecret={(text) => questions.answer(question, { answer: text }, '')}
                             />
                           ))}
                           {questions.assumed.map((question) => (

@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { viaNote, type AgentQuestion } from '@mac/agents/agentQuestions';
+import { SECRET_ANSWERED, secretNote, viaNote, type AgentQuestion } from '@mac/agents/agentQuestions';
+import { Chip, Field } from '@/ui/controls';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { fonts, type Palette, useColors, useStyles } from '@/ui/theme';
@@ -20,8 +21,21 @@ function AskedBy({ cli, ticket, children }: { cli: string; ticket?: string; chil
   );
 }
 
-/** A question as it reads once answered: its words, and the answer in one line. */
-export function AnsweredQuestion({ asker, cli, question, answer }: { asker: string; cli: string; question: string; answer: string }) {
+/** A question as it reads once answered: its words, and the answer in one line, or only that it was answered when the answer is a secret. */
+export function AnsweredQuestion({
+  asker,
+  cli,
+  question,
+  answer,
+  secret,
+}: {
+  asker: string;
+  cli: string;
+  question: string;
+  answer: string;
+  secret: boolean;
+}) {
+  const colors = useColors();
   const styles = useStyles(makeStyles);
   return (
     <View>
@@ -31,16 +45,62 @@ export function AnsweredQuestion({ asker, cli, question, answer }: { asker: stri
       <Text style={styles.prose} selectable>
         {question}
       </Text>
-      <Text style={styles.answered} selectable>
-        You answered: <Text style={styles.answer}>{answer}</Text>
-      </Text>
+      {secret ? (
+        <View style={styles.private}>
+          <Icon name="IconLock" size={12} color={colors.inkFaint} />
+          <Text style={styles.privateText}>{SECRET_ANSWERED}</Text>
+        </View>
+      ) : (
+        <Text style={styles.answered} selectable>
+          You answered: <Text style={styles.answer}>{answer}</Text>
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/** The answer to a secret question, typed into a masked field that keeps nothing once it is sent. */
+function SecretAnswer({ question, busy, onSend }: { question: AgentQuestion; busy: boolean; onSend: (text: string) => Promise<boolean> }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  const [text, setText] = useState('');
+  const send = () => {
+    if (text) void onSend(text).then((sent) => sent && setText(''));
+  };
+  return (
+    <View style={styles.secret}>
+      <View style={styles.secretField}>
+        <Field
+          value={text}
+          onChangeText={setText}
+          onSubmitEditing={send}
+          secureTextEntry
+          autoComplete="off"
+          autoCorrect={false}
+          autoCapitalize="none"
+          spellCheck={false}
+          textContentType="none"
+          importantForAutofill="no"
+          returnKeyType="send"
+          editable={!busy}
+          placeholder="Type the answer"
+          accessibilityLabel={`Private answer to ${question.name}`}
+          style={styles.secretInput}
+        />
+        <Chip title="Send" primary busy={busy} onPress={send} />
+      </View>
+      <View style={styles.private}>
+        <Icon name="IconLock" size={12} color={colors.inkFaint} />
+        <Text style={styles.privateText}>{secretNote(question.name)}</Text>
+      </View>
     </View>
   );
 }
 
 /**
  * A question an agent put to the person, at the end of its chat: its words as prose, then the answers it offered as
- * numbered rows. "Something else…" hands over to the composer. A watching phone shows the question without the rows.
+ * numbered rows. "Something else…" hands over to the composer; a secret is typed into its own masked field instead, so
+ * it never reaches the composer's draft. A watching phone shows the question without the rows.
  */
 export function OpenQuestion({
   question,
@@ -49,6 +109,7 @@ export function OpenQuestion({
   writing,
   onChoose,
   onWrite,
+  onSecret,
 }: {
   question: AgentQuestion;
   canAnswer: boolean;
@@ -56,6 +117,7 @@ export function OpenQuestion({
   writing: boolean;
   onChoose: (choice: number) => void;
   onWrite: () => void;
+  onSecret: (text: string) => Promise<boolean>;
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
@@ -87,12 +149,15 @@ export function OpenQuestion({
       <Text style={styles.prose} selectable>
         {question.text}
       </Text>
-      {canAnswer ? (
+      {canAnswer && (question.choices.length > 0 || !question.secret) ? (
         <View style={styles.options}>
           {question.choices.map((choice, index) => row(index, index + 1, choice.label, choice.detail, false, () => onChoose(index)))}
-          {row('other', question.choices.length + 1, 'Something else…', writing ? 'answering below' : undefined, true, onWrite)}
+          {question.secret
+            ? null
+            : row('other', question.choices.length + 1, 'Something else…', writing ? 'answering below' : undefined, true, onWrite)}
         </View>
       ) : null}
+      {canAnswer && question.secret ? <SecretAnswer question={question} busy={busy} onSend={onSecret} /> : null}
     </View>
   );
 }
@@ -163,4 +228,9 @@ const makeStyles = (colors: Palette) =>
     check: { height: 18, justifyContent: 'center' },
     assumedText: { flex: 1, fontFamily: fonts.ui, fontSize: 12.5, lineHeight: 18, color: colors.inkDim },
     act: { fontFamily: fonts.uiMedium, color: colors.ink },
+    secret: { marginTop: 8, marginBottom: 6, gap: 8 },
+    secretField: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    secretInput: { flex: 1 },
+    private: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 4, marginBottom: 8 },
+    privateText: { flex: 1, fontFamily: fonts.ui, fontSize: 12.5, lineHeight: 18, color: colors.inkDim },
   });

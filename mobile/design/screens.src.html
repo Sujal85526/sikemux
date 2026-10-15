@@ -206,6 +206,12 @@
   .rows .row .s.asked { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: var(--ink-dim); }
   .ask-answered { margin: 4px 0 8px; color: var(--ink-dim); font-size: 13px; }
   .ask-answered b { color: var(--ink); font-weight: 400; }
+  .ask-secret { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; }
+  .ask-secret .field { flex: 1; height: 40px; padding: 0 12px; display: flex; align-items: center; border-radius: 10px; border: 1px solid var(--acc); background: var(--surface-sunken); color: var(--ink); font-size: 14.5px; letter-spacing: 2px; }
+  .ask-secret .field.ph { border-color: var(--border); color: var(--ink-faint); letter-spacing: 0; }
+  .ask-secret .chip { height: 32px; padding: 0 12px; border-radius: 10px; display: inline-flex; align-items: center; font-size: 13.5px; font-weight: 500; background: var(--ink); color: var(--bg); }
+  .ask-private { display: flex; align-items: flex-start; gap: 6px; margin: 6px 0 8px; color: var(--ink-dim); font-size: 12.5px; line-height: 1.44; }
+  .ask-private svg { flex: none; margin-top: 3px; color: var(--ink-faint); }
   .answering { display: flex; align-items: center; gap: 7px; align-self: flex-start; max-width: 100%; margin: 2px 4px 4px; padding: 6px 6px 6px 9px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-sunken); color: var(--ink-dim); font-size: 12px; }
   .answering span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .answering .x { flex: none; width: 20px; height: 20px; border-radius: 999px; background: var(--ink); color: var(--bg); display: grid; place-items: center; }
@@ -2080,6 +2086,37 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>Answering in your own words</b><div class="note">Something else… takes the keyboard to the composer, whose Answering Maple chip says that what is sent next answers the question rather than starting a turn of its own; × takes the chip off and the composer sends normal messages again. Once answered, the question keeps its words and its answers fold into one line, You answered: …, which is also how the answer reads in the transcript afterwards. A question the agent went on without, on an assumption it stated, is one dim line under a check: Fine tells it the assumption holds, and Change opens the composer with the chip to answer it.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}</span><span class="mid"><span class="codex">{{IconCodex:17}}</span><span class="named"><b>Maple</b><i>·</i><em>Move the ledger import</em></span></span><span class="icon-btn">{{IconMoreVertical:16}}</span></div>
+        <div class="chat" style="justify-content:flex-start">
+          <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asked you</span></div>
+          <div class="prose" style="margin-top:0">What is the API token for the ledger sandbox?</div>
+          <div class="ask-private">{{IconLock:12}}<span>Answered, kept private</span></div>
+          <div class="prose">The sandbox import ran clean. One more for the staging copy.</div>
+          <div class="ask-who"><span class="codex">{{IconCodex:14}}</span><span><b>Maple</b> asks you</span><span class="ticket">PROJ-12</span></div>
+          <div class="prose" style="margin-top:0">What is the password for the staging database? I need it to check the migrated amounts.</div>
+          <div class="ask-secret"><span class="field">••••••••••••</span><span class="chip">Send</span></div>
+          <div class="ask-private">{{IconLock:12}}<span>Kept private. Maple reads it from a file only your account can open, and it never shows in the chat.</span></div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <div class="ta ph">Send to queue behind the running turn</div>
+            <div class="bar">
+              <span class="ib">{{IconPlus:18}}</span>
+              <span class="yolo on">{{IconShieldBolt:13}}<b>yolo</b></span>
+              <span class="picker model"><span class="codex">{{IconCodex:16}}</span>GPT-5.5<span class="ch">{{IconChevron:10}}</span></span>
+              <span class="spacer"></span>
+              <span class="send off">{{IconArrowUp:16}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A secret question</b><div class="note">The agent asked for something secret, such as a password or a token, so the question came straight to the person. Under its words sits a masked field with Send beside it, and a dim line under a lock saying the answer stays private: the agent reads it from a file only the person's account can open, and it never shows in the chat. The field is never the composer, so the composer keeps no Answering chip and no draft of it, and nothing is corrected, suggested or saved to the keyboard or the password manager. Any answers the agent offered still sit above it as rows. Once sent, the answer folds into Answered, kept private, here and in the transcript afterwards, never its text. In the inbox its chip reads Answer privately… and opens the chat. A watching phone shows the question without the field.</div></figcaption>
     </figure>
 
     <figure><div class="phone"><div class="island"></div>
