@@ -337,6 +337,10 @@ function serveDemoFiles(server: ViteDevServer | PreviewServer, port: number) {
   });
   server.middlewares.use("/__showcase", async (request, response) => {
     if (request.url === `/preview/${encodeURIComponent(PANE_IMAGE)}`) {
+      if (!existsSync(PANE_IMAGE_FILE)) {
+        response.statusCode = 404;
+        return response.end();
+      }
       response.setHeader("Content-Type", "image/jpeg");
       return response.end(readFileSync(PANE_IMAGE_FILE));
     }
@@ -362,6 +366,10 @@ function serveDemoFiles(server: ViteDevServer | PreviewServer, port: number) {
         const chunks: Buffer[] = [];
         for await (const chunk of request) chunks.push(chunk as Buffer);
         chosenWallpaper = Buffer.concat(chunks);
+        return response.end();
+      }
+      if (!chosenWallpaper && !existsSync(WALLPAPER_FILE)) {
+        response.statusCode = 404;
         return response.end();
       }
       return response.end(chosenWallpaper ?? readFileSync(WALLPAPER_FILE));
