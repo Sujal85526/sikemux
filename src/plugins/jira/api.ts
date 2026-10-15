@@ -65,6 +65,7 @@ export interface JiraTransition {
     id: string;
     name: string;
     to: string;
+    toCategory: StatusCategory;
 }
 
 export interface JiraIssue extends JiraIssueSummary {

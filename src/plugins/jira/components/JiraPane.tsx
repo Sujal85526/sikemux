@@ -537,17 +537,18 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
             <div className="jira-detail-body">
                 <aside className="jira-detail-side">
                     <Dropdown
-                        label="Status"
-                        value=""
+                        label={`Status: ${issue.status}`}
+                        value={issue.status}
                         title="Move this issue along its workflow"
+                        className={`jira-status-button jira-status-${issue.statusCategory || "new"}`}
                         options={issue.transitions.map((transition) => ({
                             value: transition.id,
-                            label: transition.name,
-                            detail: `→ ${transition.to}`,
+                            label: transition.to,
+                            meta: transition.name.toLowerCase() === transition.to.toLowerCase() ? undefined : transition.name,
+                            className: `jira-status jira-status-${transition.toCategory || "new"}`,
                         }))}
                         onChange={(id) => void run("Move issue", () => jiraApi.transition(issue.key, id, site || undefined))}
                         disabled={busy || issue.transitions.length === 0}
-                        trailing={<StatusChip status={issue.status} category={issue.statusCategory} />}
                     />
                     <section className="jira-fields" aria-label="Details">
                         <div className="jira-fields-title">Details</div>

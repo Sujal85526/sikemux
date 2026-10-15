@@ -76,6 +76,7 @@ pub struct Transition {
     pub name: String,
     /// The status the issue is in after taking it.
     pub to: String,
+    pub to_category: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -210,6 +211,7 @@ pub fn transitions(body: &Value) -> Vec<Transition> {
                     id: text(transition.get("id")).unwrap_or_default(),
                     name: text(transition.get("name")).unwrap_or_default(),
                     to: text(transition.pointer("/to/name")).unwrap_or_default(),
+                    to_category: text(transition.pointer("/to/statusCategory/key")).unwrap_or_default(),
                 })
                 .collect()
         })

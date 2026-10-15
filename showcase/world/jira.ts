@@ -372,8 +372,9 @@ const full = (key: string) => {
     transitions: COLUMNS.filter((_, index) => index !== found.column).map(
       (column, index) => ({
         id: String(index + 11),
-        name: `Move to ${column.name}`,
+        name: column.name,
         to: column.name,
+        toCategory: column.category,
       }),
     ),
     subtasks: [],
