@@ -144,7 +144,11 @@ fn capture(session: &Session, directory: &Path) -> CoreResult<SessionRecord> {
         .shell
         .as_ref()
         .map(|shell| shell.snapshot());
-    let ssh = parser.callbacks().shell.as_ref().and_then(|shell| shell.ssh());
+    let ssh = parser
+        .callbacks()
+        .shell
+        .as_ref()
+        .and_then(|shell| shell.ssh());
     let window_title = parser.callbacks().window_title.clone();
     drop(parser);
     write_private(&blob_path(directory, session.id, "replay"), &replay)?;
@@ -700,7 +704,14 @@ fn adopt_session(
             kind: record.kind,
             pid: record.pid,
             owner: record.owner,
-            parser: restored_parser(rows, cols, &replay, record.shell, record.ssh, record.window_title),
+            parser: restored_parser(
+                rows,
+                cols,
+                &replay,
+                record.shell,
+                record.ssh,
+                record.window_title,
+            ),
             shell_protocol: record.shell_protocol,
             last_activity_ms: record.last_activity_ms,
             trimmed: record.trimmed,

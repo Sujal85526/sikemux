@@ -234,7 +234,11 @@ impl Session {
             .parser
             .lock()
             .map(|parser| {
-                let ssh = parser.callbacks().shell.as_ref().and_then(|shell| shell.ssh());
+                let ssh = parser
+                    .callbacks()
+                    .shell
+                    .as_ref()
+                    .and_then(|shell| shell.ssh());
                 (parser.screen().size(), ssh)
             })
             .unwrap_or_default();

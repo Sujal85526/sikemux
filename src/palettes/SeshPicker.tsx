@@ -281,7 +281,14 @@ export function SeshPicker() {
                                     }}>
                                     <button className={`picker-item${i === sel ? " sel" : ""}`} onClick={() => activate(it)}>
                                         <span className={`picker-icon ${iconClass}`}>
-                                            {pluginIcon ?? (isFolder ? <IconFolder size={14} /> : isHost ? <IconServer size={14} /> : <IconTerminal size={14} />)}
+                                            {pluginIcon ??
+                                                (isFolder ? (
+                                                    <IconFolder size={14} />
+                                                ) : isHost ? (
+                                                    <IconServer size={14} />
+                                                ) : (
+                                                    <IconTerminal size={14} />
+                                                ))}
                                         </span>
                                         <span className="picker-name">{it.name}</span>
                                         <span className="picker-sub">{it.sub}</span>

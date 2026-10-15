@@ -11,7 +11,8 @@ import { attachSession } from "./shared";
 import { defaultWorkbenchItemTitle } from "../../workbench/registry";
 
 function stripImportedStartup(node: Window["root"]): Window["root"] {
-    if (node.type === "pane") return { ...node, startup: undefined, title: node.kind === "terminal" ? defaultWorkbenchItemTitle("terminal") : node.title };
+    if (node.type === "pane")
+        return { ...node, startup: undefined, title: node.kind === "terminal" ? defaultWorkbenchItemTitle("terminal") : node.title };
     return { ...node, children: node.children.map(stripImportedStartup) };
 }
 
