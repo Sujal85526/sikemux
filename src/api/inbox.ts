@@ -1,3 +1,4 @@
+import type { AgentMessageLog } from "../agents/agentMessages";
 import { invokeCommand as invoke } from "./invoke";
 
 export type InboxTier = "needs" | "review" | "finished" | "progress";
@@ -50,6 +51,8 @@ export interface Inbox {
     items: InboxItem[];
     working: number;
     away: boolean;
+    /** When each project, by its path, last logged a message between its agents. */
+    agentMessages: Record<string, number>;
 }
 
 /** What finished, failed and still waits since the person last left. */
@@ -67,4 +70,5 @@ export const INBOX_EVENT = "inbox_changed";
 export const inboxApi = {
     read: () => invoke<Inbox>("inbox_call", { method: "inbox", params: null }),
     digest: () => invoke<InboxDigest>("inbox_call", { method: "digest", params: {} }),
+    agentMessages: (project: string) => invoke<AgentMessageLog>("inbox_call", { method: "agentMessages", params: { project } }),
 };

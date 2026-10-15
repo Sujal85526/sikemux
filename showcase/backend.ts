@@ -35,7 +35,7 @@ import {
 } from "./world/projects";
 import { terminalReplay } from "./world/terminals";
 import { AGENTS, demoSnapshot } from "./world/workspace";
-import { DEMO_BOARD } from "./world/board";
+import { DEMO_BOARD, DEMO_MESSAGES } from "./world/board";
 import type { BoardCard } from "../src/agents/agentBoard";
 
 type Args = Record<string, unknown>;
@@ -509,6 +509,14 @@ export class ShowcaseBackend implements IpcTransport {
         project: SIKEMUX,
         parent: null,
       };
+    });
+    this.on("inbox_call", ({ method, params }) => {
+      if (method === "agentMessages")
+        return {
+          project: (params as { project: string }).project,
+          entries: DEMO_MESSAGES,
+        };
+      return { items: [], working: 0, away: false, agentMessages: {} };
     });
     let board = DEMO_BOARD;
     this.on("agent_board_call", ({ method, params }) => {

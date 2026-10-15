@@ -1,3 +1,4 @@
+import type { LoggedMessage } from "../../src/agents/agentMessages";
 import type {
   BoardCard,
   CardRun,
@@ -170,3 +171,40 @@ export const DEMO_BOARD: ProjectBoard = {
     }),
   ],
 };
+
+const MINUTE = 60_000;
+const NAMES: Record<string, string> = {
+  [OTTER.id]: OTTER.name,
+  [MAPLE.id]: MAPLE.name,
+  "agent-flint": "Flint",
+  "agent-comet": "Comet",
+};
+const logged = (
+  ago: number,
+  from: string,
+  to: string,
+  kind: LoggedMessage["kind"],
+  outcome: LoggedMessage["outcome"],
+): LoggedMessage => ({
+  at: now - ago * MINUTE,
+  from,
+  fromName: NAMES[from],
+  kind,
+  to,
+  toName: NAMES[to],
+  outcome,
+});
+
+/** The project's log of messages between agents, newest first. */
+export const DEMO_MESSAGES: LoggedMessage[] = [
+  logged(1, OTTER.id, "agent-flint", "message", "steered"),
+  logged(3, "agent-comet", OTTER.id, "question", "waiting"),
+  logged(6, MAPLE.id, "agent-flint", "answer", "delivered"),
+  logged(9, "agent-flint", OTTER.id, "report", "newTurn"),
+  logged(14, MAPLE.id, "agent-flint", "answer", "waiting"),
+  logged(22, OTTER.id, "agent-comet", "message", "dropped"),
+  logged(31, OTTER.id, "agent-comet", "message", "waiting"),
+  logged(40, "agent-flint", MAPLE.id, "question", "steered"),
+  logged(52, OTTER.id, MAPLE.id, "message", "refused"),
+  logged(64, "person", OTTER.id, "message", "newTurn"),
+];

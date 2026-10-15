@@ -20,6 +20,7 @@ import { useCardDrag } from "../ui/kanbanDrag";
 import { Switch } from "../ui/Controls";
 import { AutoPanel } from "./AutoPanel";
 import { CardPanel } from "./CardPanel";
+import { MessagesPanel } from "./MessagesPanel";
 import { AgentMark } from "../agents/AgentMark";
 import { Owner } from "./cardParts";
 import "../styles/board.css";
@@ -48,7 +49,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     const [words, setWords] = useState("");
     const [fromJira, setFromJira] = useState(false);
     const [onlyNeeds, setOnlyNeeds] = useState(false);
-    const [selected, setSelected] = useState<number | "new" | "auto" | null>(null);
+    const [selected, setSelected] = useState<number | "new" | "auto" | "messages" | null>(null);
     const [moving, setMoving] = useState<Record<number, CardStatus>>({});
 
     const refresh = () => readBoard(folder);
@@ -98,7 +99,7 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
     }
     const bands = [...teams.entries()].sort(([a], [b]) => (a === null ? 1 : b === null ? -1 : 0));
     const current = typeof selected === "number" ? byId.get(selected) : undefined;
-    const panel = selected === "new" || selected === "auto" || current;
+    const panel = selected === "new" || selected === "auto" || selected === "messages" || current;
     const autoOn = auto?.settings.auto ?? false;
     const setAuto = (on: boolean) =>
         agentBoardApi
@@ -233,6 +234,14 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
                                 {autoOn && auto ? `Auto · ${auto.running} of ${auto.settings.slots} running` : "Auto"}
                             </button>
                         </span>
+                        <button
+                            type="button"
+                            className="board-auto-label"
+                            aria-pressed={selected === "messages"}
+                            title="Messages between this project's agents"
+                            onClick={() => setSelected("messages")}>
+                            Messages
+                        </button>
                         <button type="button" className="kanban-button" onClick={() => setSelected("new")}>
                             Add card
                         </button>
@@ -291,6 +300,8 @@ export function BoardPane({ folder, visible }: { folder: string; visible: boolea
             </section>
             {selected === "auto" ? (
                 <AutoPanel folder={folder} auto={auto ?? null} onClose={() => setSelected(null)} />
+            ) : selected === "messages" ? (
+                <MessagesPanel folder={folder} onClose={() => setSelected(null)} />
             ) : (
                 panel && (
                     <CardPanel

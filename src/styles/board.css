@@ -405,3 +405,69 @@
     display: flex;
     gap: 6px;
 }
+
+.board-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.board-message {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.board-message.held {
+    border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+    background: color-mix(in srgb, var(--warn) 7%, transparent);
+}
+
+.board-message.failed {
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+    background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+
+.board-message-who {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: var(--text-sm);
+}
+
+.board-message-who b {
+    overflow: hidden;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.board-message-to {
+    color: var(--text-tertiary);
+}
+
+.board-message-at {
+    flex: none;
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-tertiary);
+}
+
+.board-message.held .board-message-outcome {
+    color: var(--warn);
+}
+
+.board-message.failed .board-message-outcome {
+    color: var(--danger);
+}
