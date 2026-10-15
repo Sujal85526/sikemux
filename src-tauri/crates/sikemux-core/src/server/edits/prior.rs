@@ -91,6 +91,7 @@ fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 impl Priors {
+    /// What was kept in `folder`, less the files that have gone since.
     pub(super) fn load(folder: Option<PathBuf>) -> Self {
         let kept: HashMap<String, Kept> = folder
             .as_ref()
@@ -98,13 +99,23 @@ impl Priors {
             .and_then(|index| serde_json::from_slice(&index).ok())
             .unwrap_or_default();
         let bytes = kept.values().map(|kept| kept.len).sum();
-        Self {
+        let mut priors = Self {
             folder,
             kept,
             unknown: HashSet::new(),
             bytes,
             changed: false,
+        };
+        let gone: Vec<String> = priors
+            .kept
+            .keys()
+            .filter(|path| !Path::new(path).exists())
+            .cloned()
+            .collect();
+        for path in gone {
+            priors.forget(&path);
         }
+        priors
     }
 
     pub(super) fn before(&self, path: &str) -> Before {

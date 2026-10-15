@@ -187,7 +187,10 @@ impl Outside {
 
     /// Looks at the changes whose grace has passed, lets go of what was
     /// committed, and stops watching checkouts no agent works in, including
-    /// one between commands of a long turn. When it wants to run next.
+    /// one between commands of a long turn. A checkout no longer watched lets
+    /// go of what it kept of files since committed, which a linked worktree's
+    /// watch cannot see happen, and one taken away lets go of all of it. When
+    /// it wants to run next.
     pub(super) fn settle(&self, core: &Arc<Core>, store: &Store) -> Option<u64> {
         let now = unix_ms();
         let checkouts: Vec<(PathBuf, String, Arc<Mutex<Seen>>, u64)> = lock(&self.checkouts)
@@ -205,6 +208,15 @@ impl Outside {
         let mut next = None;
         let mut agents = None;
         for (top, project, seen, worked_at) in checkouts {
+            if !top.exists() {
+                lock(&self.checkouts).remove(&top);
+                store.priors(&project, |priors| {
+                    for path in priors.under(&top) {
+                        priors.forget(&path);
+                    }
+                });
+                continue;
+            }
             let (due, committed, overflowed) = {
                 let mut seen = lock(&seen);
                 let mut due = Vec::new();
@@ -255,10 +267,13 @@ impl Outside {
                 })
             };
             let (shells, terminals) = core.collisions.at_work(core, agents, &project, &top, now);
-            let mut checkouts = lock(&self.checkouts);
             if !mid_turn && shells.is_empty() && terminals.is_empty() {
-                checkouts.remove(&top);
-            } else if let Some(checkout) = checkouts.get_mut(&top) {
+                lock(&self.checkouts).remove(&top);
+                let kept = store.priors(&project, |priors| priors.under(&top));
+                if !kept.is_empty() {
+                    reconcile(store, &top, &project, &seen, Look::Kept(&kept));
+                }
+            } else if let Some(checkout) = lock(&self.checkouts).get_mut(&top) {
                 checkout.worked_at = now;
                 next = sooner(next, Some(now + IDLE_MS));
             }
