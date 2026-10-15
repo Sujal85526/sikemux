@@ -72,7 +72,8 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     } catch {
         return;
     }
-    const chats = await deps.chats.list().catch((): AcpChat[] => []);
+    const listed = await deps.chats.list().catch(() => null);
+    const chats = listed ?? [];
     if (chats.some((chat) => chat.startedBy === null)) await deps.boards().catch(() => {});
     const boards = getState().agentBoards;
     for (const chat of chats) if (chat.startedBy !== null || runOfAgent(boards, chat.agentId)) cmd.adoptChat(chat);
@@ -95,10 +96,14 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     }
 
     const candidates = unclaimedTerminals(earlier, claimed);
-    if (candidates.length === 0 && chats.length === 0) return;
+    if (candidates.length === 0 && listed?.length === 0) return;
     deps.schedule(() => {
         const stillClaimed = claimedSessionIds(getState());
         for (const id of candidates) if (!stillClaimed.has(id)) void deps.kill(id).catch(() => {});
-        for (const chat of chats) if (chat.startedBy === null && !chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
+        const stopUnclaimed = (kept: AcpChat[]) => {
+            for (const chat of kept) if (chat.startedBy === null && !chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
+        };
+        if (listed) stopUnclaimed(listed);
+        else void deps.chats.list().then(stopUnclaimed, () => {});
     }, UNCLAIMED_GRACE_MS);
 }
