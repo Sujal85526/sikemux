@@ -177,13 +177,13 @@
 .jira-list-pane {
     display: flex;
     flex-direction: column;
-    padding: 0 6px 6px;
+    padding: 0 8px 8px;
 }
 
 .jira-issues {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 6px;
 }
 
 .jira-list-pane > .jira-issues,
@@ -249,24 +249,33 @@
     color: var(--text-tertiary);
 }
 
+/* Each issue is a card, raised the same way as the board's. */
 .jira-row {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 8px 10px;
+    gap: 6px;
+    padding: 10px 12px;
     border: 1px solid transparent;
+    border-radius: 8px;
     text-align: left;
     color: var(--text-secondary);
-    transition: background var(--dur-1) var(--ease-out);
+    background: var(--gray-200);
+    box-shadow:
+        0 1px 1px rgb(0 0 0 / 0.5),
+        0 0 1px rgb(0 0 0 / 0.5);
+    transition:
+        border-color var(--dur-1) var(--ease-out),
+        background var(--dur-1) var(--ease-out);
 }
 
 .jira-row:hover {
-    background: var(--surface-hover);
+    border-color: var(--border-strong);
+    background: var(--gray-300);
 }
 
 .jira-row.active {
-    background: var(--surface-selected);
     border-color: var(--border-selected);
+    background: color-mix(in oklab, var(--acc) 16%, var(--gray-200));
 }
 
 .jira-row-top,
@@ -801,6 +810,18 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+/* A short column ends with its cards rather than running down to the tallest one. */
+.jira-swimlane > .kanban-columns {
+    flex: none;
+    align-items: flex-start;
+}
+
+/* With several people, each person's columns stay short enough to reach the next one; a column scrolls instead. */
+.jira-swimlane:not(:only-child) .kanban-column {
+    max-height: 62vh;
+    overflow-y: auto;
 }
 
 .jira-swimlane + .jira-swimlane {
