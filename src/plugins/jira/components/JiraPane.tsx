@@ -20,6 +20,7 @@ import {
     IconStar,
     IconTimer,
     IconUser,
+    IconUserMinus,
     Markdown,
     ResizeHandle,
     SkeletonRows,
@@ -593,6 +594,7 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                             className="jira-chip"
                             disabled={busy}
                             onClick={() => void run("Assign", () => jiraApi.assign(issue.key, { me: true }, site || undefined))}>
+                            <IconUser size={12} />
                             Assign to me
                         </button>
                         <button
@@ -600,9 +602,11 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                             className="jira-chip"
                             disabled={busy || !issue.assignee}
                             onClick={() => void run("Unassign", () => jiraApi.assign(issue.key, { accountId: null }, site || undefined))}>
+                            <IconUserMinus size={12} />
                             Unassign
                         </button>
                         <button type="button" className="jira-chip" disabled={busy} onClick={() => setAssigning((open) => !open)}>
+                            <IconSearch size={12} />
                             Assign…
                         </button>
                     </div>

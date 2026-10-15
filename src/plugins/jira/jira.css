@@ -476,7 +476,14 @@
 }
 
 .jira-status-row .jira-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     height: 28px;
+}
+
+.jira-status-row .jira-chip > svg {
+    color: var(--text-tertiary);
 }
 
 @container (min-width: 540px) {

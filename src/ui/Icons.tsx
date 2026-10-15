@@ -188,6 +188,12 @@ export const IconUser = makeSvgIcon(
         <path d="M3.6 13c0-2.5 2-4 4.4-4s4.4 1.5 4.4 4" />
     </>,
 );
+export const IconUserMinus = makeSvgIcon(
+    <>
+        <circle cx="6.6" cy="5.2" r="2.5" />
+        <path d="M2.2 13c0-2.5 2-4 4.4-4s4.4 1.5 4.4 4M11.4 6.2h3.2" />
+    </>,
+);
 export const IconClock = makeSvgIcon(
     <>
         <circle cx="8" cy="8" r="5.3" />
