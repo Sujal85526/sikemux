@@ -1047,7 +1047,7 @@
 .workspace-rail[data-density="compact"] .agent-row.two-line {
     height: 40px;
     align-items: flex-start;
-    padding-top: 5px;
+    padding-top: 4px;
 }
 .agent-row.two-line > .agent-glyph {
     margin-top: -2px;
@@ -1060,7 +1060,6 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    margin-top: 1px;
     overflow: hidden;
     color: var(--text-tertiary);
     font-size: var(--text-2xs);
@@ -1079,7 +1078,7 @@
 }
 .agent-row-wrap:has(> .agent-row.two-line) > .row-status,
 .agent-row-wrap:has(> .agent-row.two-line) > .row-x {
-    top: 14px;
+    top: 13px;
 }
 /* Joins the agent's mark to its tree; a team's line already does this through drawTeamLines. */
 .agent-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-tree):not(:has(> .agent-row.active))::before {
@@ -1092,7 +1091,8 @@
     background: var(--tree-spine);
 }
 .agent-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-row.two-line):has(> .agent-tree)::before {
-    height: 14px;
+    top: 25px;
+    height: 15px;
 }
 .agent-tree .agent-tree-items {
     display: flex;
