@@ -73,19 +73,22 @@
     color: var(--ink);
     font-family: var(--ui);
     font-size: var(--text-sm);
-    font-weight: var(--weight-semibold);
+    font-weight: var(--weight-medium);
     letter-spacing: var(--tracking-tight);
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.agent-surface-title .agent-label-name {
+    font-size: var(--text-xs);
 }
 
 .agent-surface-menu {
     display: grid;
     place-items: center;
     flex: none;
-    width: 22px;
+    width: 24px;
     height: 24px;
-    margin-left: -2px;
     padding: 0;
     border: 1px solid transparent;
     background: transparent;
