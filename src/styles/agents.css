@@ -1038,6 +1038,9 @@
 .tab-wrap.agent-tab .tab-label {
     color: var(--text-primary);
 }
+.agent-row.recent:not(:hover) {
+    color: var(--text-tertiary);
+}
 .agent-row-text {
     flex: 1;
     min-width: 0;
