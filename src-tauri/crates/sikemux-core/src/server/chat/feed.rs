@@ -423,6 +423,21 @@ fn asks(event: &ChatEvent, request_id: &str) -> bool {
         && event.payload.get("requestId").and_then(Value::as_str) == Some(request_id)
 }
 
+/// Whether `event` is where the person's message `message_id` starts.
+fn names_message(event: &ChatEvent, message_id: &str) -> bool {
+    match event.kind {
+        ChatEventKind::Prompt => event.payload.get("messageId"),
+        ChatEventKind::SessionUpdate
+            if session_update_kind(&event.payload) == Some("user_message_chunk") =>
+        {
+            event.payload.pointer("/update/messageId")
+        }
+        _ => None,
+    }
+    .and_then(Value::as_str)
+        == Some(message_id)
+}
+
 fn session_update_kind(payload: &Value) -> Option<&str> {
     payload.pointer("/update/sessionUpdate")?.as_str()
 }
@@ -851,33 +866,28 @@ impl Replay {
         }
     }
 
-    /// Forgets the person's message `message_id` and everything after it.
-    /// A message too old to still be kept here takes the whole replay with it.
+    /// Forgets the person's message `message_id` and everything after it,
+    /// looking for it on disk when it is older than the replay. When neither
+    /// holds it, it is gone only if the replay dropped events it never wrote
+    /// down, and then everything kept came after it.
     pub(crate) fn rewind(&mut self, message_id: &str) {
-        let names = |entry: &Entry| {
-            match entry.event.kind {
-                ChatEventKind::Prompt => entry.event.payload.get("messageId"),
-                ChatEventKind::SessionUpdate
-                    if session_update_kind(&entry.event.payload) == Some("user_message_chunk") =>
-                {
-                    entry.event.payload.pointer("/update/messageId")
-                }
-                _ => None,
-            }
-            .and_then(Value::as_str)
-                == Some(message_id)
-        };
-        let found = self.entries.iter().position(names);
-        let position = found.unwrap_or(0);
-        let index = match found {
-            Some(position) => self.entries[position].index,
-            None => self
+        let names = |event: &ChatEvent| names_message(event, message_id);
+        let index = match self.entries.iter().find(|entry| names(&entry.event)) {
+            Some(entry) => entry.index,
+            None => match self
                 .history
                 .as_ref()
-                .and_then(History::first)
-                .or_else(|| self.entries.front().map(|entry| entry.index))
-                .unwrap_or(self.next_index),
+                .and_then(|history| history.find(names))
+            {
+                Some(index) => index,
+                None if self.trimmed && !self.keeps_history() => self
+                    .entries
+                    .front()
+                    .map_or(self.next_index, |entry| entry.index),
+                None => return,
+            },
         };
+        let position = self.entries.partition_point(|entry| entry.index < index);
         let dropped: usize = self
             .entries
             .drain(position..)
@@ -1574,7 +1584,39 @@ mod tests {
         replay.rewind("u2");
         assert_eq!(replay.events().len(), 2);
         replay.rewind("missing");
-        assert!(replay.events().is_empty());
+        assert_eq!(replay.events().len(), 2);
+    }
+
+    #[test]
+    fn a_rewind_past_the_replay_keeps_the_history_before_the_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = History::open(dir.path(), "chat", MAX_HISTORY_BYTES);
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, 8, Some(history));
+        let prompted = |replay: &Replay| {
+            let page = replay.page(u64::MAX, 100).unwrap();
+            let mut ids: Vec<String> = page
+                .events
+                .iter()
+                .chain(replay.entries.iter().map(|entry| &entry.event))
+                .filter_map(|event| event.payload["messageId"].as_str().map(str::to_owned))
+                .collect();
+            ids.sort();
+            ids.dedup();
+            ids
+        };
+        for n in 0..6 {
+            let id = format!("p{n}");
+            replay.push(
+                ChatEventKind::Prompt,
+                &json!({ "text": id, "paths": [], "messageId": id }),
+            );
+            replay.push(ChatEventKind::TurnStarted, &json!({}));
+            replay.push(ChatEventKind::TurnCompleted, &json!({}));
+        }
+        replay.rewind("missing");
+        assert_eq!(prompted(&replay), ["p0", "p1", "p2", "p3", "p4", "p5"]);
+        replay.rewind("p2");
+        assert_eq!(prompted(&replay), ["p0", "p1"]);
     }
 
     #[test]

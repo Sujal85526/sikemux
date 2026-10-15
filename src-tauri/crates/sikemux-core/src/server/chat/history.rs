@@ -3,7 +3,7 @@
 //! it reads the rest from here, a page of whole turns at a time.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -264,6 +264,22 @@ impl History {
             self.first = index;
         }
         self.next = index;
+    }
+
+    /// The newest event that starts a page and that `picks`, by its index.
+    pub(crate) fn find(&self, picks: impl Fn(&ChatEvent) -> bool) -> Option<u64> {
+        self.file.as_ref()?;
+        let mut reader = BufReader::new(File::open(&self.path).ok()?);
+        let mut line = Vec::new();
+        for point in self.points.iter().rev() {
+            reader.seek(SeekFrom::Start(point.offset)).ok()?;
+            line.clear();
+            reader.read_until(b'\n', &mut line).ok()?;
+            if serde_json::from_slice::<ChatEvent>(&line).is_ok_and(|event| picks(&event)) {
+                return Some(point.index);
+            }
+        }
+        None
     }
 
     /// Whole turns from before the event at `before`, as many as `turns`
