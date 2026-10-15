@@ -105,6 +105,18 @@ pub(crate) struct Replay {
     /// subagents still going.
     standing: Vec<(Holds, u64, ChatEvent)>,
     work: Work,
+    /// Every subagent's start, so a slice of the chat that speaks of one
+    /// started before it can carry the start too.
+    spawns: Vec<Spawn>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Spawn {
+    subagent: String,
+    /// The session that started it.
+    parent: String,
+    index: u64,
+    event: ChatEvent,
 }
 
 /// One thing said or done in a chat, as another agent reads it.
@@ -431,6 +443,7 @@ impl Replay {
             since_point: 0,
             standing: Vec::new(),
             work: Work::default(),
+            spawns: Vec::new(),
         }
     }
 
@@ -532,6 +545,7 @@ impl Replay {
             payload: payload.clone(),
         };
         self.note_standing(kind, index, &event);
+        self.note_spawn(kind, index, &event);
         if kind == ChatEventKind::SessionUpdate {
             self.work.note(payload);
             self.note_retry(payload);
@@ -560,6 +574,66 @@ impl Replay {
         self.bytes += bytes;
         self.trim();
         bytes
+    }
+
+    fn note_spawn(&mut self, kind: ChatEventKind, index: u64, event: &ChatEvent) {
+        if kind != ChatEventKind::SessionUpdate
+            || session_update_kind(&event.payload) != Some("subagent_spawned")
+        {
+            return;
+        }
+        let text = |pointer: &str| event.payload.pointer(pointer).and_then(Value::as_str);
+        let (Some(subagent), Some(parent)) =
+            (text("/update/subagentSessionId"), text("/sessionId"))
+        else {
+            return;
+        };
+        if self.spawns.iter().any(|spawn| spawn.subagent == subagent) {
+            return;
+        }
+        self.spawns.push(Spawn {
+            subagent: subagent.to_owned(),
+            parent: parent.to_owned(),
+            index,
+            event: event.clone(),
+        });
+    }
+
+    /// The starts of the subagents `events` speak of, and of the subagents
+    /// that started those, from before `first`. Without them a client would
+    /// take a subagent's work for the chat's own and never see it end.
+    fn spawns_before<'a>(
+        &self,
+        events: impl Iterator<Item = &'a ChatEvent>,
+        first: u64,
+    ) -> Vec<(u64, &ChatEvent)> {
+        let mut named: HashSet<&str> = HashSet::new();
+        for event in events.filter(|event| event.kind == ChatEventKind::SessionUpdate) {
+            let payload = &event.payload;
+            named.extend(payload.get("sessionId").and_then(Value::as_str));
+            named.extend(
+                payload
+                    .pointer("/update/subagentSessionId")
+                    .and_then(Value::as_str),
+            );
+        }
+        let mut named: Vec<&str> = named.into_iter().collect();
+        let mut chosen: Vec<&Spawn> = Vec::new();
+        while let Some(subagent) = named.pop() {
+            let Some(spawn) = self.spawns.iter().find(|spawn| spawn.subagent == subagent) else {
+                continue;
+            };
+            if spawn.index >= first || chosen.iter().any(|kept| kept.subagent == spawn.subagent) {
+                continue;
+            }
+            chosen.push(spawn);
+            named.push(&spawn.parent);
+        }
+        chosen.sort_by_key(|spawn| spawn.index);
+        chosen
+            .into_iter()
+            .map(|spawn| (spawn.index, &spawn.event))
+            .collect()
     }
 
     fn hold(&mut self, holds: Holds, index: u64, event: &ChatEvent) {
@@ -760,6 +834,12 @@ impl Replay {
             .filter(|(_, index, _)| *index < first)
             .map(|(_, index, event)| (*index, event))
             .collect();
+        let named = self.entries.range(start..).map(|entry| &entry.event);
+        for (index, event) in self.spawns_before(named, first) {
+            if !standing.iter().any(|(held, _)| *held == index) {
+                standing.push((index, event));
+            }
+        }
         standing.sort_by_key(|(index, _)| *index);
         Tail {
             events: standing
@@ -808,6 +888,7 @@ impl Replay {
             history.truncate(index);
         }
         self.standing.retain(|(_, held, _)| *held < index);
+        self.spawns.retain(|spawn| spawn.index < index);
         self.in_turn = false;
         self.reconnecting = None;
         self.last_from_user = false;
@@ -839,9 +920,16 @@ impl Replay {
         let Some(history) = self.history.as_ref() else {
             return Ok(Page::default());
         };
-        history
+        let mut page = history
             .page(before, turns.clamp(1, MAX_PAGE_TURNS), PAGE_BYTES)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        let spawns: Vec<ChatEvent> = self
+            .spawns_before(page.events.iter(), page.first)
+            .into_iter()
+            .map(|(_, event)| event.clone())
+            .collect();
+        page.events.splice(0..0, spawns);
+        Ok(page)
     }
 
     /// An answered request is not asked again when the chat is replayed.
@@ -1951,6 +2039,52 @@ mod tests {
             &json!({ "stopReason": "cancelled" }),
         );
         assert_eq!(held(&replay), ["b"]);
+    }
+
+    #[test]
+    fn a_tail_carries_the_start_of_every_subagent_it_speaks_of() {
+        let mut replay = Replay::new(MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, None);
+        let spawned = |session: &str, id: &str| {
+            update(
+                session,
+                json!({ "sessionUpdate": "subagent_spawned", "subagentSessionId": id }),
+            )
+        };
+        let ended = |id: &str| {
+            update(
+                "s",
+                json!({ "sessionUpdate": "subagent_state_update", "subagentSessionId": id, "state": "completed" }),
+            )
+        };
+        replay.push(ChatEventKind::SessionUpdate, &spawned("s", "corpus"));
+        replay.push(ChatEventKind::SessionUpdate, &spawned("corpus", "fixtures"));
+        replay.push(ChatEventKind::SessionUpdate, &spawned("s", "forgotten"));
+        replay.push(ChatEventKind::SessionUpdate, &ended("forgotten"));
+        for n in 0..TAIL_TURNS {
+            turn(&mut replay, n);
+        }
+        replay.push(
+            ChatEventKind::SessionUpdate,
+            &update(
+                "fixtures",
+                json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "Recorded" } }),
+            ),
+        );
+        replay.push(ChatEventKind::SessionUpdate, &ended("corpus"));
+
+        let starts: Vec<String> = replay
+            .tail()
+            .events
+            .iter()
+            .filter(|event| session_update_kind(&event.payload) == Some("subagent_spawned"))
+            .map(|event| {
+                event.payload["update"]["subagentSessionId"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(starts, ["corpus", "fixtures"]);
     }
 
     #[tokio::test]

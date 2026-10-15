@@ -52,6 +52,8 @@ pub(crate) struct HistoryState {
 pub(crate) struct Page {
     pub events: Vec<ChatEvent>,
     pub older_before: Option<u64>,
+    /// The index of the page's first event.
+    pub first: u64,
 }
 
 /// Removes what an earlier core left, but for the files of chats `keep`
@@ -315,6 +317,7 @@ impl History {
         Ok(Page {
             events,
             older_before: (chosen > 0).then_some(start.index),
+            first: start.index,
         })
     }
 }
