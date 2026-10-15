@@ -1,25 +1,26 @@
 .jira-pane {
-    --jira-glass: color-mix(in srgb, var(--void) 80%, transparent);
+    --jira-panel: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
     display: grid;
     grid-template-columns: 208px minmax(260px, 0.9fr) minmax(340px, 1.4fr);
     gap: 8px;
     height: 100%;
     min-height: 0;
-    padding: 8px;
     color: var(--text-primary);
 }
 
-/* Each part is read over the pane's picture, so each sits on its own frosted surface. */
+/* The Jira panels are the surfaces, so the pane around them keeps no frame or ground of its own. */
+.pane:has(> .jira-pane) {
+    border-color: transparent;
+    background: transparent;
+}
+
 .jira-sidebar,
 .jira-list-pane,
 .jira-detail,
-.jira-board .kanban-head,
-.jira-board > .empty-state {
+.jira-board {
     border: 1px solid var(--border);
-    border-radius: var(--radius-3);
-    background: var(--jira-glass);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2);
-    backdrop-filter: blur(14px) saturate(1.2);
+    border-radius: var(--radius-panel);
+    background: var(--jira-panel);
 }
 
 .jira-sidebar,
@@ -679,8 +680,8 @@
 
 .jira-board .kanban-head {
     gap: 2px;
-    margin-bottom: 8px;
-    padding: 10px 12px;
+    padding: 10px 12px 8px;
+    border-bottom: 0;
 }
 
 .jira-board > .empty-state {
@@ -782,6 +783,7 @@
     gap: 6px;
     min-height: 0;
     overflow: auto;
+    padding: 0 12px 12px;
 }
 
 .jira-lanes > .kanban-columns {
@@ -815,13 +817,11 @@
     max-width: 100%;
     height: 30px;
     padding: 0 10px 0 6px;
-    border: 1px solid var(--border);
+    border: 1px solid transparent;
     border-radius: var(--radius-full);
     font-size: var(--text-sm);
     color: var(--text-secondary);
-    background: var(--jira-glass);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2);
-    backdrop-filter: blur(14px) saturate(1.2);
+    background: none;
 }
 
 .jira-swimlane-head:hover {
