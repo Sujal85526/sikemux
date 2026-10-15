@@ -1172,15 +1172,17 @@ async fn handed(
     let mailbox = &core.harness.mailbox;
     match mailbox.admit(&letter, &target.agent_id, &name)? {
         Admitted::Yes => {}
-        Admitted::Repeat { seconds_ago } => return Ok((
-            answer(
-                "repeat",
-                format!(
+        Admitted::Repeat { seconds_ago } => {
+            return Ok((
+                answer(
+                    "repeat",
+                    format!(
                     "You sent {name} the same text {seconds_ago} s ago, so it was not sent again."
                 ),
-            ),
-            Outcome::Repeat,
-        )),
+                ),
+                Outcome::Repeat,
+            ))
+        }
         Admitted::Held => {
             let dropped = mailbox.hold(&letter.from_id, &target.agent_id, queued.clone());
             log(core, &target.agent_id, &dropped, Outcome::Dropped);
