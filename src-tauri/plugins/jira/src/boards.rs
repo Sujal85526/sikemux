@@ -142,6 +142,36 @@ pub fn people_clause(request: &BoardRequest) -> Option<String> {
     (!picks.is_empty()).then(|| format!("({})", picks.join(" OR ")))
 }
 
+/// A kanban board with a backlog keeps it on its own page, as the first column of its
+/// configuration; Jira's board leaves that column off, and so its issues.
+pub fn drop_backlog_column(configuration: &mut Value) {
+    if let Some(columns) = configuration
+        .pointer_mut("/columnConfig/columns")
+        .and_then(Value::as_array_mut)
+    {
+        if !columns.is_empty() {
+            columns.remove(0);
+        }
+    }
+}
+
+/// What a kanban board shows: the people picked, the board's own sub-filter, and done work
+/// from the last two weeks only, as Jira hides older completed issues.
+pub fn kanban_jql(people: Option<&str>, configuration: &Value) -> String {
+    let sub_filter = text(configuration.pointer("/subQuery/query"))
+        .filter(|query| !query.trim().is_empty())
+        .map(|query| format!("({query})"));
+    let clauses: Vec<String> = [
+        people.map(str::to_string),
+        sub_filter,
+        Some("(statusCategory != Done OR updated >= -14d)".into()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    format!("{} ORDER BY Rank ASC", clauses.join(" AND "))
+}
+
 /// The colour an epic wears: its board colour as `color_N` where its project keeps one, else its own colour by name.
 pub fn epic_color(fields: &Value, ids: &CustomFields) -> Option<String> {
     let board = ids
@@ -310,14 +340,20 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let base = format!("/rest/agile/1.0/board/{}", request.id);
     let configuration_path = format!("{base}/configuration");
-    let (about, configuration, ids) = tokio::join!(
+    let backlog_path = format!("{base}/backlog");
+    let count_only = [("maxResults", "0".to_string())];
+    let (about, configuration, ids, backlog) = tokio::join!(
         client::send(&credentials, Method::GET, &base, &[], None),
         client::send(&credentials, Method::GET, &configuration_path, &[], None),
         custom_fields(&site, &credentials),
+        client::send(&credentials, Method::GET, &backlog_path, &count_only, None),
     );
     let sprint_field = ids.sprint.clone();
-    let (about, configuration) = (about?, configuration?);
+    let (about, mut configuration) = (about?, configuration?);
     let kind = text(about.get("type")).unwrap_or_else(|| "kanban".into());
+    if kind == "kanban" && backlog.is_ok() {
+        drop_backlog_column(&mut configuration);
+    }
     let sprint = if kind == "scrum" {
         let sprints = client::send(
             &credentials,
@@ -347,11 +383,7 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
             .await?
         }
         None => {
-            let recent = "(statusCategory != Done OR updated >= -14d)";
-            let jql = match &people {
-                Some(people) => format!("{people} AND {recent} ORDER BY Rank ASC"),
-                None => format!("{recent} ORDER BY Rank ASC"),
-            };
+            let jql = kanban_jql(people.as_deref(), &configuration);
             issues_from(&credentials, &format!("{base}/issue"), &fields, Some(&jql)).await?
         }
     };
