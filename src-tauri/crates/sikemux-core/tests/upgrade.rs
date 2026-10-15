@@ -1011,12 +1011,23 @@ async fn a_forced_update_restarts_a_starting_chat_and_says_so() {
     std::fs::remove_file(&gate).expect("open the gate");
 
     let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
-    let ChatAttachment::Live { replay, .. } =
-        client.acp_attach("slow".into()).await.expect("attach")
-    else {
-        panic!("the chat was not started again\n{}", core.log());
-    };
-    assert!(restarted(&replay), "{}", core.log());
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let ChatAttachment::Live { replay, .. } =
+            client.acp_attach("slow".into()).await.expect("attach")
+        else {
+            panic!("the chat was not started again\n{}", core.log());
+        };
+        if restarted(&replay) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the chat never said it was restarted\n{}",
+            core.log()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
