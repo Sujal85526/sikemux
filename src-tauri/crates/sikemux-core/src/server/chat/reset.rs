@@ -300,12 +300,24 @@ fn resume_notice(provider: &str, at: u64) -> Value {
     })
 }
 
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/// A day an agent writes out, such as "Oct 17" or "Oct 17th", as its month from 1 and day.
+pub(super) fn month_day(text: &str) -> Option<(i32, i32)> {
+    let (name, day) = text.split_once(' ')?;
+    let month = MONTHS.iter().position(|known| *known == name)? as i32 + 1;
+    let day = day
+        .trim_end_matches(char::is_alphabetic)
+        .parse::<i32>()
+        .ok()?;
+    (1..=31).contains(&day).then_some((month, day))
+}
+
 /// `at`, in Unix milliseconds, as this host's clock reads it: "at 15:40"
 /// today, else "on 18 Oct at 15:40".
 fn when(at: u64) -> String {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
     let (Some(then), Some(now)) = (calendar(at, Zone::Host), calendar(unix_ms(), Zone::Host))
     else {
         return String::new();

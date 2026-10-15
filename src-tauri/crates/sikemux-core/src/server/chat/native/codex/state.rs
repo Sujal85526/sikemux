@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 
 use crate::acp::account;
 
+use super::super::super::reset::{month_day, WallClock, Zone};
 use super::super::super::states::{self, Subagent};
 use super::super::json::text_or_empty as text;
 use super::super::session::TurnEnd;
@@ -150,6 +151,7 @@ pub(super) fn failure_meta(turn_id: &str, error: &Value) -> Value {
         .as_str()
         .filter(|message| !message.is_empty())
         .unwrap_or("Turn failed");
+    let resets_at = (category == "limit").then(|| resets_at(title)).flatten();
     json!({ "jetbrains": { "air": { "version": 1, "sessionFailure": {
         "id": format!("{turn_id}:error"),
         "revision": 1,
@@ -157,7 +159,43 @@ pub(super) fn failure_meta(turn_id: &str, error: &Value) -> Value {
         "severity": "error",
         "title": title,
         "actions": actions,
+        "resetsAt": resets_at,
     } } } })
+}
+
+/// When a usage limit resets, from the "try again at 2:46 AM" or "try again
+/// at Oct 12th, 2026 2:46 AM" Codex ends its message with, in this host's time.
+fn resets_at(message: &str) -> Option<u64> {
+    let stamp = message
+        .rsplit_once("try again at ")?
+        .1
+        .trim_end_matches('.');
+    let (date, time) = match stamp.split_once(", ") {
+        Some((day, rest)) => {
+            let (year, time) = rest.split_once(' ')?;
+            let (month, day) = month_day(day)?;
+            (Some((Some(year.parse().ok()?), month, day)), time)
+        }
+        None => (None, stamp),
+    };
+    let (clock, half) = time.split_once(' ')?;
+    let pm = match half {
+        "AM" => false,
+        "PM" => true,
+        _ => return None,
+    };
+    let (hour, minute) = clock.split_once(':')?;
+    let (hour, minute): (i32, i32) = (hour.parse().ok()?, minute.parse().ok()?);
+    if !(1..=12).contains(&hour) || !(0..60).contains(&minute) {
+        return None;
+    }
+    WallClock {
+        zone: Zone::Host,
+        date,
+        hour: hour % 12 + if pm { 12 } else { 0 },
+        minute,
+    }
+    .unix_ms()
 }
 
 impl Session {
@@ -776,6 +814,23 @@ mod tests {
             _ => panic!("the turn should have completed"),
         }
         assert_eq!(session.active_turn(), None);
+    }
+
+    #[test]
+    fn a_usage_limit_says_when_it_resets() {
+        let now = crate::server::remote::unix_ms();
+        let said = |at: &str| {
+            resets_at(&format!("You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at {at}."))
+        };
+        let later = said("Oct 12th, 2027 2:46 AM").expect("a day ahead");
+        assert!(later > now + 300 * 86_400_000);
+        let today = said("11:59 PM").expect("a clock");
+        assert!(today > now && today <= now + 86_400_000);
+        assert_eq!(said("Oct 12th, 2025 2:46 AM"), None);
+        assert_eq!(
+            resets_at("You've hit your usage limit, or try again later."),
+            None
+        );
     }
 
     #[test]

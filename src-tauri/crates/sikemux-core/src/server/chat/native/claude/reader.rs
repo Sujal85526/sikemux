@@ -11,7 +11,7 @@ use serde_json::{json, Map, Value};
 use crate::acp::account::{Failure, FailureKind};
 
 use super::super::super::feed;
-use super::super::super::reset::{WallClock, Zone};
+use super::super::super::reset::{month_day, WallClock, Zone};
 use super::super::super::states::{self, Held, Subagent, Task as TaskState};
 use super::super::super::Respond;
 use super::super::json::{self, text};
@@ -268,9 +268,6 @@ fn limit_resets_at(message: &Value, said: &str) -> Option<u64> {
 /// The reset time in a limit's text: Unix seconds after a `|`, or a clock
 /// such as "resets 3pm (Europe/London)" or "resets Oct 17, 2027, 3:30pm".
 fn resets_in_text(said: &str) -> Option<u64> {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
     let epoch = said.trim().rsplit_once('|');
     if let Some(seconds) = epoch.and_then(|(_, seconds)| seconds.parse::<u64>().ok()) {
         return seconds.checked_mul(1000);
@@ -306,12 +303,7 @@ fn resets_in_text(said: &str) -> Option<u64> {
     let date = match parts.as_slice() {
         [] => None,
         [day] | [day, _] => {
-            let (month, day) = day.split_once(' ')?;
-            let month = MONTHS.iter().position(|name| *name == month)? as i32 + 1;
-            let day = day
-                .parse::<i32>()
-                .ok()
-                .filter(|day| (1..=31).contains(day))?;
+            let (month, day) = month_day(day)?;
             let year = match parts.get(1) {
                 Some(year) => Some(year.parse::<i32>().ok()?),
                 None => None,
