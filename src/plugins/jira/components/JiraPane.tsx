@@ -564,6 +564,7 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                                     blocks: issue.blocks,
                                 })
                             }>
+                            <IconBoard size={12} />
                             Send to board
                         </button>
                         <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
