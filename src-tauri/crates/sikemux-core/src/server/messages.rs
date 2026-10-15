@@ -224,13 +224,14 @@ impl Mailbox {
                 seconds_ago: now.saturating_sub(repeat.at) / 1000,
             });
         }
-        if pair.len() >= PAIR_LIMIT {
+        let report = letter.kind == Kind::Report;
+        if pair.len() >= PAIR_LIMIT && !report {
             return Err(format!(
                 "You have sent {to_name} {PAIR_LIMIT} messages in the last {} minutes, so Sikemux holds the rest; two agents must not keep each other busy without end. Wait, or ask the person.",
                 PAIR_WINDOW_MS / 60_000
             ));
         }
-        if state.waiting.get(to).map_or(0, Vec::len) >= MAX_WAITING {
+        if !report && state.waiting.get(to).map_or(0, Vec::len) >= MAX_WAITING {
             return Err(format!(
                 "{to_name} already has {MAX_WAITING} messages waiting for its turn to end; send more once it has read them"
             ));
@@ -259,12 +260,28 @@ impl Mailbox {
             .unwrap_or_default()
     }
 
-    /// Answers how many wait now.
-    fn wait(&self, agent_id: &str, queued: Queued) -> usize {
+    /// Answers how many wait now, and the earlier reports from the same
+    /// worker this one replaces, so a lead holds only each worker's newest.
+    fn wait(&self, agent_id: &str, queued: Queued) -> (usize, Vec<Queued>) {
         self.change(|state| {
             let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
+            let mut superseded = Vec::new();
+            if let Some(Origin {
+                from,
+                kind: Kind::Report,
+            }) = &queued.origin
+            {
+                let (older, kept) = std::mem::take(waiting).into_iter().partition(|waiting| {
+                    waiting
+                        .origin
+                        .as_ref()
+                        .is_some_and(|origin| origin.kind == Kind::Report && &origin.from == from)
+                });
+                *waiting = kept;
+                superseded = older;
+            }
             waiting.push(queued);
-            waiting.len()
+            (waiting.len(), superseded)
         })
     }
 
@@ -920,7 +937,8 @@ fn letter_from(
 }
 
 /// Hands `text` from `worker` to the agent that started it, as a message
-/// about how its turn ended. Nothing is sent once the lead has stopped.
+/// about how its turn ended. A lead that has stopped gets it once it is
+/// opened again; only one the person closed goes without.
 pub(crate) async fn report(core: &Arc<Core>, worker: String, lead: String, text: String) {
     let name = core.names.name(&worker);
     report_as(core, worker, name, lead, text).await;
@@ -938,10 +956,7 @@ pub(crate) async fn report_as(
         let core = core.clone();
         blocking(move || {
             let agents = listed(&core);
-            let target = agents
-                .iter()
-                .find(|agent| agent.agent_id == lead && agent.reach != Reach::Stopped)
-                .cloned();
+            let target = agents.iter().find(|agent| agent.agent_id == lead).cloned();
             let name = name.unwrap_or_else(|| worker.clone());
             let note = format!(
                 "{name} is an agent you started, and this is how its turn ended, sent by Sikemux. Reply with agent_send to {name} if it needs more."
@@ -953,6 +968,7 @@ pub(crate) async fn report_as(
         .await
     };
     let Ok(Some((target, letter))) = found else {
+        eprintln!("sikemux core: an agent's report has no lead left to reach");
         return;
     };
     if let Err(error) = deliver(core, &target, letter).await {
@@ -1013,7 +1029,9 @@ async fn handed(
             mailbox.lock().wake_failed.remove(&target.agent_id);
             woke = " Sikemux woke it first.";
         }
-        Reach::Stopped if letter.answers.is_some() => held = Some("has stopped"),
+        Reach::Stopped if letter.answers.is_some() || letter.kind == Kind::Report => {
+            held = Some("has stopped")
+        }
         Reach::Stopped => {
             return Err(format!(
                 "{name} has stopped; it gets messages again once the person opens it"
@@ -1063,7 +1081,8 @@ async fn handed(
             Err(busy) => held = Some(busy),
         }
     }
-    let waiting = mailbox.wait(&target.agent_id, queued.clone());
+    let (waiting, superseded) = mailbox.wait(&target.agent_id, queued.clone());
+    log(core, &target.agent_id, &superseded, Outcome::Dropped);
     let busy = held.unwrap_or_default();
     Ok((
         answer(

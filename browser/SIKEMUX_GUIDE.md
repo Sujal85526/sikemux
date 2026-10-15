@@ -872,7 +872,10 @@ you hear so. Everything below works the same for it.
 
 Each time its turn ends, its final answer comes to you as a message from it,
 cut to about 4 KB, with the board card it holds, if any. It says instead when the turn was stopped or failed, or the
-agent stopped running, so you are never left waiting. Pass
+agent stopped running, so you are never left waiting. Reports are never
+turned away: they skip the ten-message limit, wait for you while you are
+stopped, and while one waits a newer report from the same agent replaces it.
+Pass
 `report: false` for an agent whose answers you do not need. Do not wait in a
 loop for it: carry on, and its answer arrives as a message. Message it with
 `agent_send` to steer it or give it more.
