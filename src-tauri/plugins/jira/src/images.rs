@@ -1,10 +1,13 @@
 //! People's pictures beside their names. The window only draws images the app holds itself,
 //! so each is fetched here and handed over as a `data:` address.
 
+use std::path::Path;
+
 use base64::Engine;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 
+use crate::auth;
 use crate::client;
 use crate::error::{JiraError, JiraResult};
 
@@ -40,6 +43,49 @@ fn image_kind(content_type: &str) -> Option<String> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '+' | '.' | '-'));
     (kind.starts_with("image/") && plain).then_some(kind)
+}
+
+#[derive(Deserialize)]
+pub struct SiteImageRef {
+    pub url: String,
+    #[serde(default)]
+    pub site: Option<String>,
+}
+
+fn data_address(kind: &str, bytes: &[u8]) -> String {
+    format!(
+        "data:{kind};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )
+}
+
+/// The path of one of the site's own avatars, such as a project's, and nothing else of it.
+fn site_avatar_path(url: &Url, host: &str) -> Option<String> {
+    let path = url.path();
+    (url.scheme() == "https"
+        && url.host_str() == Some(host)
+        && path.starts_with("/rest/api/")
+        && path.contains("/avatar/")
+        && !path.contains(".."))
+    .then(|| path.to_string())
+}
+
+/// A project's avatar, which Jira serves only to someone signed in to the site.
+pub async fn site_image(data_dir: &Path, input: SiteImageRef) -> JiraResult<String> {
+    let refused = || JiraError::BadArg("that is not an avatar this site serves".into());
+    let (site, credentials) = auth::credentials(data_dir, input.site.as_deref()).await?;
+    let url = Url::parse(&input.url).map_err(|_| refused())?;
+    let path = site_avatar_path(&url, &site.host).ok_or_else(refused)?;
+    let query: Vec<(String, String)> = url.query_pairs().into_owned().collect();
+    let (kind, bytes) = client::fetch(&credentials, &path, &query).await?;
+    let kind = kind
+        .as_deref()
+        .and_then(image_kind)
+        .ok_or_else(|| JiraError::Response("that address is not an image".into()))?;
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(JiraError::Response("that avatar is too big".into()));
+    }
+    Ok(data_address(&kind, &bytes))
 }
 
 pub async fn image(input: ImageRef) -> JiraResult<String> {
@@ -82,10 +128,7 @@ pub async fn image(input: ImageRef) -> JiraResult<String> {
         if bytes.len() > MAX_IMAGE_BYTES {
             return Err(JiraError::Response("that avatar is too big".into()));
         }
-        return Ok(format!(
-            "data:{kind};base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(&bytes)
-        ));
+        return Ok(data_address(&kind, &bytes));
     }
     Err(JiraError::Response(
         "the avatar redirected too many times".into(),

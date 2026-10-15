@@ -1,6 +1,7 @@
 //! Jira Software boards: which ones the person can see, a board's columns with the issues
 //! in each, and moving an issue into another column.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use reqwest::Method;
@@ -15,6 +16,7 @@ use crate::issues::{issue_path, sprint_field, summarise, text, IssueSummary, SUM
 /// How many issues one board shows; a board this full is better narrowed in Jira itself.
 const BOARD_ISSUES_MAX: usize = 300;
 const PAGE: usize = 100;
+const EPIC_PAGES: usize = 4;
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +26,8 @@ pub struct Board {
     /// `scrum` or `kanban`.
     pub kind: String,
     pub project: Option<String>,
+    /// The project's key when the board belongs to one rather than to a person.
+    pub project_key: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -77,6 +81,7 @@ pub fn boards_of(body: &Value) -> Vec<Board> {
                         kind: text(board.get("type")).unwrap_or_else(|| "kanban".into()),
                         project: text(board.pointer("/location/projectKey"))
                             .or_else(|| text(board.pointer("/location/displayName"))),
+                        project_key: text(board.pointer("/location/projectKey")),
                     })
                 })
                 .collect()
@@ -136,6 +141,44 @@ pub fn people_clause(request: &BoardRequest) -> Option<String> {
     (!picks.is_empty()).then(|| format!("({})", picks.join(" OR ")))
 }
 
+/// The colour Jira gives each epic on a board, by epic key.
+pub fn epic_colors(pages: &[Value]) -> HashMap<String, String> {
+    pages
+        .iter()
+        .filter_map(|page| page.get("values").and_then(Value::as_array))
+        .flatten()
+        .filter_map(|epic| Some((text(epic.get("key"))?, text(epic.pointer("/color/key"))?)))
+        .collect()
+}
+
+/// The board's epics with their colours. A board whose project keeps no epic panel answers
+/// with an error, and its cards simply go without colours.
+async fn board_epics(credentials: &Credentials, base: &str) -> HashMap<String, String> {
+    let mut pages = Vec::new();
+    for page in 0..EPIC_PAGES {
+        let Ok(body) = client::send(
+            credentials,
+            Method::GET,
+            &format!("{base}/epic"),
+            &[
+                ("maxResults", "50".into()),
+                ("startAt", (page * 50).to_string()),
+            ],
+            None,
+        )
+        .await
+        else {
+            break;
+        };
+        let last = body.get("isLast").and_then(Value::as_bool).unwrap_or(true);
+        pages.push(body);
+        if last {
+            break;
+        }
+    }
+    epic_colors(&pages)
+}
+
 /// Puts each issue in the column that holds its status, keeping the board's column order.
 /// Issues whose status no column holds are left off, as Jira's own board does.
 pub fn arrange(
@@ -143,6 +186,7 @@ pub fn arrange(
     issues: &[Value],
     site: &str,
     sprint_field: Option<&str>,
+    epics: &HashMap<String, String>,
 ) -> Vec<Column> {
     let mut columns: Vec<Column> = configuration
         .pointer("/columnConfig/columns")
@@ -175,7 +219,11 @@ pub fn arrange(
             .iter_mut()
             .find(|column| column.status_ids.contains(&status))
         {
-            column.issues.push(summarise(issue, site, sprint_field));
+            let mut card = summarise(issue, site, sprint_field);
+            if let Some(parent) = card.parent.as_mut() {
+                parent.color = epics.get(&parent.key).cloned();
+            }
+            column.issues.push(card);
         }
     }
     columns
@@ -231,10 +279,11 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let base = format!("/rest/agile/1.0/board/{}", request.id);
     let configuration_path = format!("{base}/configuration");
-    let (about, configuration, sprint_field) = tokio::join!(
+    let (about, configuration, sprint_field, epics) = tokio::join!(
         client::send(&credentials, Method::GET, &base, &[], None),
         client::send(&credentials, Method::GET, &configuration_path, &[], None),
         sprint_field(&site, &credentials),
+        board_epics(&credentials, &base),
     );
     let (about, configuration) = (about?, configuration?);
     let kind = text(about.get("type")).unwrap_or_else(|| "kanban".into());
@@ -279,7 +328,13 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
         id: request.id,
         name: text(about.get("name")).unwrap_or_default(),
         kind,
-        columns: arrange(&configuration, &issues, &site.host, sprint_field.as_deref()),
+        columns: arrange(
+            &configuration,
+            &issues,
+            &site.host,
+            sprint_field.as_deref(),
+            &epics,
+        ),
         sprint,
         truncated,
     })
@@ -385,13 +440,15 @@ mod tests {
                     id: 7,
                     name: "CIQ board".into(),
                     kind: "scrum".into(),
-                    project: Some("CIQ".into())
+                    project: Some("CIQ".into()),
+                    project_key: Some("CIQ".into()),
                 },
                 Board {
                     id: 9,
                     name: "Support".into(),
                     kind: "kanban".into(),
-                    project: Some("Help desk".into())
+                    project: Some("Help desk".into()),
+                    project_key: None,
                 },
             ]
         );
@@ -410,7 +467,13 @@ mod tests {
             issue("A-3", "10001"),
             issue("A-4", "999"),
         ];
-        let columns = arrange(&configuration, &issues, "acme.atlassian.net", None);
+        let columns = arrange(
+            &configuration,
+            &issues,
+            "acme.atlassian.net",
+            None,
+            &HashMap::new(),
+        );
         let keys: Vec<(&str, Vec<&str>)> = columns
             .iter()
             .map(|column| {

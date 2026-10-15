@@ -39,7 +39,18 @@ export interface JiraIssueSummary {
     issueType: string | null;
     sprint: string | null;
     updated: string | null;
+    /** The day it is due, as `2026-10-31`. */
+    due: string | null;
+    /** The epic or other issue it sits under. */
+    parent: JiraParent | null;
     url: string;
+}
+
+export interface JiraParent {
+    key: string;
+    summary: string;
+    /** Jira's name for the epic's colour on a board, `color_1` to `color_14`. */
+    color: string | null;
 }
 
 export interface JiraComment {
@@ -89,6 +100,7 @@ export const refreshJira = () => invalidate((kind) => kind.startsWith("jira."));
 export interface JiraProject {
     key: string;
     name: string;
+    avatarUrl: string | null;
 }
 
 export interface JiraBoard {
@@ -96,6 +108,8 @@ export interface JiraBoard {
     name: string;
     kind: "scrum" | "kanban" | string;
     project: string | null;
+    /** The project's key when the board belongs to one rather than to a person. */
+    projectKey: string | null;
 }
 
 export interface JiraSprint {
@@ -159,6 +173,15 @@ export const jiraApi = {
         const known = avatars.get(url);
         if (known) return known;
         const fetched = backend.call<string>("image", { url });
+        avatars.set(url, fetched);
+        fetched.catch(() => avatars.delete(url));
+        return fetched;
+    },
+    /** A project's picture as a `data:` address; Jira serves these only to someone signed in. */
+    siteImage(url: string, site?: string): Promise<string> {
+        const known = avatars.get(url);
+        if (known) return known;
+        const fetched = backend.call<string>("siteImage", { url, site });
         avatars.set(url, fetched);
         fetched.catch(() => avatars.delete(url));
         return fetched;

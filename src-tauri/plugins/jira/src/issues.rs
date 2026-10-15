@@ -20,7 +20,8 @@ const DEFAULT_LIMIT: u64 = 20;
 const MAX_LIMIT: u64 = 100;
 const MAX_COMMENTS: usize = 50;
 const COMMENTS_PER_HIT: usize = 5;
-pub(crate) const SUMMARY_FIELDS: &str = "summary,status,priority,assignee,issuetype,updated";
+pub(crate) const SUMMARY_FIELDS: &str =
+    "summary,status,priority,assignee,issuetype,updated,parent,duedate";
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -43,7 +44,20 @@ pub struct IssueSummary {
     pub issue_type: Option<String>,
     pub sprint: Option<String>,
     pub updated: Option<String>,
+    /// The day it is due, as `2026-10-31`.
+    pub due: Option<String>,
+    /// The epic or other issue it sits under.
+    pub parent: Option<Parent>,
     pub url: String,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Parent {
+    pub key: String,
+    pub summary: String,
+    /// Jira's name for the epic's colour, `color_1` to `color_14`, when a board says it.
+    pub color: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -150,6 +164,14 @@ pub fn summarise(issue: &Value, site: &str, sprint_field: Option<&str>) -> Issue
         issue_type: text(fields.pointer("/issuetype/name")),
         sprint: sprint_field.and_then(|field| sprint(fields.get(field))),
         updated: text(fields.get("updated")),
+        due: text(fields.get("duedate")),
+        parent: fields.get("parent").and_then(|parent| {
+            Some(Parent {
+                key: text(parent.get("key"))?,
+                summary: text(parent.pointer("/fields/summary")).unwrap_or_default(),
+                color: None,
+            })
+        }),
     }
 }
 
@@ -1123,9 +1145,11 @@ pub async fn filters(data_dir: &Path, request: SiteRequest) -> JiraResult<Vec<Fi
 }
 
 #[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Project {
     pub key: String,
     pub name: String,
+    pub avatar_url: Option<String>,
 }
 
 pub fn projects_of(body: &Value) -> Vec<Project> {
@@ -1138,6 +1162,7 @@ pub fn projects_of(body: &Value) -> Vec<Project> {
                     Some(Project {
                         key: text(project.get("key"))?,
                         name: text(project.get("name"))?,
+                        avatar_url: text(project.pointer("/avatarUrls/48x48")),
                     })
                 })
                 .collect()
@@ -1173,7 +1198,8 @@ mod tests {
             projects_of(&body),
             vec![Project {
                 key: "CIQ".into(),
-                name: "ChannelIQ".into()
+                name: "ChannelIQ".into(),
+                avatar_url: None,
             }]
         );
     }
@@ -1186,6 +1212,8 @@ mod tests {
             "assignee": { "accountId": "a1", "displayName": "Ana" },
             "issuetype": { "name": "Bug" },
             "updated": "2026-10-04T09:00:00.000+0000",
+            "duedate": "2026-10-31",
+            "parent": { "key": "ABC-1", "fields": { "summary": "Sign-in" } },
             "customfield_10020": [ { "name": "Sprint 4", "state": "closed" }, { "name": "Sprint 5", "state": "active" } ]
         } })
     }
@@ -1208,6 +1236,12 @@ mod tests {
                 issue_type: Some("Bug".into()),
                 sprint: Some("Sprint 5".into()),
                 updated: Some("2026-10-04T09:00:00.000+0000".into()),
+                due: Some("2026-10-31".into()),
+                parent: Some(Parent {
+                    key: "ABC-1".into(),
+                    summary: "Sign-in".into(),
+                    color: None,
+                }),
                 url: "https://acme.atlassian.net/browse/ABC-12".into(),
             }
         );

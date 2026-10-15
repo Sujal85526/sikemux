@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use futures::StreamExt;
-use reqwest::{Client, Method, Response, StatusCode};
+use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
 use serde_json::Value;
 
 use crate::config::Site;
@@ -130,6 +130,55 @@ pub async fn send(
     })
 }
 
+/// A picture the site gives only to someone signed in, such as a project's avatar: its
+/// content type and its bytes.
+pub async fn fetch(
+    credentials: &Credentials,
+    path: &str,
+    query: &[(String, String)],
+) -> JiraResult<(Option<String>, Vec<u8>)> {
+    let get = |renewed: Option<String>| {
+        signed(
+            http().map(|client| client.get(format!("{}{path}", credentials.url))),
+            credentials,
+            renewed.as_deref(),
+        )
+        .map(|request| request.header("Accept", "image/*").query(query))
+    };
+    let mut response = get(None)?.send().await?;
+    if response.status() == StatusCode::UNAUTHORIZED {
+        if let Auth::Atlassian { site, token } = &credentials.auth {
+            response = get(Some(oauth::renew(site, token).await?))?.send().await?;
+        }
+    }
+    let status = response.status();
+    if !status.is_success() {
+        return Err(JiraError::Http {
+            status: status.as_u16(),
+            message: "the picture did not load".into(),
+        });
+    }
+    let kind = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    Ok((kind, read_limited(response).await?))
+}
+
+fn signed(
+    request: JiraResult<RequestBuilder>,
+    credentials: &Credentials,
+    renewed: Option<&str>,
+) -> JiraResult<RequestBuilder> {
+    let request = request?;
+    Ok(match (&credentials.auth, renewed) {
+        (_, Some(token)) => request.bearer_auth(token),
+        (Auth::Bearer(token) | Auth::Atlassian { token, .. }, None) => request.bearer_auth(token),
+        (Auth::Basic { email, token }, None) => request.basic_auth(email, Some(token)),
+    })
+}
+
 /// `renewed` stands in for the access token the credentials were made with.
 async fn send_once(
     credentials: &Credentials,
@@ -139,14 +188,11 @@ async fn send_once(
     query: &[(&str, String)],
     body: Option<&Value>,
 ) -> JiraResult<(StatusCode, Vec<u8>)> {
-    let request = http()?.request(method.clone(), format!("{}{path}", credentials.url));
-    let mut request = match (&credentials.auth, renewed) {
-        (_, Some(token)) => request.bearer_auth(token),
-        (Auth::Bearer(token) | Auth::Atlassian { token, .. }, None) => request.bearer_auth(token),
-        (Auth::Basic { email, token }, None) => request.basic_auth(email, Some(token)),
-    }
-    .header("Accept", "application/json")
-    .query(query);
+    let request =
+        http().map(|client| client.request(method.clone(), format!("{}{path}", credentials.url)));
+    let mut request = signed(request, credentials, renewed)?
+        .header("Accept", "application/json")
+        .query(query);
     if let Some(body) = body {
         request = request.json(body);
     }

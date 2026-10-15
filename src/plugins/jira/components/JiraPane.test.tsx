@@ -40,6 +40,8 @@ const summary = {
     issueType: "Bug",
     sprint: "Sprint 5",
     updated: null,
+    due: null,
+    parent: null,
     url: "https://acme.atlassian.net/browse/ABC-12",
 };
 

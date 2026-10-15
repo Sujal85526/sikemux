@@ -85,6 +85,7 @@ impl Plugin for Jira {
                 "board" => answer(boards::board(data_dir, params(input)?)).await,
                 "moveIssue" => answer(boards::move_issue(data_dir, params(input)?)).await,
                 "image" => answer(images::image(params(input)?)).await,
+                "siteImage" => answer(images::site_image(data_dir, params(input)?)).await,
                 "keys" => reply(issues::keys_in(&params::<issues::KeysRequest>(input)?.text)),
                 _ => Err(PluginError::unknown_method(method)),
             }
