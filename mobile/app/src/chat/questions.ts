@@ -3,7 +3,8 @@ import type { ConnectionLike } from '@sikemux/native';
 
 import { asksPerson, type AgentQuestion, type QuestionAnswer } from '@mac/agents/agentQuestions';
 
-import { problem } from '@/devices/hub';
+import { hostKnows } from '@/core/hostCalls';
+import { hostOf, problem } from '@/devices/hub';
 
 export type ChatQuestions = {
   /** What the agent asked the person and waits on, oldest first. */
@@ -48,15 +49,17 @@ export function useQuestions(
   useEffect(() => {
     if (!connection) return;
     let current = true;
-    connection.call('questions', 'null').then(
-      (text) => {
-        const list = JSON.parse(text) as AgentQuestion[];
-        if (current) setAll(list.filter((question) => question.agentId === agentId && asksPerson(question)));
-      },
-      (error: unknown) => {
-        if (current) onError(`could not read this agent's questions: ${problem(error)}`);
-      },
-    );
+    hostOf(connection)
+      .then((host) => (hostKnows(host.version, 'questions') ? connection.call('questions', 'null') : '[]'))
+      .then(
+        (text) => {
+          const list = JSON.parse(text) as AgentQuestion[];
+          if (current) setAll(list.filter((question) => question.agentId === agentId && asksPerson(question)));
+        },
+        (error: unknown) => {
+          if (current) onError(`could not read this agent's questions: ${problem(error)}`);
+        },
+      );
     return () => {
       current = false;
     };
