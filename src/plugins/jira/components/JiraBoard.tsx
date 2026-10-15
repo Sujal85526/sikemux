@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { notify } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
-import { ContextMenu, EmptyState, IconRefresh, SkeletonRows, useCardDrag, type ContextMenuItem } from "../../../plugin-api/ui";
+import { ContextMenu, EmptyState, IconRefresh, IconSearch, SkeletonRows, useCardDrag, type ContextMenuItem } from "../../../plugin-api/ui";
 import { failureMessage, jiraApi, type JiraBoardView, type JiraColumn, type JiraIssueSummary } from "../api";
 import { boardPeople, matchingCards, pickKey, unassignedCount } from "../boardFilter";
 import { jiraBoardR } from "../resources";
-import { JiraFace } from "./JiraFace";
+import { Avatar, JiraFace } from "./JiraFace";
+import { IssueKey, IssueTypeIcon, PriorityGlyph } from "./JiraGlyphs";
+
+const FACES = 6;
 
 /** Where each card sits after the moves still on their way to Jira, by issue key and column index. */
 export function withMoves(board: JiraBoardView, moves: Record<string, number>): JiraColumn[] {
@@ -45,6 +48,7 @@ export function JiraBoard({
 }) {
     const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
     const [words, setWords] = useState("");
+    const [everyone, setEveryone] = useState(false);
     const whole = useResourceEnabled(active, jiraBoardR, boardId, site, "");
     const found = useResourceEnabled(active, jiraBoardR, boardId, site, pickKey(picked));
     const [moves, setMoves] = useState<Record<string, number>>({});
@@ -67,6 +71,9 @@ export function JiraBoard({
             return next;
         });
     const nobody = unassignedCount(whole.data);
+    const people = boardPeople(whole.data);
+    const hidden = everyone ? 0 : Math.max(0, people.length - FACES);
+    const faces = people.filter((person, index) => index < people.length - hidden || picked.has(person.accountId));
 
     const move = async (issue: JiraIssueSummary, to: number) => {
         const from = columns.findIndex((column) => column.issues.some((each) => each.key === issue.key));
@@ -92,7 +99,7 @@ export function JiraBoard({
     const left = sprintLeft(board.sprint?.end ?? null);
 
     return (
-        <section className="kanban" aria-label={board.name}>
+        <section className="kanban jira-board" aria-label={board.name}>
             <header className="kanban-head">
                 <div className="kanban-title">
                     <h2>{board.name}</h2>
@@ -113,19 +120,19 @@ export function JiraBoard({
                     <p className="kanban-meta">Showing the first 300 issues. Pick people or narrow the board in Jira to see the rest.</p>
                 )}
                 <div className="kanban-filters" role="group" aria-label="Filter the board">
-                    <input
-                        className="kanban-search"
-                        value={words}
-                        onChange={(event) => setWords(event.target.value)}
-                        placeholder="Find a card"
-                        aria-label="Find a card"
-                        spellCheck={false}
-                    />
-                    <button type="button" className="kanban-pick" aria-pressed={picked.has("me")} onClick={() => toggle("me")}>
-                        Only my issues
-                    </button>
+                    <span className="jira-board-search">
+                        <IconSearch size={13} />
+                        <input
+                            className="kanban-search"
+                            value={words}
+                            onChange={(event) => setWords(event.target.value)}
+                            placeholder="Find a card"
+                            aria-label="Find a card"
+                            spellCheck={false}
+                        />
+                    </span>
                     <span className="jira-board-people">
-                        {boardPeople(whole.data).map((person) => (
+                        {faces.map((person) => (
                             <button
                                 key={person.accountId}
                                 type="button"
@@ -137,7 +144,20 @@ export function JiraBoard({
                                 <JiraFace person={person} />
                             </button>
                         ))}
+                        {hidden > 0 && (
+                            <button
+                                type="button"
+                                className="jira-avatar jira-avatar-pick jira-avatar-more"
+                                title={`Show ${hidden} more`}
+                                aria-label={`Show ${hidden} more`}
+                                onClick={() => setEveryone(true)}>
+                                +{hidden}
+                            </button>
+                        )}
                     </span>
+                    <button type="button" className="kanban-pick" aria-pressed={picked.has("me")} onClick={() => toggle("me")}>
+                        Only my issues
+                    </button>
                     {nobody > 0 && (
                         <button type="button" className="kanban-pick" aria-pressed={picked.has("none")} onClick={() => toggle("none")}>
                             Unassigned <span className="kanban-pick-count">{nobody}</span>
@@ -172,7 +192,7 @@ export function JiraBoard({
                             role="list"
                             aria-label={column.name}>
                             <div className="kanban-column-head">
-                                <span>{column.name}</span>
+                                <span className="jira-column-name">{column.name}</span>
                                 <span className="kanban-count">{column.issues.length}</span>
                             </div>
                             {column.issues.map((issue) => (
@@ -199,15 +219,11 @@ export function JiraBoard({
                                     }}>
                                     <span className="kanban-card-summary">{issue.summary}</span>
                                     <span className="kanban-card-foot">
-                                        <span className="kanban-key">{issue.key}</span>
-                                        {issue.issueType && <span className="kanban-meta">{issue.issueType}</span>}
-                                        {issue.priority && <span className="kanban-meta">{issue.priority}</span>}
+                                        <IssueTypeIcon type={issue.issueType} />
+                                        <IssueKey issue={issue} className="kanban-key" />
+                                        <PriorityGlyph priority={issue.priority} />
                                         <span className="kanban-grow" />
-                                        {issue.assignee && (
-                                            <span className="jira-avatar" title={issue.assignee.name}>
-                                                <JiraFace person={issue.assignee} />
-                                            </span>
-                                        )}
+                                        <Avatar person={issue.assignee} />
                                     </span>
                                 </button>
                             ))}

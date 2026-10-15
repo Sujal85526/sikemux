@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { IconUser } from "../../../plugin-api/ui";
 import { jiraApi, type JiraPerson } from "../api";
 
 /** The person's Jira picture, or their initials until it loads or when it cannot. */
@@ -27,4 +28,20 @@ function initials(name: string): string {
         .slice(0, 2)
         .map((part) => part[0]?.toUpperCase() ?? "")
         .join("");
+}
+
+/** A person's round picture, or an empty one for nobody. */
+export function Avatar({ person, large }: { person: Pick<JiraPerson, "name" | "avatarUrl"> | null; large?: boolean }) {
+    const size = large ? " large" : "";
+    if (!person)
+        return (
+            <span className={`jira-avatar nobody${size}`} title="Unassigned">
+                <IconUser size={large ? 13 : 11} />
+            </span>
+        );
+    return (
+        <span className={`jira-avatar${size}`} title={person.name}>
+            <JiraFace person={person} />
+        </span>
+    );
 }

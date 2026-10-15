@@ -1,3 +1,7 @@
+:root {
+    --jira-blue: #7aa7f5;
+}
+
 .jira-status {
     padding: 1px 6px;
     border-radius: var(--radius-1);
@@ -9,8 +13,8 @@
 }
 
 .jira-status-indeterminate {
-    color: var(--text-primary);
-    background: color-mix(in oklab, var(--acc) 22%, transparent);
+    color: var(--jira-blue);
+    background: color-mix(in oklab, var(--jira-blue) 16%, transparent);
 }
 
 .jira-status-done {
