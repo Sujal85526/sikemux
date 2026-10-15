@@ -49,7 +49,7 @@ export interface JiraIssueSummary {
 export interface JiraParent {
     key: string;
     summary: string;
-    /** Jira's name for the epic's colour on a board, `color_1` to `color_14`. */
+    /** Jira's name for the epic's colour: `color_1` to `color_14`, or a name such as `teal`. */
     color: string | null;
 }
 

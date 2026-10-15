@@ -211,7 +211,8 @@ pub fn transitions(body: &Value) -> Vec<Transition> {
                     id: text(transition.get("id")).unwrap_or_default(),
                     name: text(transition.get("name")).unwrap_or_default(),
                     to: text(transition.pointer("/to/name")).unwrap_or_default(),
-                    to_category: text(transition.pointer("/to/statusCategory/key")).unwrap_or_default(),
+                    to_category: text(transition.pointer("/to/statusCategory/key"))
+                        .unwrap_or_default(),
                 })
                 .collect()
         })
@@ -271,9 +272,39 @@ pub fn keys_in(text: &str) -> Vec<String> {
     found
 }
 
-/// The custom field that holds sprints, which differs from site to site. Asked once per site.
-pub(crate) async fn sprint_field(site: &Site, credentials: &Credentials) -> Option<String> {
-    static FIELDS: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
+/// The ids of the custom fields Sikemux reads, which differ from site to site.
+#[derive(Clone, Default, Debug, PartialEq)]
+pub(crate) struct CustomFields {
+    pub sprint: Option<String>,
+    /// An epic's colour on a board, `ghx-label-1` to `ghx-label-14`.
+    pub epic_color: Option<String>,
+    /// An issue's own colour by name, such as `teal`, which newer projects keep.
+    pub issue_color: Option<String>,
+}
+
+impl CustomFields {
+    pub(crate) fn from_fields(fields: &Value) -> Self {
+        let id_of = |schema: &str| {
+            fields.as_array().and_then(|fields| {
+                fields
+                    .iter()
+                    .find(|field| {
+                        field.pointer("/schema/custom").and_then(Value::as_str) == Some(schema)
+                    })
+                    .and_then(|field| text(field.get("id")))
+            })
+        };
+        Self {
+            sprint: id_of("com.pyxis.greenhopper.jira:gh-sprint"),
+            epic_color: id_of("com.pyxis.greenhopper.jira:gh-epic-color"),
+            issue_color: id_of("com.pyxis.greenhopper.jira:jsw-issue-color"),
+        }
+    }
+}
+
+/// Asked once per site.
+pub(crate) async fn custom_fields(site: &Site, credentials: &Credentials) -> CustomFields {
+    static FIELDS: Mutex<Option<HashMap<String, CustomFields>>> = Mutex::new(None);
     if let Some(known) = FIELDS.lock().ok().and_then(|fields| {
         fields
             .as_ref()
@@ -281,26 +312,21 @@ pub(crate) async fn sprint_field(site: &Site, credentials: &Credentials) -> Opti
     }) {
         return known;
     }
-    let found = client::send(credentials, Method::GET, "/rest/api/3/field", &[], None)
-        .await
-        .ok()
-        .and_then(|fields| {
-            fields.as_array().and_then(|fields| {
-                fields
-                    .iter()
-                    .find(|field| {
-                        field.pointer("/schema/custom").and_then(Value::as_str)
-                            == Some("com.pyxis.greenhopper.jira:gh-sprint")
-                    })
-                    .and_then(|field| text(field.get("id")))
-            })
-        });
-    if let Ok(mut fields) = FIELDS.lock() {
-        fields
+    let Ok(fields) = client::send(credentials, Method::GET, "/rest/api/3/field", &[], None).await
+    else {
+        return CustomFields::default();
+    };
+    let found = CustomFields::from_fields(&fields);
+    if let Ok(mut known) = FIELDS.lock() {
+        known
             .get_or_insert_with(HashMap::new)
             .insert(site.host.clone(), found.clone());
     }
     found
+}
+
+pub(crate) async fn sprint_field(site: &Site, credentials: &Credentials) -> Option<String> {
+    custom_fields(site, credentials).await.sprint
 }
 
 pub(crate) fn issue_path(key: &str) -> JiraResult<String> {

@@ -1,7 +1,7 @@
 //! Jira Software boards: which ones the person can see, a board's columns with the issues
 //! in each, and moving an issue into another column.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use reqwest::Method;
@@ -11,12 +11,13 @@ use serde_json::{json, Value};
 use crate::auth;
 use crate::client::{self, Credentials};
 use crate::error::{JiraError, JiraResult};
-use crate::issues::{issue_path, sprint_field, summarise, text, IssueSummary, SUMMARY_FIELDS};
+use crate::issues::{
+    custom_fields, issue_path, summarise, text, CustomFields, IssueSummary, SUMMARY_FIELDS,
+};
 
 /// How many issues one board shows; a board this full is better narrowed in Jira itself.
 const BOARD_ISSUES_MAX: usize = 300;
 const PAGE: usize = 100;
-const EPIC_PAGES: usize = 4;
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -141,42 +142,72 @@ pub fn people_clause(request: &BoardRequest) -> Option<String> {
     (!picks.is_empty()).then(|| format!("({})", picks.join(" OR ")))
 }
 
-/// The colour Jira gives each epic on a board, by epic key.
-pub fn epic_colors(pages: &[Value]) -> HashMap<String, String> {
-    pages
-        .iter()
-        .filter_map(|page| page.get("values").and_then(Value::as_array))
-        .flatten()
-        .filter_map(|epic| Some((text(epic.get("key"))?, text(epic.pointer("/color/key"))?)))
-        .collect()
+/// The colour an epic wears: its board colour as `color_N` where its project keeps one, else its own colour by name.
+pub fn epic_color(fields: &Value, ids: &CustomFields) -> Option<String> {
+    let board = ids
+        .epic_color
+        .as_deref()
+        .and_then(|id| text(fields.get(id)))
+        .and_then(|label| {
+            label
+                .strip_prefix("ghx-label-")
+                .map(|number| format!("color_{number}"))
+        });
+    board.or_else(|| {
+        ids.issue_color
+            .as_deref()
+            .and_then(|id| text(fields.get(id)))
+    })
 }
 
-/// The board's epics with their colours. A board whose project keeps no epic panel answers
-/// with an error, and its cards simply go without colours.
-async fn board_epics(credentials: &Credentials, base: &str) -> HashMap<String, String> {
-    let mut pages = Vec::new();
-    for page in 0..EPIC_PAGES {
-        let Ok(body) = client::send(
+/// The colours of the epics the cards sit under, read from the epics themselves, by epic key.
+async fn parent_colors(
+    credentials: &Credentials,
+    ids: &CustomFields,
+    issues: &[Value],
+) -> HashMap<String, String> {
+    let wanted: Vec<&str> = [ids.epic_color.as_deref(), ids.issue_color.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect();
+    let keys: BTreeSet<String> = issues
+        .iter()
+        .filter_map(|issue| text(issue.pointer("/fields/parent/key")))
+        .collect();
+    let mut colors = HashMap::new();
+    if wanted.is_empty() {
+        return colors;
+    }
+    for chunk in keys.into_iter().collect::<Vec<_>>().chunks(PAGE) {
+        let body = json!({
+            "jql": format!("key in ({})", chunk.join(",")),
+            "maxResults": chunk.len(),
+            "fields": wanted,
+        });
+        let Ok(answer) = client::send(
             credentials,
-            Method::GET,
-            &format!("{base}/epic"),
-            &[
-                ("maxResults", "50".into()),
-                ("startAt", (page * 50).to_string()),
-            ],
-            None,
+            Method::POST,
+            "/rest/api/3/search/jql",
+            &[],
+            Some(&body),
         )
         .await
         else {
             break;
         };
-        let last = body.get("isLast").and_then(Value::as_bool).unwrap_or(true);
-        pages.push(body);
-        if last {
-            break;
+        for epic in answer
+            .get("issues")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let fields = epic.get("fields").unwrap_or(&Value::Null);
+            if let (Some(key), Some(color)) = (text(epic.get("key")), epic_color(fields, ids)) {
+                colors.insert(key, color);
+            }
         }
     }
-    epic_colors(&pages)
+    colors
 }
 
 /// Puts each issue in the column that holds its status, keeping the board's column order.
@@ -279,12 +310,12 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
     let (site, credentials) = auth::credentials(data_dir, request.site.as_deref()).await?;
     let base = format!("/rest/agile/1.0/board/{}", request.id);
     let configuration_path = format!("{base}/configuration");
-    let (about, configuration, sprint_field, epics) = tokio::join!(
+    let (about, configuration, ids) = tokio::join!(
         client::send(&credentials, Method::GET, &base, &[], None),
         client::send(&credentials, Method::GET, &configuration_path, &[], None),
-        sprint_field(&site, &credentials),
-        board_epics(&credentials, &base),
+        custom_fields(&site, &credentials),
     );
+    let sprint_field = ids.sprint.clone();
     let (about, configuration) = (about?, configuration?);
     let kind = text(about.get("type")).unwrap_or_else(|| "kanban".into());
     let sprint = if kind == "scrum" {
@@ -324,6 +355,7 @@ pub async fn board(data_dir: &Path, request: BoardRequest) -> JiraResult<BoardVi
             issues_from(&credentials, &format!("{base}/issue"), &fields, Some(&jql)).await?
         }
     };
+    let epics = parent_colors(&credentials, &ids, &issues).await;
     Ok(BoardView {
         id: request.id,
         name: text(about.get("name")).unwrap_or_default(),

@@ -90,7 +90,7 @@ export function IssueKey({ issue, className = "jira-key" }: { issue: Pick<JiraIs
     return <span className={`${className}${issue.statusCategory === "done" ? " done" : ""}`}>{issue.key}</span>;
 }
 
-/** Jira's fourteen epic colours, by the names its boards give them. */
+/** Jira's epic colours: the fourteen its boards number, then the ones newer projects name. */
 const EPIC_COLORS: Record<string, string> = {
     color_1: "#a07150",
     color_2: "#f79232",
@@ -106,6 +106,22 @@ const EPIC_COLORS: Record<string, string> = {
     color_12: "#e5603e",
     color_13: "#3fb37e",
     color_14: "#7a69d6",
+    purple: "#9f8fef",
+    blue: "#579dff",
+    green: "#4bce97",
+    teal: "#60c6d2",
+    yellow: "#e2b203",
+    orange: "#fea362",
+    grey: "#8c9bab",
+    magenta: "#e774bb",
+    dark_purple: "#6e5dc6",
+    dark_blue: "#0c66e4",
+    dark_green: "#1f845a",
+    dark_teal: "#1d7f8c",
+    dark_yellow: "#946f00",
+    dark_orange: "#c25100",
+    dark_grey: "#626f86",
+    dark_magenta: "#ae4787",
 };
 
 export const epicColor = (color: string | null) => (color && EPIC_COLORS[color]) ?? "var(--gray-700)";
