@@ -275,6 +275,10 @@ pub(super) fn team_here(core: &Core, host: &str, params: Value) -> CoreResult<Va
                 core.harness
                     .note_agent(&foreign.project, Happened::Gone.kind(), &foreign.agent_id);
                 core.hosts.team.remove(&foreign.agent_id);
+                if let (Role::Worker, Some(lead)) = (foreign.role, foreign.parent.clone()) {
+                    let host = name_of(core, host);
+                    notice(core, lead, format!("{} no longer runs on {host}: it stopped while {host} was out of reach, so it reports no more. What it committed and did not report yet stays in its checkout there; start another agent if the work is not done.", foreign.name));
+                }
             }
         }
     }
