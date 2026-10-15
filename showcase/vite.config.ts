@@ -5,7 +5,12 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Browser } from "playwright-core";
-import { mergeConfig, type PluginOption } from "vite";
+import {
+  mergeConfig,
+  type PluginOption,
+  type PreviewServer,
+  type ViteDevServer,
+} from "vite";
 import base from "../vite.config.ts";
 import { DEMO_PROJECTS, PANE_IMAGE } from "./world/projects.ts";
 
@@ -325,107 +330,109 @@ async function snapshot(
   }
 }
 
+function serveDemoFiles(server: ViteDevServer | PreviewServer, port: number) {
+  server.httpServer?.on("close", () => {
+    markdownParser?.stop();
+    void snapshotBrowser?.then((browser) => browser.close());
+  });
+  server.middlewares.use("/__showcase", async (request, response) => {
+    if (request.url === `/preview/${encodeURIComponent(PANE_IMAGE)}`) {
+      response.setHeader("Content-Type", "image/jpeg");
+      return response.end(readFileSync(PANE_IMAGE_FILE));
+    }
+    if (request.url === "/simulator/chrome") {
+      response.setHeader("Content-Type", "application/json");
+      return response.end(JSON.stringify(await simulatorChrome()));
+    }
+    if (request.url === "/simulator/frame") {
+      const frame = join(import.meta.dirname, "../mobile/showcase/out/asking.png");
+      if (!existsSync(frame)) return response.writeHead(404).end();
+      response.setHeader("Content-Type", "image/png");
+      return response.end(readFileSync(frame));
+    }
+    const shownPage = request.url?.match(/^\/page\/([0-9a-f]{32})$/);
+    if (shownPage) {
+      response.setHeader("Content-Type", "text/html");
+      return response.end(
+        readFileSync(join(import.meta.dirname, "pages", `${shownPage[1]}.html`)),
+      );
+    }
+    if (request.url?.split("?")[0] === "/wallpaper") {
+      if (request.method === "POST") {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(chunk as Buffer);
+        chosenWallpaper = Buffer.concat(chunks);
+        return response.end();
+      }
+      return response.end(chosenWallpaper ?? readFileSync(WALLPAPER_FILE));
+    }
+    try {
+      const input = await body(request);
+      switch (request.url) {
+        case "/read_dirs":
+          return send(
+            response,
+            200,
+            (input.paths as string[]).map(readDir),
+          );
+        case "/read_file": {
+          const content = readFile(input.path as string);
+          return content === null
+            ? send(response, 404, {
+                error: "No such file or directory (os error 2)",
+              })
+            : send(response, 200, content);
+        }
+        case "/list_files": {
+          const found = localRoot(input.repo as string);
+          return send(
+            response,
+            200,
+            found ? [...found.project.files].sort() : [],
+          );
+        }
+        case "/commit_files":
+          return send(
+            response,
+            200,
+            commitFiles(input.project as string, input.rev as string),
+          );
+        case "/git_log":
+          return send(
+            response,
+            200,
+            gitLog(input.project as string, Number(input.count ?? 60)),
+          );
+        case "/snapshot":
+          return send(
+            response,
+            200,
+            await snapshot(`http://localhost:${port}`, input),
+          );
+        case "/markdown":
+          return send(
+            response,
+            200,
+            await parseMarkdown(input.requests as unknown[]),
+          );
+        default:
+          return send(response, 404, {
+            error: "unknown showcase endpoint",
+          });
+      }
+    } catch (error) {
+      return send(response, 500, { error: String(error) });
+    }
+  });
+}
+
 function demoFileSystem(): PluginOption {
   return {
     name: "sikemux-showcase-fs",
-    configureServer(server) {
-      server.httpServer?.on("close", () => {
-        markdownParser?.stop();
-        void snapshotBrowser?.then((browser) => browser.close());
-      });
-      server.middlewares.use("/__showcase", async (request, response) => {
-        if (request.url === `/preview/${encodeURIComponent(PANE_IMAGE)}`) {
-          response.setHeader("Content-Type", "image/jpeg");
-          return response.end(readFileSync(PANE_IMAGE_FILE));
-        }
-        if (request.url === "/simulator/chrome") {
-          response.setHeader("Content-Type", "application/json");
-          return response.end(JSON.stringify(await simulatorChrome()));
-        }
-        if (request.url === "/simulator/frame") {
-          const frame = join(import.meta.dirname, "../mobile/showcase/out/asking.png");
-          if (!existsSync(frame)) return response.writeHead(404).end();
-          response.setHeader("Content-Type", "image/png");
-          return response.end(readFileSync(frame));
-        }
-        const shownPage = request.url?.match(/^\/page\/([0-9a-f]{32})$/);
-        if (shownPage) {
-          response.setHeader("Content-Type", "text/html");
-          return response.end(
-            readFileSync(join(import.meta.dirname, "pages", `${shownPage[1]}.html`)),
-          );
-        }
-        if (request.url?.split("?")[0] === "/wallpaper") {
-          if (request.method === "POST") {
-            const chunks: Buffer[] = [];
-            for await (const chunk of request) chunks.push(chunk as Buffer);
-            chosenWallpaper = Buffer.concat(chunks);
-            return response.end();
-          }
-          return response.end(chosenWallpaper ?? readFileSync(WALLPAPER_FILE));
-        }
-        try {
-          const input = await body(request);
-          switch (request.url) {
-            case "/read_dirs":
-              return send(
-                response,
-                200,
-                (input.paths as string[]).map(readDir),
-              );
-            case "/read_file": {
-              const content = readFile(input.path as string);
-              return content === null
-                ? send(response, 404, {
-                    error: "No such file or directory (os error 2)",
-                  })
-                : send(response, 200, content);
-            }
-            case "/list_files": {
-              const found = localRoot(input.repo as string);
-              return send(
-                response,
-                200,
-                found ? [...found.project.files].sort() : [],
-              );
-            }
-            case "/commit_files":
-              return send(
-                response,
-                200,
-                commitFiles(input.project as string, input.rev as string),
-              );
-            case "/git_log":
-              return send(
-                response,
-                200,
-                gitLog(input.project as string, Number(input.count ?? 60)),
-              );
-            case "/snapshot":
-              return send(
-                response,
-                200,
-                await snapshot(
-                  `http://localhost:${server.config.server.port}`,
-                  input,
-                ),
-              );
-            case "/markdown":
-              return send(
-                response,
-                200,
-                await parseMarkdown(input.requests as unknown[]),
-              );
-            default:
-              return send(response, 404, {
-                error: "unknown showcase endpoint",
-              });
-          }
-        } catch (error) {
-          return send(response, 500, { error: String(error) });
-        }
-      });
-    },
+    configureServer: (server) =>
+      serveDemoFiles(server, server.config.server.port),
+    configurePreviewServer: (server) =>
+      serveDemoFiles(server, server.config.preview.port),
   };
 }
 
