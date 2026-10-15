@@ -74,9 +74,7 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     }
     const listed = await deps.chats.list().catch(() => null);
     const chats = listed ?? [];
-    if (chats.some((chat) => chat.startedBy === null)) await deps.boards().catch(() => {});
-    const boards = getState().agentBoards;
-    for (const chat of chats) if (chat.startedBy !== null || runOfAgent(boards, chat.agentId)) cmd.adoptChat(chat);
+    const adopted = await adoptChats(chats, deps);
     const plan = agentSessionPlan(getState(), sessions);
     cmd.applyAgentSessionPlan(plan);
     for (const id of plan.resume) {
@@ -100,10 +98,23 @@ export async function restoreCoreSessions(deps: CoreSessionRestoreDeps = default
     deps.schedule(() => {
         const stillClaimed = claimedSessionIds(getState());
         for (const id of candidates) if (!stillClaimed.has(id)) void deps.kill(id).catch(() => {});
-        const stopUnclaimed = (kept: AcpChat[]) => {
-            for (const chat of kept) if (chat.startedBy === null && !chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
+        const stopUnclaimed = (kept: AcpChat[], taken: ReadonlySet<string>) => {
+            for (const chat of kept) if (!taken.has(chat.agentId) && !chatClaimed(chat.agentId)) void deps.chats.stop(chat.agentId).catch(() => {});
         };
-        if (listed) stopUnclaimed(listed);
-        else void deps.chats.list().then(stopUnclaimed, () => {});
+        if (listed) stopUnclaimed(listed, adopted);
+        else
+            void deps.chats
+                .list()
+                .then(async (kept) => stopUnclaimed(kept, await adoptChats(kept, deps)))
+                .catch(() => {});
     }, UNCLAIMED_GRACE_MS);
+}
+
+/** Shows the chats other devices or agents started, or a board runs, and answers which they are. */
+async function adoptChats(chats: AcpChat[], deps: CoreSessionRestoreDeps): Promise<Set<string>> {
+    if (chats.some((chat) => chat.startedBy === null)) await deps.boards().catch(() => {});
+    const boards = getState().agentBoards;
+    const adopted = chats.filter((chat) => chat.startedBy !== null || runOfAgent(boards, chat.agentId));
+    for (const chat of adopted) cmd.adoptChat(chat);
+    return new Set(adopted.map((chat) => chat.agentId));
 }
