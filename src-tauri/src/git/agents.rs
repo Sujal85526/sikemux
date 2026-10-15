@@ -31,6 +31,23 @@ pub async fn git_change_owners(
     .await
 }
 
+/// The agents each of `commits` has a footer for that checks out, as the core
+/// knows them now.
+#[tauri::command]
+pub async fn git_commit_owners(
+    manager: State<'_, PtyManager>,
+    repo: String,
+    commits: Vec<String>,
+) -> AppResult<Value> {
+    let client = manager.client().await?;
+    call(
+        &client,
+        "commitOwners".to_owned(),
+        json!({ "dir": repo, "commits": commits }),
+    )
+    .await
+}
+
 /// The core's name for the watched state `generation`. Change numbers start
 /// again with the app, and the core outlives it.
 fn named(generation: u64) -> String {

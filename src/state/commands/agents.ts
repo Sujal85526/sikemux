@@ -6,7 +6,7 @@ import { waitsOnPerson, type AgentQuestion } from "../../agents/agentQuestions";
 import { profileOfLauncher } from "../../remote/workspace";
 import { isAgentType } from "../../agents/catalog";
 import { agentSupportsChat, effectiveMode, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode, type ChatAgentType } from "../../agents/agentLaunch";
-import { selectedAgentRuntimeProfiles } from "../../agents/agentProfiles";
+import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
 import { isAgentBusy, reduceAgentState } from "../agentStatus";
 import { confirmDialog } from "../dialog";
@@ -17,7 +17,7 @@ import { notify, reportError, swallow } from "../toast";
 import { agentIdsWithLiveSessions } from "../agentLiveSessions";
 import { agentSupportsSkipPermissions } from "./agentLogic";
 import { agentExecutablePath, profileOf, relaunchSpec } from "./agentLaunchCommand";
-import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId } from "../selectors";
+import { activeAgentId, agentIdsOf, agentWindowId, ownerSessionId, projectSessionId } from "../selectors";
 import { agentWindow } from "../agentWindow";
 import { newId } from "../layout";
 import type { Agent, AgentEffort, AgentPermissionMode, AgentType, AgentWorktree, Session } from "../types";
@@ -198,6 +198,27 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         if (!options.background) sess.activeWindowId = win.id;
     });
     return attached;
+}
+
+/** A session an agent CLI saved, by its id, in the project it ran in. */
+export interface SavedChat {
+    agent: AgentType;
+    id: string;
+    title: string;
+    project: string;
+}
+
+/** Resumes a saved chat in the project it ran in; one already open there comes forward instead. */
+export function openSavedChat(chat: SavedChat, options: { background?: boolean; detectedExecutablePath?: string } = {}): void {
+    const state = getState();
+    const project = projectSessionId(state, chat.project) ?? undefined;
+    addAgent(chat.agent, chat.id, chat.title, {
+        sessionId: project,
+        profileId: selectedProviderProfile(chat.agent, state.providerProfiles, state.selectedProviderProfileIds)?.id,
+        detectedExecutablePath: options.detectedExecutablePath,
+        background: options.background,
+    });
+    if (!options.background && project && project !== state.activeSessionId) selectSession(project);
 }
 
 /**

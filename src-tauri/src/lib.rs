@@ -448,6 +448,7 @@ pub fn run() {
             git::blame::git_blame,
             git::commit::git_commit,
             git::agents::git_change_owners,
+            git::agents::git_commit_owners,
             git::commit::git_push,
             git::commit::git_pull,
             git::ai::git_ai_commit,

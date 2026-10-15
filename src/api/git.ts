@@ -63,8 +63,23 @@ export interface GitCommit {
     subject: string;
     refs: string[];
     unpushed: boolean;
-    /** The agents its trailers say wrote it. */
-    agents?: string[];
+    /** Its message ends in an agent footer, which only the core can check. */
+    footer?: boolean;
+}
+
+/** An agent a commit's signed footer names, as this host knows it now. */
+export interface CommitOwner {
+    name: string;
+    cli: string;
+    model?: string;
+    /** The agent the footer names. */
+    chat: string;
+    title?: string;
+    /** The agent that has its session open now. */
+    open?: string;
+    sessionId?: string;
+    /** The project its session ran in. */
+    project?: string;
 }
 
 export interface GitCompare {
@@ -281,6 +296,7 @@ export const git = {
     blame: (repo: string, path: string, contents?: string | null) => invoke<GitBlame>("git_blame", { repo, path, contents: contents ?? null }),
     commit: (repo: string, message: string) => invoke<string>("git_commit", { repo, message }),
     changeOwners: (repo: string, staged: boolean) => invoke<ChangeOwners>("git_change_owners", { repo, staged }),
+    commitOwners: (repo: string, commits: string[]) => invoke<Record<string, CommitOwner[]>>("git_commit_owners", { repo, commits }),
     push: (repo: string) => invoke<string>("git_push", { repo }),
     pull: (repo: string) => invoke<string>("git_pull", { repo }),
     aiMessage: (repo: string, provider: string, model: string, onChunk: (chunk: string) => void) => {

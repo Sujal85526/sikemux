@@ -4,6 +4,7 @@ import { filesApi } from "../api/files";
 import {
     git,
     type ChangeOwners,
+    type CommitOwner,
     type DiscoveredRepo,
     type GitOverview,
     type GitRemote,
@@ -26,6 +27,13 @@ export const gitChangeOwnersR = resource({
     kind: "git.changeOwners",
     fetch: (repo: string, staged: boolean): Promise<ChangeOwners> => git.changeOwners(repo, staged),
     staleAfterMs: 5_000,
+});
+
+/** `commits` is a comma-joined list of full hashes, so one fetch covers every footer in view. */
+export const gitCommitOwnersR = resource({
+    kind: "git.commitOwners",
+    fetch: (repo: string, commits: string): Promise<Record<string, CommitOwner[]>> => git.commitOwners(repo, commits.split(",")),
+    staleAfterMs: 30_000,
 });
 
 export const gitDiscoveredReposR = resource({

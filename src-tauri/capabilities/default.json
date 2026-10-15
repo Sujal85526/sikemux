@@ -183,6 +183,7 @@
     "allow-git-blame",
     "allow-git-commit",
     "allow-git-change-owners",
+    "allow-git-commit-owners",
     "allow-git-push",
     "allow-git-pull",
     "allow-git-ai-commit",

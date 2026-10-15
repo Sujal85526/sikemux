@@ -23,9 +23,9 @@ pub struct GitCommit {
     #[serde(skip)]
     time: i64,
     pub(super) subject: String,
-    /// The agents its trailers say wrote it.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    agents: Vec<String>,
+    /// Its message ends in an agent footer, which only the core can check.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    footer: bool,
     /// Ref decorations pointing at this commit: `HEAD`, local branches,
     /// `origin/main`, `tag: v0.1.11`. Rendered as lazygit-style badges.
     refs: Vec<String>,
@@ -233,10 +233,8 @@ pub(super) fn describe_commits(
             date: relative_time(commit.time().seconds()),
             time: commit.time().seconds(),
             subject: commit.summary().ok().flatten().unwrap_or("").to_string(),
-            agents: sikemux_core::trailers::agents(commit.message().unwrap_or_default())
-                .into_iter()
-                .map(|agent| agent.name)
-                .collect(),
+            footer: !sikemux_core::trailers::agents(commit.message().unwrap_or_default())
+                .is_empty(),
             unpushed: unpushed.contains(&oid),
             refs: ref_map.get(&oid).cloned().unwrap_or_default(),
         });

@@ -164,6 +164,7 @@ export const IPC_COMMANDS = [
     "git_blame",
     "git_commit",
     "git_change_owners",
+    "git_commit_owners",
     "git_push",
     "git_pull",
     "git_ai_commit",

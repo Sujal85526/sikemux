@@ -40,13 +40,10 @@
 .gg-row.ranged {
     background: rgba(124, 197, 255, 0.08);
 }
-.gg-agents {
-    flex: 0 1000 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-tertiary);
-    font-size: var(--text-2xs);
+.gg-row .git-agents {
+    flex: 0 8 auto;
+    min-width: calc(var(--agents) * 29px - 4px);
+    max-width: 40%;
 }
 .gg-hash {
     color: var(--text-tertiary);

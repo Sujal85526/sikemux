@@ -5,7 +5,7 @@ import type {
   IpcTransport,
   IpcUnsubscribe,
 } from "../src/api/transport";
-import type { GitCommit, GitOverview } from "../src/api/git";
+import type { CommitOwner, GitCommit, GitOverview } from "../src/api/git";
 import {
   AGENT_SCRIPTS,
   AGENT_USAGE,
@@ -164,6 +164,57 @@ function recorded(
     ...update,
     _meta: { sikemux: { at: start + index * 9_000 } },
   }));
+}
+
+/** Commits agents made, by their place in the history, with the agents their signed footers name. */
+const AGENT_COMMITS: Record<number, CommitOwner[]> = {
+  0: [
+    {
+      name: AGENTS.rail.name,
+      cli: AGENTS.rail.type,
+      model: "opus",
+      chat: AGENTS.rail.id,
+      title: AGENTS.rail.title,
+      open: AGENTS.rail.id,
+      sessionId: AGENTS.rail.resumeId,
+    },
+  ],
+  2: [
+    {
+      name: AGENTS.replay.name,
+      cli: AGENTS.replay.type,
+      chat: AGENTS.replay.id,
+      title: AGENTS.replay.title,
+      open: AGENTS.replay.id,
+      sessionId: AGENTS.replay.resumeId,
+    },
+    {
+      name: "Sable",
+      cli: "claude",
+      chat: "agent-sable",
+      title: "Release notes for v0.4.1",
+      sessionId: "s-c3",
+    },
+  ],
+  5: [
+    {
+      name: "Juniper",
+      cli: "claude",
+      chat: "agent-juniper",
+      title: "Split the Rundeck matrix into its own pane",
+      sessionId: "s-c1",
+    },
+  ],
+};
+const commitOwners = new Map<string, CommitOwner[]>();
+
+function signedByAgents(log: GitCommit[]): GitCommit[] {
+  return log.map((commit, index) => {
+    const owners = AGENT_COMMITS[index];
+    if (!owners) return commit;
+    commitOwners.set(commit.full_hash, owners);
+    return { ...commit, footer: true };
+  });
 }
 
 export class ShowcaseBackend implements IpcTransport {
@@ -378,10 +429,23 @@ export class ShowcaseBackend implements IpcTransport {
           current: name === status.branch,
           upstream: name === status.branch ? status.upstream : null,
         })),
-        log: await server("git_log", { project: project.name, count: 80 }),
+        log: signedByAgents(
+          await server<GitCommit[]>("git_log", {
+            project: project.name,
+            count: 80,
+          }),
+        ),
       };
       return overview;
     });
+    this.on("git_commit_owners", ({ commits }) =>
+      Object.fromEntries(
+        (commits as string[]).flatMap((hash) => {
+          const owners = commitOwners.get(hash);
+          return owners ? [[hash, owners]] : [];
+        }),
+      ),
+    );
     this.on("git_status", ({ repo }) => GIT_STATUS[repo as string]);
     this.on(
       "git_remotes",

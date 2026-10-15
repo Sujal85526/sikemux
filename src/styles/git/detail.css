@@ -54,8 +54,47 @@
     font-size: var(--text-3xs);
     letter-spacing: 0;
 }
-.git-chip.agent {
+.git-agents {
+    display: inline-flex;
+    align-items: center;
     gap: 4px;
+    min-width: 0;
+}
+.git-agent {
+    height: 18px;
+    min-width: 25px;
+    overflow: hidden;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+    cursor: pointer;
+}
+.git-agent.mark-only {
+    padding: 0 4px;
+}
+.git-agent:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.git-agent:disabled {
+    cursor: default;
+}
+.git-agent > svg {
+    flex: none;
+}
+.git-agent .agent-label-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.git-agent .agent-label-name {
+    margin-left: 0;
 }
 .git-chip.warn {
     color: var(--warn);

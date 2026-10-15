@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { AgentInfo, RecentChat } from "../api/agents";
-import { selectedProviderProfile } from "../agents/agentProfiles";
 import { canDeleteChats } from "../agents/catalog";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import * as cmd from "../state/commands";
@@ -20,8 +19,6 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
     const sessionOrder = useStore((s) => s.sessionOrder);
     const activeSessionId = useStore((s) => s.activeSessionId);
     const allProjects = useStore((s) => s.agentRailScope === "all");
-    const profiles = useStore((s) => s.providerProfiles);
-    const profileSelections = useStore((s) => s.selectedProviderProfileIds);
     const [renaming, setRenaming] = useState<string | null>(null);
     const [menu, setMenu] = useState<{ chat: RecentChat; x: number; y: number } | null>(null);
 
@@ -33,15 +30,7 @@ export function RecentChatList({ recent, providers }: { recent: RecentChats; pro
         return id ? sessions[id] : undefined;
     };
 
-    const open = (chat: RecentChat) => {
-        const project = projectOf(chat);
-        cmd.addAgent(chat.agent, chat.id, chat.title, {
-            sessionId: project?.id,
-            profileId: selectedProviderProfile(chat.agent, profiles, profileSelections)?.id,
-            detectedExecutablePath: providerOf(chat)?.command,
-        });
-        if (project && project.id !== activeSessionId) cmd.selectSession(project.id);
-    };
+    const open = (chat: RecentChat) => cmd.openSavedChat(chat, { detectedExecutablePath: providerOf(chat)?.command });
 
     const rename = (chat: RecentChat, title: string) => {
         const provider = providerOf(chat);

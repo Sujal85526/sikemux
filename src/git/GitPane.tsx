@@ -28,7 +28,6 @@ import type { Pull } from "../codehost/types";
 import { FileIcon } from "../ui/FileIcon";
 import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
 import {
-    IconAgent,
     IconCheckout,
     IconChevron,
     IconCopy,
@@ -57,6 +56,7 @@ import { GitModalRenderer } from "./GitModalRenderer";
 import { VirtualPanelRows } from "./VirtualPanelRows";
 import { gitStatusDecoration } from "./gitFileStatus";
 import { fileAgentNames, ownedFile, useChangeOwners } from "./changeOwners";
+import { CommitAgents, useCommitOwners } from "./CommitAgents";
 import { GitColumns } from "./GitColumns";
 import { HISTORY_CLEARANCE, HISTORY_MIN, ResizeHandle } from "./ResizeHandle";
 import { SkeletonRows } from "../ui/Skeleton";
@@ -186,6 +186,7 @@ function GitWorkbench({
 
     const filteredFiles = useMemo(() => filterByQuery(files, queries.files, (f) => [f.path]), [files, queries.files]);
     const filteredCommits = useMemo(() => filterByQuery(commits, queries.commits, (c) => [c.subject, c.hash, c.author]), [commits, queries.commits]);
+    const commitOwners = useCommitOwners(repo, commits);
     const stagedFiles = useMemo(() => filteredFiles.filter(isStaged), [filteredFiles]);
     const unstagedFiles = useMemo(() => filteredFiles.filter(hasUnstaged), [filteredFiles]);
 
@@ -1146,12 +1147,7 @@ function GitWorkbench({
             <div className="git-detail-meta">
                 <AuthorAvatar name={c.author} email={c.author_email} />
                 <span>{c.author}</span>
-                {c.agents?.map((agent) => (
-                    <span key={agent} className="git-chip agent" title={`${agent} wrote this commit`}>
-                        <IconAgent size={10} />
-                        {agent}
-                    </span>
-                ))}
+                <CommitAgents owners={commitOwners?.[c.full_hash]} repo={repo} />
                 <span>·</span>
                 <span>{c.date}</span>
                 <span>·</span>
@@ -1496,6 +1492,8 @@ function GitWorkbench({
                                         range={null}
                                         onSelect={onGraphSelect}
                                         onActivate={onGraphActivate}
+                                        repo={repo}
+                                        owners={commitOwners}
                                     />
                                 )}
                             </div>
