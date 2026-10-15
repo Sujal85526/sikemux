@@ -235,6 +235,9 @@ fn authenticate(protocol: u16, token: &str, secret: &str) -> Result<(), String> 
 }
 
 async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
+    let Ok(peer) = stream.peer_addr() else {
+        return;
+    };
     let (read_half, mut writer) = stream.into_split();
     if core.is_frozen() {
         write(
@@ -293,7 +296,7 @@ async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
         } => match authenticate(protocol, &token, secret) {
             Ok(()) => {
                 let answer = tokio::select! {
-                    answer = harness::call(&core, request) => answer,
+                    answer = harness::call(&core, request, peer, port) => answer,
                     () = core.until_frozen() => Err(CUT_SHORT.into()),
                 };
                 Ok(match answer {

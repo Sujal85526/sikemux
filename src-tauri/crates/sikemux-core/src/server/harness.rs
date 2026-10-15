@@ -419,31 +419,30 @@ async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> 
     answer_of(core, call, WINDOW_REPLY_TIMEOUT, no_answer(&request.method)).await
 }
 
-/// Answers one tool call. The call is counted whether or not it succeeds.
-pub(crate) async fn call(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value, String> {
+/// Answers one tool call from the client at `peer` on the tool endpoint's
+/// `port`. The call is counted whether or not it succeeds.
+pub(crate) async fn call(
+    core: &Arc<Core>,
+    mut request: HarnessRequest,
+    peer: std::net::SocketAddr,
+    port: u16,
+) -> Result<Value, String> {
     validate_harness(&request)?;
-    let proven = match request.agent_secret.take() {
-        Some(secret) => {
-            let agent_id = request.agent_id.as_deref().unwrap_or_default();
-            if !core.agent_key.proves(agent_id, &secret) {
-                return Err(
-                    "this tool call's secret is not its agent's; start the agent from Sikemux again"
-                        .into(),
-                );
-            }
-            true
-        }
-        None => false,
-    };
     if AGENT_METHODS
         .iter()
         .any(|prefix| request.method.starts_with(prefix))
-        && !proven
     {
-        return Err(format!(
-            "{} works only for an agent Sikemux started, which proves who it is; start this agent from Sikemux again",
-            request.method.replace('.', "_")
-        ));
+        let caller = tokio::task::spawn_blocking(move || super::callers::identify(peer, port))
+            .await
+            .ok()
+            .flatten();
+        let Some(caller) = caller else {
+            return Err(format!(
+                "{} works only for an agent Sikemux started, and this call came from outside every agent's processes; start this agent from Sikemux again",
+                request.method.replace('.', "_")
+            ));
+        };
+        request.agent_id = Some(caller);
     }
     let tool = tool_name(&request);
     let result = dispatch(core, request).await;
@@ -955,7 +954,6 @@ fn begin_start(
                 id: request.id.clone(),
                 project: project.to_owned(),
                 agent_id: request.agent_id.clone(),
-                agent_secret: None,
                 method: "task.start".into(),
                 params,
             },
@@ -1229,7 +1227,6 @@ mod tests {
             id: "1".into(),
             project: "/project".into(),
             agent_id: Some("agent".into()),
-            agent_secret: None,
             method: method.into(),
             params,
         }

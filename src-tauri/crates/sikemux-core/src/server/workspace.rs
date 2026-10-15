@@ -936,7 +936,7 @@ impl Workspaces {
     }
 }
 
-/// Gives `launch` to `agent_id`, with the secret and tools that are its own.
+/// Gives `launch` to `agent_id`, with the tools that are its own.
 pub(crate) fn own_launch(core: &Core, launch: &mut ChatLaunch, agent_id: &str) {
     own_launch_offering(core, launch, agent_id, None);
 }
@@ -948,10 +948,9 @@ pub(crate) fn own_review_launch(core: &Core, launch: &mut ChatLaunch, agent_id: 
 }
 
 fn own_launch_offering(core: &Core, launch: &mut ChatLaunch, agent_id: &str, offer: Option<&str>) {
-    let secret = core.agent_key.secret(agent_id);
     launch.agent_id = agent_id.to_owned();
     launch.mcp_servers = cli_endpoint(core)
-        .and_then(|endpoint| tools_server(agent_id, &secret, &endpoint, offer))
+        .and_then(|endpoint| tools_server(agent_id, &endpoint, offer))
         .into_iter()
         .collect();
     if let Some(offer) = offer {
@@ -960,23 +959,16 @@ fn own_launch_offering(core: &Core, launch: &mut ChatLaunch, agent_id: &str, off
     launch
         .env
         .insert("SIKEMUX_AGENT_ID".into(), agent_id.to_owned());
-    launch.env.insert("SIKEMUX_AGENT_SECRET".into(), secret);
 }
 
 /// The agents' own tools, served by this binary run as an MCP server, the
 /// same way the app wires them into a chat it starts.
-fn tools_server(
-    agent_id: &str,
-    secret: &str,
-    endpoint: &Path,
-    offer: Option<&str>,
-) -> Option<Value> {
+fn tools_server(agent_id: &str, endpoint: &Path, offer: Option<&str>) -> Option<Value> {
     let executable = std::env::current_exe().ok()?;
     let mut server = McpServerStdio::new("sikemux-tools", executable);
     server.args = vec!["--tools-mcp".into()];
     server.env = vec![
         EnvVariable::new("SIKEMUX_TOOLS_AGENT_ID", agent_id),
-        EnvVariable::new("SIKEMUX_AGENT_SECRET", secret),
         EnvVariable::new("SIKEMUX_CLI_ENDPOINT", endpoint.to_string_lossy()),
     ];
     server

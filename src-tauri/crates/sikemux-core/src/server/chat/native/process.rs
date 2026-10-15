@@ -148,6 +148,7 @@ impl Process {
             kill_and_reap(pid);
             return Err("The agent has no input or output".into());
         };
+        crate::server::callers::started(pid, &launch.agent_id);
         Self::take_up(pid, stdin, stdout, stderr, Vec::new(), Vec::new())
             .inspect_err(|_| kill_and_reap(pid))
     }
@@ -157,10 +158,12 @@ impl Process {
     /// collected as one.
     pub fn adopt(
         record: &AgentRecord,
+        agent_id: &str,
         stdin: OwnedFd,
         stdout: OwnedFd,
         stderr: OwnedFd,
     ) -> Result<(Self, Writer, Lines), String> {
+        crate::server::callers::started(record.pid, agent_id);
         Self::take_up(
             record.pid,
             stdin,

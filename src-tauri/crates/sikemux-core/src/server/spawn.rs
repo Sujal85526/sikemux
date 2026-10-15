@@ -465,7 +465,6 @@ async fn open_terminal(core: &Core, opening: &Opening) -> Result<(), String> {
         id: uuid::Uuid::new_v4().to_string(),
         project: opening.project.clone(),
         agent_id: Some(opening.lead_id.clone()),
-        agent_secret: None,
         method: OPEN_TERMINAL_METHOD.to_owned(),
         params: json!({
             "agentId": opening.agent_id,

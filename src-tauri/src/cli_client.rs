@@ -621,9 +621,6 @@ fn execute_tool(args: &[String]) -> Result<i32, String> {
         id: Uuid::new_v4().to_string(),
         project,
         agent_id: env::var("SIKEMUX_AGENT_ID").ok(),
-        agent_secret: env::var("SIKEMUX_AGENT_SECRET")
-            .ok()
-            .filter(|secret| !secret.is_empty()),
         method: args[0].clone(),
         params,
     };

@@ -305,7 +305,6 @@ mod tests {
             id: id.into(),
             project: "/tmp".into(),
             agent_id: None,
-            agent_secret: None,
             method: "workspace.inspect".into(),
             params: serde_json::json!({}),
         }

@@ -155,7 +155,6 @@ fn tool(endpoint: &Path, project: &Path, method: &str, params: Value) -> Result<
                 id: uuid::Uuid::new_v4().to_string(),
                 project: project.to_string_lossy().into_owned(),
                 agent_id: Some("agent-1".into()),
-                agent_secret: None,
                 method: method.into(),
                 params,
             },

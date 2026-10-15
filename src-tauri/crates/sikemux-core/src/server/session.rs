@@ -135,6 +135,9 @@ impl Session {
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<InputJob>) {
         let (input, input_jobs) = mpsc::unbounded_channel();
         let reported = parts.exit.is_some();
+        if let (Some(pid), Some(agent_id), false) = (parts.pid, &parts.owner.agent_id, reported) {
+            super::callers::started(pid, agent_id);
+        }
         let session = Arc::new(Session {
             id: parts.id,
             kind: parts.kind,

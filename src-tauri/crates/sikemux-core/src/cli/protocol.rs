@@ -103,8 +103,6 @@ pub struct HarnessRequest {
     pub id: String,
     pub project: String,
     pub agent_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_secret: Option<String>,
     pub method: String,
     pub params: serde_json::Value,
 }
@@ -263,13 +261,6 @@ pub fn validate_harness(request: &HarnessRequest) -> Result<(), String> {
     {
         return Err("invalid agent ID".into());
     }
-    if request
-        .agent_secret
-        .as_ref()
-        .is_some_and(|secret| secret.len() > 128 || request.agent_id.is_none())
-    {
-        return Err("invalid agent secret".into());
-    }
     if !HARNESS_METHODS.contains(&request.method.as_str())
         && !is_browser_method(&request.method)
         && !is_sim_method(&request.method)
@@ -294,7 +285,6 @@ mod tests {
             id: "one".into(),
             project: "/tmp".into(),
             agent_id: None,
-            agent_secret: None,
             method: method.into(),
             params: serde_json::json!({}),
         }
