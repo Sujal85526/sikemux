@@ -642,6 +642,12 @@
     align-items: center;
 }
 
+.jira-activity .plugin-seg button {
+    height: 24px;
+    padding: 0 9px;
+    font-weight: 400;
+}
+
 .jira-compose {
     display: flex;
     flex-direction: column;
