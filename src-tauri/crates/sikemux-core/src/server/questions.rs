@@ -888,6 +888,7 @@ pub(crate) async fn answer(core: &Arc<Core>, params: AnswerParams) -> Result<Val
         question: question_text.to_owned(),
         asker: question.name.clone(),
         cli: question.cli.clone(),
+        secret: question.secret,
     };
     if let Err(error) = messages::answer(
         core,

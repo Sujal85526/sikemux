@@ -89,6 +89,9 @@ pub(crate) struct Answered {
     pub question: String,
     pub asker: String,
     pub cli: String,
+    /// The answer is a secret the agent reads from a file, so the app shows
+    /// that it was answered and never the text.
+    pub secret: bool,
 }
 
 /// The messages still waiting, as each agent reads them, kept in the data
@@ -436,11 +439,12 @@ fn attribute(value: &str) -> String {
 fn wrapped(letter: &Letter) -> String {
     if let Some(answered) = &letter.answers {
         return format!(
-            "<question-answer asker=\"{}\" cli=\"{}\" question=\"{}\" note=\"{}\">\n{}\n</question-answer>",
+            "<question-answer asker=\"{}\" cli=\"{}\" question=\"{}\" note=\"{}\"{}>\n{}\n</question-answer>",
             attribute(&answered.asker),
             attribute(&answered.cli),
             attribute(&answered.question),
             attribute(letter.note.as_deref().unwrap_or_default()),
+            if answered.secret { " secret=\"true\"" } else { "" },
             letter
                 .text
                 .replace("</question-answer", "&lt;/question-answer"),
