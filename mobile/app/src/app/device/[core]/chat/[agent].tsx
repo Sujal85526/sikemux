@@ -375,7 +375,9 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                         );
                       }}
                       ListHeaderComponent={
-                        chat.hasEarlier ? <Earlier failed={chat.earlier === 'failed'} onRetry={session.loadEarlier} /> : null
+                        chat.hasEarlier ? (
+                          <Earlier failed={chat.earlier === 'failed'} loading={chat.earlier === 'loading'} onRetry={session.loadEarlier} />
+                        ) : null
                       }
                       onStartReached={chat.hasEarlier && chat.earlier === 'idle' ? session.loadEarlier : undefined}
                       ListFooterComponent={

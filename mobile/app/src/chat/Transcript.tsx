@@ -494,7 +494,7 @@ export function Queued({ held, sentFiles }: { held: readonly Held[]; sentFiles: 
 }
 
 /** Above the first message while the host has turns from before it, which arrive as it comes into view. */
-export function Earlier({ failed, onRetry }: { failed: boolean; onRetry: () => void }) {
+export function Earlier({ failed, loading, onRetry }: { failed: boolean; loading: boolean; onRetry: () => void }) {
   const styles = useStyles(makeStyles);
   if (failed) {
     return (
@@ -509,9 +509,10 @@ export function Earlier({ failed, onRetry }: { failed: boolean; onRetry: () => v
       </Pressable>
     );
   }
+  // The row waits above a long chat's first message; an idle spinner there would redraw the screen every frame.
   return (
     <View style={styles.earlier}>
-      <Working />
+      {loading ? <Working /> : <View style={styles.earlierIdle} />}
       <Text style={styles.earlierText}>Loading earlier messages…</Text>
     </View>
   );
@@ -666,6 +667,7 @@ const makeStyles = (colors: Palette) => {
     noticeState: { fontFamily: fonts.ui, fontSize: 12, color: colors.inkFaint },
     noticeSummary: { fontFamily: fonts.ui, fontSize: 12, lineHeight: 17, color: colors.inkFaint },
     earlier: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingTop: 10, paddingBottom: 6 },
+    earlierIdle: { width: 13, height: 13 },
     earlierText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.tertiary },
     activity: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, marginBottom: 6 },
     activityText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.inkFaint },

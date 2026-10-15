@@ -217,7 +217,13 @@ function SharedChat({ session }: { session: ShareSession }) {
                     );
                   }}
                   ListHeaderComponent={
-                    snapshot.hasEarlier ? <Earlier failed={snapshot.earlier === 'failed'} onRetry={session.loadEarlier} /> : null
+                    snapshot.hasEarlier ? (
+                      <Earlier
+                        failed={snapshot.earlier === 'failed'}
+                        loading={snapshot.earlier === 'loading'}
+                        onRetry={session.loadEarlier}
+                      />
+                    ) : null
                   }
                   onStartReached={snapshot.hasEarlier && snapshot.earlier === 'idle' ? session.loadEarlier : undefined}
                   ListFooterComponent={
