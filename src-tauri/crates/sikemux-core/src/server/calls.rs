@@ -15,12 +15,14 @@ use super::connection::{blocking, ClientConn};
 use super::edits::{self, Edit, Filter, Owners};
 use super::names::{project_of, AgentName};
 use super::workspace::{self, AgentRun};
-use super::{board, inbox, plugins, questions, remote, saved, share, Core, CoreError, CoreResult};
+use super::{
+    board, inbox, messages, plugins, questions, remote, saved, share, Core, CoreError, CoreResult,
+};
 
 pub(crate) fn needs(method: &str) -> Needs {
     match method {
         "chatFile" | "questions" | "boards" | "board" | "agentNames" | "edits" | "inbox"
-        | "digest" => Needs::Watch,
+        | "digest" | "agentMessages" => Needs::Watch,
         "answerQuestion" | "boardAdd" | "boardUpdate" | "boardRemove" | "boardSettings"
         | "boardRetry" => Needs::Full,
         "pairing" | "answerPairing" | "changeDevice" => Needs::Owner,
@@ -66,6 +68,7 @@ pub(crate) async fn call(
         "changeDevice" => answer(remote::change_device(&core, parse(params)?)?),
         "questions" => answer(questions::views(&core)),
         "answerQuestion" => answer(questions::answer(&core, parse(params)?).await?),
+        "agentMessages" => answer(agent_messages(&core, parse(params)?).await?),
         "boards" => answer(board::boards(&core)),
         "board" => answer(board::board(&core, params).await?),
         "boardAdd" => answer(board::person_add(&core, params).await?),
@@ -116,6 +119,27 @@ fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> CoreResult<T> {
 
 fn answer(result: impl Serialize) -> CoreResult<Value> {
     Ok(serde_json::to_value(result)?)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentMessagesParams {
+    project: String,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// The project's log of messages between agents, newest first.
+async fn agent_messages(core: &Arc<Core>, params: AgentMessagesParams) -> CoreResult<Value> {
+    let core = core.clone();
+    blocking(move || {
+        Ok(serde_json::to_value(messages::logged(
+            &core,
+            &params.project,
+            params.limit,
+        ))?)
+    })
+    .await
 }
 
 #[derive(Deserialize)]

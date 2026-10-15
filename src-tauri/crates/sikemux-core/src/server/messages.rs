@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use crate::cli::protocol::HarnessRequest;
 use crate::protocol::{AgentStatus, ChatState};
 
+use self::log::{Entry, MessageLog, Outcome};
 use super::chat::{self, Delivery};
 use super::connection::blocking;
 use super::kept::Kept;
@@ -23,6 +24,8 @@ use super::names::project_of;
 use super::remote::unix_ms;
 use super::session::{self, Session};
 use super::{agent, workspace, Core};
+
+mod log;
 
 const FILE: &str = "agent-mailbox.json";
 const MAX_TEXT_BYTES: usize = 64 * 1024;
@@ -84,7 +87,33 @@ pub(crate) struct Answered {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MailboxRecord {
-    waiting: HashMap<String, Vec<String>>,
+    waiting: HashMap<String, Vec<Queued>>,
+}
+
+/// Who sent a message and what it is.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Origin {
+    from: String,
+    kind: Kind,
+}
+
+/// A message waiting for its agent, as the agent reads it.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Queued {
+    text: String,
+    /// Unknown for a message that came back unread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    origin: Option<Origin>,
+}
+
+fn joined(queued: &[Queued]) -> String {
+    queued
+        .iter()
+        .map(|queued| queued.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 struct Sent {
@@ -97,14 +126,14 @@ struct Sent {
 /// Messages typed into a terminal agent's prompt that it has not yet been
 /// seen to take.
 struct Pasted {
-    texts: Vec<String>,
+    texts: Vec<Queued>,
     /// When Enter was sent, once it was.
     entered_at: Option<u64>,
 }
 
 #[derive(Default)]
 struct State {
-    waiting: HashMap<String, Vec<String>>,
+    waiting: HashMap<String, Vec<Queued>>,
     sent: VecDeque<Sent>,
     delivering: HashSet<String>,
     wake_failed: HashMap<String, u64>,
@@ -130,6 +159,7 @@ impl State {
 pub(crate) struct Mailbox {
     state: Mutex<State>,
     kept: Kept,
+    pub(crate) log: MessageLog,
 }
 
 enum Admitted {
@@ -156,6 +186,7 @@ impl Mailbox {
                 ..State::default()
             }),
             kept,
+            log: MessageLog::new(data_dir),
         }
     }
 
@@ -229,15 +260,15 @@ impl Mailbox {
     }
 
     /// Answers how many wait now.
-    fn wait(&self, agent_id: &str, text: String) -> usize {
+    fn wait(&self, agent_id: &str, queued: Queued) -> usize {
         self.change(|state| {
             let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
-            waiting.push(text);
+            waiting.push(queued);
             waiting.len()
         })
     }
 
-    fn take(&self, agent_id: &str) -> Vec<String> {
+    fn take(&self, agent_id: &str) -> Vec<Queued> {
         if !self.has_waiting(agent_id) {
             return Vec::new();
         }
@@ -245,18 +276,18 @@ impl Mailbox {
     }
 
     /// Keeps `texts` waiting ahead of any that arrived meanwhile.
-    fn put_back(&self, agent_id: &str, texts: Vec<String>) {
+    fn put_back(&self, agent_id: &str, texts: Vec<Queued>) {
         self.change(|state| put_back(state, agent_id, texts));
     }
 
     /// A message the agent was handed but dropped unread waits for its next
     /// turn, ahead of the rest.
     pub(crate) fn returned(&self, agent_id: &str, text: String) {
-        self.put_back(agent_id, vec![text]);
+        self.put_back(agent_id, vec![Queued { text, origin: None }]);
     }
 }
 
-fn put_back(state: &mut State, agent_id: &str, mut texts: Vec<String>) {
+fn put_back(state: &mut State, agent_id: &str, mut texts: Vec<Queued>) {
     let waiting = state.waiting.entry(agent_id.to_owned()).or_default();
     texts.append(waiting);
     *waiting = texts;
@@ -340,17 +371,65 @@ pub(crate) async fn hand_task(
     task: String,
 ) -> Result<(), String> {
     let mailbox = &core.harness.mailbox;
+    let origin = core
+        .names
+        .get(agent_id)
+        .and_then(|named| named.parent)
+        .map(|lead| Origin {
+            from: lead,
+            kind: Kind::Message,
+        });
+    let queued = Queued {
+        text: task.clone(),
+        origin,
+    };
     if mailbox.has_waiting(agent_id) {
-        mailbox.returned(agent_id, task);
+        log(core, agent_id, [&queued], Outcome::Waiting);
+        mailbox.put_back(agent_id, vec![queued]);
         return Ok(());
     }
-    match chat::letter(core, agent_id, task.clone()).await {
-        Ok(Delivery::Steered | Delivery::NewTurn) => Ok(()),
+    match chat::letter(core, agent_id, task).await {
+        Ok(delivered @ (Delivery::Steered | Delivery::NewTurn)) => {
+            let outcome = match delivered {
+                Delivery::Steered => Outcome::Steered,
+                _ => Outcome::NewTurn,
+            };
+            log(core, agent_id, [&queued], outcome);
+            Ok(())
+        }
         Ok(Delivery::TurnEnded | Delivery::Refused) => {
-            mailbox.returned(agent_id, task);
+            log(core, agent_id, [&queued], Outcome::Waiting);
+            mailbox.put_back(agent_id, vec![queued]);
             Ok(())
         }
         Err(error) => Err(error.to_string()),
+    }
+}
+
+/// The latest messages between agents in `project`, newest first.
+pub(crate) fn logged(core: &Core, project: &str, limit: Option<usize>) -> Vec<Entry> {
+    let limit = limit.unwrap_or(log::MAX_READ).min(log::MAX_READ);
+    core.harness.mailbox.log.read(project, limit)
+}
+
+/// Notes in the log of the project of agent `to` what became of messages
+/// for it.
+fn log<'a>(core: &Core, to: &str, queued: impl IntoIterator<Item = &'a Queued>, outcome: Outcome) {
+    let Some(project) = core.names.get(to).map(|named| named.project) else {
+        return;
+    };
+    let at = unix_ms();
+    for queued in queued {
+        core.harness.mailbox.log.append(
+            &project,
+            &Entry {
+                at,
+                from: queued.origin.as_ref().map(|origin| origin.from.clone()),
+                kind: queued.origin.as_ref().map(|origin| origin.kind),
+                to: to.to_owned(),
+                outcome,
+            },
+        );
     }
 }
 
@@ -795,11 +874,17 @@ pub(crate) fn withdraw(core: &Core, agent_id: &str, mark: &str) {
     if !is_waiting(core, agent_id, mark) {
         return;
     }
-    core.harness.mailbox.change(|state| {
-        if let Some(waiting) = state.waiting.get_mut(agent_id) {
-            waiting.retain(|text| !text.contains(mark));
-        }
+    let withdrawn = core.harness.mailbox.change(|state| {
+        let Some(waiting) = state.waiting.get_mut(agent_id) else {
+            return Vec::new();
+        };
+        let (withdrawn, kept) = std::mem::take(waiting)
+            .into_iter()
+            .partition(|queued| queued.text.contains(mark));
+        *waiting = kept;
+        withdrawn
     });
+    log(core, agent_id, &withdrawn, Outcome::Dropped);
 }
 
 /// Whether a message holding `mark` still waits for the agent's turn to end.
@@ -809,7 +894,7 @@ pub(crate) fn is_waiting(core: &Core, agent_id: &str, mark: &str) -> bool {
         .lock()
         .waiting
         .get(agent_id)
-        .is_some_and(|waiting| waiting.iter().any(|waiting| waiting.contains(mark)))
+        .is_some_and(|waiting| waiting.iter().any(|queued| queued.text.contains(mark)))
 }
 
 fn letter_from(
@@ -876,6 +961,29 @@ pub(crate) async fn report_as(
 }
 
 async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Value, String> {
+    let queued = Queued {
+        text: wrapped(&letter),
+        origin: Some(Origin {
+            from: letter.from_id.clone(),
+            kind: letter.kind,
+        }),
+    };
+    let handed = handed(core, target, letter, &queued).await;
+    let outcome = handed
+        .as_ref()
+        .map_or(Outcome::Refused, |(_, outcome)| *outcome);
+    log(core, &target.agent_id, [&queued], outcome);
+    handed.map(|(answer, _)| answer)
+}
+
+/// Hands `letter` to its agent, or leaves it waiting for the agent, and says
+/// what became of it.
+async fn handed(
+    core: &Arc<Core>,
+    target: &Listed,
+    letter: Letter,
+    queued: &Queued,
+) -> Result<(Value, Outcome), String> {
     let name = target
         .name
         .clone()
@@ -883,9 +991,14 @@ async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Va
     let answer = |delivery: &str, note: String| json!({ "to": name, "agentId": target.agent_id, "delivery": delivery, "note": note });
     let mailbox = &core.harness.mailbox;
     if let Admitted::Repeat { seconds_ago } = mailbox.admit(&letter, &target.agent_id, &name)? {
-        return Ok(answer(
-            "repeat",
-            format!("You sent {name} the same text {seconds_ago} s ago, so it was not sent again."),
+        return Ok((
+            answer(
+                "repeat",
+                format!(
+                    "You sent {name} the same text {seconds_ago} s ago, so it was not sent again."
+                ),
+            ),
+            Outcome::Repeat,
         ));
     }
     let mut woke = "";
@@ -911,39 +1024,53 @@ async fn deliver(core: &Arc<Core>, target: &Listed, letter: Letter) -> Result<Va
     if letter.from_id != BOARD {
         super::board::reached_by_more_than_offer(core, &target.agent_id);
     }
-    let text = wrapped(&letter);
     if held.is_none() && mailbox.has_waiting(&target.agent_id) {
         held = Some("already has messages waiting");
     }
     if held.is_none() {
-        let delivered = match target.reach {
-            Reach::Terminal => ready_terminal(core, &target.agent_id).map(|terminal| {
-                paste(core, &target.agent_id, terminal, vec![text.clone()]);
-                Delivery::NewTurn
-            }),
-            _ => hand(core, &target.agent_id, &text).await,
-        };
+        let delivered =
+            match target.reach {
+                Reach::Terminal => ready_terminal(core, &target.agent_id).map(|terminal| {
+                    paste(core, &target.agent_id, terminal, vec![queued.clone()]);
+                    Outcome::Typed
+                }),
+                _ => hand(core, &target.agent_id, &queued.text)
+                    .await
+                    .map(|delivered| match delivered {
+                        Delivery::Steered => Outcome::Steered,
+                        _ => Outcome::NewTurn,
+                    }),
+            };
         match delivered {
-            Ok(Delivery::Steered) => {
-                return Ok(answer(
-                    "steered",
-                    format!("{name} is working and reads this at its next step.{woke}"),
+            Ok(Outcome::Steered) => {
+                return Ok((
+                    answer(
+                        "steered",
+                        format!("{name} is working and reads this at its next step.{woke}"),
+                    ),
+                    Outcome::Steered,
                 ))
             }
-            Ok(_) => {
-                return Ok(answer(
-                    "newTurn",
-                    format!("{name} was idle and started a turn to read this.{woke}"),
+            Ok(outcome) => {
+                return Ok((
+                    answer(
+                        "newTurn",
+                        format!("{name} was idle and started a turn to read this.{woke}"),
+                    ),
+                    outcome,
                 ))
             }
             Err(busy) => held = Some(busy),
         }
     }
-    let waiting = mailbox.wait(&target.agent_id, text);
+    let waiting = mailbox.wait(&target.agent_id, queued.clone());
     let busy = held.unwrap_or_default();
-    Ok(answer(
-        "waiting",
-        format!("{name} {busy}, so it gets this once it is free, with any others waiting ({waiting} now).{woke}"),
+    Ok((
+        answer(
+            "waiting",
+            format!("{name} {busy}, so it gets this once it is free, with any others waiting ({waiting} now).{woke}"),
+        ),
+        Outcome::Waiting,
     ))
 }
 
@@ -997,9 +1124,8 @@ fn ready_terminal(core: &Core, agent_id: &str) -> Result<Arc<Session>, &'static 
 /// as delivered only once the agent is seen to take them, and wait again if
 /// it does not; Enter is held back from a permission prompt that came up
 /// meanwhile.
-fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<String>) {
-    let plain: String = texts
-        .join("\n\n")
+fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<Queued>) {
+    let plain: String = joined(&texts)
         .chars()
         .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
         .collect();
@@ -1040,30 +1166,41 @@ fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<St
 
 /// The paste the agent did not take waits again, ahead of the rest.
 fn unpasted(core: &Core, agent_id: &str) {
-    core.harness.mailbox.change(|state| {
+    let returned = core.harness.mailbox.change(|state| {
         state.delivering.remove(agent_id);
-        if let Some(pasted) = state.pasted.remove(agent_id) {
-            put_back(state, agent_id, pasted.texts);
-            *state.missed_pastes.entry(agent_id.to_owned()).or_default() += 1;
-        }
+        let pasted = state.pasted.remove(agent_id)?;
+        put_back(state, agent_id, pasted.texts.clone());
+        *state.missed_pastes.entry(agent_id.to_owned()).or_default() += 1;
+        Some(pasted.texts)
     });
+    log(core, agent_id, returned.iter().flatten(), Outcome::Returned);
 }
 
 /// The terminal agent was seen at work on a turn or asking the person
 /// during one, so it took what was pasted, if anything was.
 pub(crate) fn prompt_taken(core: &Core, agent_id: &str) {
     let mailbox = &core.harness.mailbox;
-    let mut state = mailbox.lock();
-    state.missed_pastes.remove(agent_id);
-    let taken = state
-        .pasted
-        .get(agent_id)
-        .is_some_and(|pasted| pasted.entered_at.is_some());
-    if taken {
-        state.pasted.remove(agent_id);
+    let taken = {
+        let mut state = mailbox.lock();
+        state.missed_pastes.remove(agent_id);
+        let entered = state
+            .pasted
+            .get(agent_id)
+            .is_some_and(|pasted| pasted.entered_at.is_some());
+        if !entered {
+            return;
+        }
         state.delivering.remove(agent_id);
+        let taken = state.pasted.remove(agent_id);
         mailbox.kept.save(&state.record());
-    }
+        taken
+    };
+    log(
+        core,
+        agent_id,
+        taken.iter().flat_map(|pasted| &pasted.texts),
+        Outcome::Delivered,
+    );
 }
 
 /// The terminal agent came to rest, or stopped, after a turn. When the turn
@@ -1138,7 +1275,7 @@ pub(crate) fn deliver_waiting(core: &Arc<Core>) {
                 deliver_later(core, agent_id, Pending::Asleep);
             }
         } else if core.workspaces.closed(&agent_id) {
-            mailbox.take(&agent_id);
+            log(core, &agent_id, &mailbox.take(&agent_id), Outcome::Dropped);
         }
     }
 }
@@ -1159,8 +1296,11 @@ fn deliver_later(core: &Arc<Core>, agent_id: String, pending: Pending) {
         match pending {
             Pending::Chat => {
                 let texts = mailbox.take(&agent_id);
-                if !texts.is_empty() && hand(&core, &agent_id, &texts.join("\n\n")).await.is_err() {
-                    mailbox.put_back(&agent_id, texts);
+                if !texts.is_empty() {
+                    match hand(&core, &agent_id, &joined(&texts)).await {
+                        Ok(_) => log(&core, &agent_id, &texts, Outcome::Delivered),
+                        Err(_) => mailbox.put_back(&agent_id, texts),
+                    }
                 }
             }
             Pending::Asleep => {
