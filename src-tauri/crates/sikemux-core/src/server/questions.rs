@@ -22,6 +22,7 @@ use super::messages;
 use super::names::project_of;
 use super::notify::Signal;
 use super::remote::unix_ms;
+use super::wake::{sooner, Wake};
 use super::Core;
 
 const FILE: &str = "agent-questions.json";
@@ -158,6 +159,8 @@ struct State {
 pub(crate) struct Questions {
     state: Mutex<State>,
     kept: Kept,
+    /// Moves questions on and tells the window and phones of them.
+    pub(crate) wake: Wake,
 }
 
 /// A question that waits on the person.
@@ -197,6 +200,7 @@ impl Questions {
                 ..State::default()
             }),
             kept,
+            wake: Wake::default(),
         }
     }
 
@@ -206,6 +210,7 @@ impl Questions {
         self.kept.save(&QuestionsRecord {
             open: state.open.clone(),
         });
+        self.wake.now();
     }
 
     /// Whether the agent waits on the person to answer a question.
@@ -254,6 +259,7 @@ impl Questions {
         let mut state = self.lock();
         if !state.open.is_empty() {
             state.dirty = true;
+            self.wake.now();
         }
     }
 
@@ -862,10 +868,14 @@ fn answer_text(question: &Question, params: &AnswerParams) -> Result<Option<Stri
 }
 
 /// Moves on questions their lead left, drops those of agents that are gone,
-/// and tells the window and phones what changed.
-pub(crate) fn tick(core: &Arc<Core>) {
+/// and tells the window and phones what changed. Runs when questions or the
+/// agents change, and again when a lead's time to answer runs out.
+pub(crate) fn settle(core: &Arc<Core>) {
     let (askers, leads): (HashSet<String>, HashSet<String>) = {
         let state = core.harness.questions.lock();
+        if state.dirty {
+            core.boards.wake.now();
+        }
         if state.open.is_empty()
             && state.told_phones.is_empty()
             && state.shown_devices.is_empty()
@@ -912,6 +922,7 @@ pub(crate) fn tick(core: &Arc<Core>) {
     };
     let now = unix_ms();
     let mut withdrawn = Vec::new();
+    let mut next = None;
     {
         let mut state = core.harness.questions.lock();
         let before = state.open.len();
@@ -946,14 +957,20 @@ pub(crate) fn tick(core: &Arc<Core>) {
                     passed: false,
                 };
                 changed = true;
+            } else if let Some(at) = ended_at.filter(|_| !unread) {
+                next = sooner(next, Some(at + LEAD_GRACE_MS));
             }
         }
         if changed {
             core.harness.questions.changed(&mut state);
+            core.boards.wake.now();
         }
     }
     for (lead, question) in withdrawn {
         messages::withdraw(core, &lead, &question);
+    }
+    if let Some(next) = next {
+        core.harness.questions.wake.at(next);
     }
     tell_phones(core);
     tell_window(core);

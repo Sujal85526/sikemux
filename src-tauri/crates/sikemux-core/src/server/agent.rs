@@ -236,6 +236,9 @@ impl AgentActivity {
         if next == IDLE && busy {
             spawn::terminal_turn_ended(core, &self.agent_id, Ending::Finished);
         }
+        if next != previous {
+            core.agents_changed();
+        }
         core.broadcast_event(&Event::AgentState(AgentStateEvent {
             agent_id: self.agent_id.clone(),
             state: label.into(),

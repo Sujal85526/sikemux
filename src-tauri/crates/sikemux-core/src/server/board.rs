@@ -22,6 +22,7 @@ use super::inbox::Recording;
 use super::messages;
 use super::names::project_of;
 use super::remote::unix_ms;
+use super::wake::{sooner, Wake};
 use super::Core;
 
 mod auto;
@@ -279,13 +280,13 @@ struct State {
     syncing: HashSet<(String, u64)>,
     /// When each card's pull request or ticket was last asked about.
     polled: BTreeMap<(String, u64, &'static str), u64>,
-    /// When Auto last looked for cards to start.
-    auto_looked: u64,
 }
 
 pub(crate) struct Boards {
     state: Mutex<State>,
     folder: Option<PathBuf>,
+    /// Offers cards, runs Auto and keeps tickets and the window up to date.
+    pub(crate) wake: Wake,
 }
 
 /// Who changes a board.
@@ -340,6 +341,7 @@ impl Boards {
         Self {
             state: Mutex::new(state),
             folder,
+            wake: Wake::default(),
         }
     }
 
@@ -351,6 +353,7 @@ impl Boards {
 
     fn save(&self, state: &mut State, project: &str) {
         state.dirty.insert(project.to_owned());
+        self.wake.now();
         let (Some(folder), Some(board)) = (&self.folder, state.boards.get(project)) else {
             return;
         };
@@ -362,6 +365,12 @@ impl Boards {
         if let Err(error) = written {
             eprintln!("sikemux core: the board was not saved: {error}");
         }
+    }
+
+    /// A step Auto took on the card is over.
+    fn end_job(&self, key: &(String, u64)) {
+        self.lock().jobs.remove(key);
+        self.wake.now();
     }
 }
 
@@ -1516,29 +1525,32 @@ pub(crate) async fn person_remove(core: &Arc<Core>, params: Value) -> Result<Val
     Ok(view)
 }
 
-/// Whether the agent has sat idle a while and nothing waits for it.
-fn idle(core: &Core, agent_id: &str, now: u64) -> bool {
-    let rested = core
-        .seen
-        .active_at(agent_id)
-        .is_none_or(|at| now.saturating_sub(at) >= IDLE_BEFORE_OFFER_MS);
-    if !rested
-        || core.harness.mailbox.has_waiting(agent_id)
+/// From when the agent has sat idle a while with nothing waiting for it, or
+/// none while it is at work or something waits for it.
+fn idle_from(core: &Core, agent_id: &str) -> Option<u64> {
+    if core.harness.mailbox.has_waiting(agent_id)
         || core.harness.questions.waits_on_answer(agent_id)
     {
-        return false;
+        return None;
     }
-    if let Some(chat) = core.chats.get(agent_id) {
-        return chat.is_ready() && !chat.turn_running();
-    }
-    core.agent_session(agent_id)
-        .and_then(|session| session.agent.as_ref().map(|agent| agent.idle()))
-        .unwrap_or(false)
+    let at_rest = match core.chats.get(agent_id) {
+        Some(chat) => chat.is_ready() && !chat.turn_running(),
+        None => core
+            .agent_session(agent_id)
+            .and_then(|session| session.agent.as_ref().map(|agent| agent.idle()))
+            .unwrap_or(false),
+    };
+    at_rest.then(|| {
+        core.seen
+            .active_at(agent_id)
+            .map_or(0, |at| at + IDLE_BEFORE_OFFER_MS)
+    })
 }
 
 /// Tells each idle agent another agent started of the open cards of its team
-/// that nobody holds and nothing holds up, once per card.
-fn offer(core: &Arc<Core>) {
+/// that nobody holds and nothing holds up, once per card. Answers when an
+/// agent that has such cards will have been idle long enough.
+fn offer(core: &Arc<Core>) -> Option<u64> {
     forget_stale_offers(core);
     let now = unix_ms();
     let running = core.running_agents();
@@ -1551,8 +1563,9 @@ fn offer(core: &Arc<Core>) {
         })
         .collect();
     if workers.is_empty() {
-        return;
+        return None;
     }
+    let mut next = None;
     let mut offers: Vec<(String, Vec<String>, String)> = Vec::new();
     {
         let mut state = core.boards.lock();
@@ -1589,8 +1602,16 @@ fn offer(core: &Arc<Core>) {
                 })
                 .take(MAX_OFFERED)
                 .collect();
-            if free.is_empty() || !idle(core, &agent, now) {
+            if free.is_empty() {
                 continue;
+            }
+            match idle_from(core, &agent) {
+                Some(from) if from <= now => {}
+                Some(from) => {
+                    next = sooner(next, Some(from));
+                    continue;
+                }
+                None => continue,
             }
             for card in &free {
                 offered.insert((project.clone(), card.id, agent.clone()));
@@ -1620,6 +1641,7 @@ fn offer(core: &Arc<Core>) {
             }
         });
     }
+    next
 }
 
 /// Forgets offers of cards no longer open, or gone, and offers to agents
@@ -1664,14 +1686,18 @@ pub(crate) fn reached_by_more_than_offer(core: &Core, agent_id: &str) {
     core.boards.lock().woken.remove(agent_id);
 }
 
-/// Offers idle workers their team's free cards and sends the window the
-/// boards that changed.
-pub(crate) fn tick(core: &Arc<Core>) {
-    offer(core);
+/// Offers idle workers their team's free cards, moves Auto's runs and the
+/// cards' tickets on, and sends the window the boards that changed. Runs when
+/// a board or the agents change, and again when a run or ticket is next due.
+pub(crate) fn settle(core: &Arc<Core>) {
+    let mut next = offer(core);
     finish::clear_dropped(core);
-    auto::tick(core);
-    finish::tick(core);
-    tickets::tick(core);
+    auto::start_free(core);
+    next = sooner(next, finish::due(core));
+    next = sooner(next, tickets::due(core));
+    if let Some(next) = next {
+        core.boards.wake.at(next);
+    }
     if !core.boards.lock().dirty.is_empty() {
         core.harness.questions.boards_changed();
     }

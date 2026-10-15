@@ -23,6 +23,7 @@ use super::kept::Kept;
 use super::names::project_of;
 use super::remote::unix_ms;
 use super::session::{self, Session};
+use super::wake::{sooner, Wake};
 use super::{agent, workspace, Core};
 
 mod log;
@@ -160,6 +161,8 @@ pub(crate) struct Mailbox {
     state: Mutex<State>,
     kept: Kept,
     pub(crate) log: MessageLog,
+    /// Hands waiting messages on, when an agent comes free.
+    pub(crate) wake: Wake,
 }
 
 enum Admitted {
@@ -187,6 +190,7 @@ impl Mailbox {
             }),
             kept,
             log: MessageLog::new(data_dir),
+            wake: Wake::default(),
         }
     }
 
@@ -196,6 +200,8 @@ impl Mailbox {
         let changed = change(&mut state);
         state.waiting.retain(|_, waiting| !waiting.is_empty());
         self.kept.save(&state.record());
+        drop(state);
+        self.wake.now();
         changed
     }
 
@@ -1112,10 +1118,16 @@ async fn handed(
     ))
 }
 
-fn rested(core: &Core, agent_id: &str) -> bool {
+/// When the agent will have rested since its last turn, unless it has.
+fn rests_until(core: &Core, agent_id: &str) -> Option<u64> {
     core.seen
         .active_at(agent_id)
-        .is_none_or(|at| unix_ms().saturating_sub(at) >= SETTLE_MS)
+        .map(|at| at + SETTLE_MS)
+        .filter(|until| *until > unix_ms())
+}
+
+fn rested(core: &Core, agent_id: &str) -> bool {
+    rests_until(core, agent_id).is_none()
 }
 
 /// Hands `text` to the chat as one message, or says why it cannot take it
@@ -1233,6 +1245,7 @@ pub(crate) fn prompt_taken(core: &Core, agent_id: &str) {
         mailbox.kept.save(&state.record());
         taken
     };
+    mailbox.wake.now();
     log(
         core,
         agent_id,
@@ -1265,8 +1278,9 @@ pub(crate) fn prompt_settled(core: &Core, agent_id: &str, last_output_ms: u64) {
 
 /// Gives each agent that has rested since its turn ended the messages
 /// waiting for it, wakes an asleep chat that has some, and drops those for
-/// agents that are gone.
-pub(crate) fn deliver_waiting(core: &Arc<Core>) {
+/// agents that are gone. Runs when an agent's state or its messages change,
+/// and again when an agent still resting from a turn is due.
+pub(crate) fn settle(core: &Arc<Core>) {
     let mailbox = &core.harness.mailbox;
     let pasted: Vec<String> = mailbox.lock().pasted.keys().cloned().collect();
     for agent_id in pasted {
@@ -1291,30 +1305,46 @@ pub(crate) fn deliver_waiting(core: &Arc<Core>) {
             .cloned()
             .collect()
     };
+    let mut next = None;
     for agent_id in due {
         if let Some(chat) = core.chats.get(&agent_id) {
-            if chat.is_ready() && !chat.turn_running() && rested(core, &agent_id) {
-                deliver_later(core, agent_id, Pending::Chat);
-            }
-        } else if core.agent_session(&agent_id).is_some() {
-            if mailbox.missed_pastes(&agent_id) >= MAX_MISSED_PASTES {
+            if !chat.is_ready() || chat.turn_running() {
                 continue;
             }
-            if let Ok(terminal) = ready_terminal(core, &agent_id) {
-                let texts = mailbox.take(&agent_id);
-                if !texts.is_empty() {
-                    paste(core, &agent_id, terminal, texts);
+            match rests_until(core, &agent_id) {
+                Some(until) => next = sooner(next, Some(until)),
+                None => deliver_later(core, agent_id, Pending::Chat),
+            }
+        } else if let Some(terminal) = core.agent_session(&agent_id) {
+            if mailbox.missed_pastes(&agent_id) >= MAX_MISSED_PASTES
+                || !agent::takes_prompt(core, &terminal)
+            {
+                continue;
+            }
+            match rests_until(core, &agent_id) {
+                Some(until) => next = sooner(next, Some(until)),
+                None => {
+                    let texts = mailbox.take(&agent_id);
+                    if !texts.is_empty() {
+                        paste(core, &agent_id, terminal, texts);
+                    }
                 }
             }
         } else if core.workspaces.published(&agent_id) == Some(true) {
+            if !core.window.is_open() {
+                continue;
+            }
             let failed = mailbox.lock().wake_failed.get(&agent_id).copied();
-            let retry = failed.is_none_or(|at| unix_ms().saturating_sub(at) >= WAKE_RETRY_MS);
-            if core.window.is_open() && retry {
-                deliver_later(core, agent_id, Pending::Asleep);
+            match failed.map(|at| at + WAKE_RETRY_MS) {
+                Some(retry) if retry > unix_ms() => next = sooner(next, Some(retry)),
+                _ => deliver_later(core, agent_id, Pending::Asleep),
             }
         } else if core.workspaces.closed(&agent_id) {
             log(core, &agent_id, &mailbox.take(&agent_id), Outcome::Dropped);
         }
+    }
+    if let Some(next) = next {
+        mailbox.wake.at(next);
     }
 }
 
@@ -1351,5 +1381,6 @@ fn deliver_later(core: &Arc<Core>, agent_id: String, pending: Pending) {
             }
         }
         mailbox.lock().delivering.remove(&agent_id);
+        mailbox.wake.now();
     });
 }

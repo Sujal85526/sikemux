@@ -13,6 +13,7 @@ use super::review::{self, MAX_ROUNDS};
 use super::{change_card, git, send_notices, By, Card, Changes, Status};
 use crate::server::connection::blocking;
 use crate::server::remote::unix_ms;
+use crate::server::wake::sooner;
 use crate::server::{messages, Core};
 
 /// How long a pushed commit may go without a CI run before Auto takes it
@@ -115,7 +116,7 @@ pub(super) fn clear_dropped(core: &Arc<Core>) {
         tokio::spawn(async move {
             let key = (dropped.project.clone(), dropped.id);
             clear(&core, dropped).await;
-            core.boards.lock().jobs.remove(&key);
+            core.boards.end_job(&key);
         });
     }
 }
@@ -237,11 +238,8 @@ where
     tokio::spawn(async move {
         let key = (step.project.clone(), step.id);
         work(core.clone(), step).await;
-        let again = {
-            let mut state = core.boards.lock();
-            state.jobs.remove(&key);
-            state.reship.remove(&key)
-        };
+        let again = core.boards.lock().reship.remove(&key);
+        core.boards.end_job(&key);
         if again {
             ship(&core, key.0, key.1);
         }
@@ -451,10 +449,12 @@ async fn shipping(core: &Arc<Core>, step: &Step) -> Result<(), String> {
 }
 
 /// Looks at the checks of runs waiting on them, at pull requests waiting on
-/// the person, and takes up steps a restart cut short.
-pub(super) fn tick(core: &Arc<Core>) {
+/// the person, and takes up steps a restart cut short. Answers when a run is
+/// next due a look.
+pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
     let now = unix_ms();
     let running = core.running_agents();
+    let mut next = None;
     let due: Vec<(String, u64, Stage)> = {
         let mut state = core.boards.lock();
         let mut due = Vec::new();
@@ -490,6 +490,7 @@ pub(super) fn tick(core: &Arc<Core>) {
                     .copied()
                     .unwrap_or(0);
                 if every > 0 && now.saturating_sub(last) < every {
+                    next = sooner(next, Some(last + every));
                     continue;
                 }
                 due.push((project.clone(), card.id, run.stage));
@@ -506,6 +507,8 @@ pub(super) fn tick(core: &Arc<Core>) {
             if now.saturating_sub(since) >= GONE_AFTER_MS {
                 state.polled.remove(&key);
                 due.push((key.0, key.1, stage));
+            } else {
+                next = sooner(next, Some(since + GONE_AFTER_MS));
             }
         }
         due
@@ -544,6 +547,7 @@ pub(super) fn tick(core: &Arc<Core>) {
             _ => {}
         }
     }
+    next
 }
 
 async fn checking(core: &Arc<Core>, step: Step) {

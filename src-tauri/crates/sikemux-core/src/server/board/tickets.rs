@@ -11,6 +11,7 @@ use super::{change_card, send_notices, By, Changes, Status, Ticket};
 use crate::server::connection::blocking;
 use crate::server::plugins;
 use crate::server::remote::unix_ms;
+use crate::server::wake::sooner;
 use crate::server::Core;
 
 /// How often a ticket is asked whether it was closed in its tracker.
@@ -60,8 +61,11 @@ enum Work {
     Look,
 }
 
-pub(super) fn tick(core: &Arc<Core>) {
+/// Starts each ticket update or look that is due, and answers when the next
+/// one will be.
+pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
     let now = unix_ms();
+    let mut next = None;
     let due: Vec<(String, u64, Ticket, Work)> = {
         let mut state = core.boards.lock();
         let mut due = Vec::new();
@@ -71,10 +75,11 @@ pub(super) fn tick(core: &Arc<Core>) {
                 if tracker(ticket).is_none() {
                     continue;
                 }
-                let since = |what: &'static str| {
-                    let at = state.polled.get(&(project.clone(), card.id, what));
-                    at.map_or(u64::MAX, |at| now.saturating_sub(*at))
+                let at = |what: &'static str| {
+                    state.polled.get(&(project.clone(), card.id, what)).copied()
                 };
+                let since =
+                    |what: &'static str| at(what).map_or(u64::MAX, |at| now.saturating_sub(at));
                 let wanted = match card.status {
                     Status::Open => None,
                     Status::Progress => Some(&board.settings.statuses.progress),
@@ -83,6 +88,10 @@ pub(super) fn tick(core: &Arc<Core>) {
                 let work = match wanted {
                     Some(to) if ticket.synced != Some(card.status) => {
                         if since(failed_key(card.status)) < RETRY_AFTER_MS {
+                            next = sooner(
+                                next,
+                                at(failed_key(card.status)).map(|at| at + RETRY_AFTER_MS),
+                            );
                             continue;
                         }
                         let comment = (card.status == Status::Done)
@@ -98,6 +107,10 @@ pub(super) fn tick(core: &Arc<Core>) {
                     _ if card.status != Status::Done && since("look") >= UPSTREAM_EVERY_MS => {
                         Work::Look
                     }
+                    _ if card.status != Status::Done => {
+                        next = sooner(next, at("look").map(|at| at + UPSTREAM_EVERY_MS));
+                        continue;
+                    }
                     _ => continue,
                 };
                 if state.syncing.contains(&(project.clone(), card.id)) {
@@ -108,12 +121,14 @@ pub(super) fn tick(core: &Arc<Core>) {
         }
         for (project, id, _, work) in &due {
             match work {
-                Work::Push { .. } => state.syncing.insert((project.clone(), *id)),
-                Work::Look => state
-                    .polled
-                    .insert((project.clone(), *id, "look"), now)
-                    .is_none(),
-            };
+                Work::Push { .. } => {
+                    state.syncing.insert((project.clone(), *id));
+                }
+                Work::Look => {
+                    state.polled.insert((project.clone(), *id, "look"), now);
+                    next = sooner(next, Some(now + UPSTREAM_EVERY_MS));
+                }
+            }
         }
         due
     };
@@ -124,9 +139,11 @@ pub(super) fn tick(core: &Arc<Core>) {
             run(&core, &project, id, &ticket, work).await;
             if pushing {
                 core.boards.lock().syncing.remove(&(project, id));
+                core.boards.wake.now();
             }
         });
     }
+    next
 }
 
 async fn run(core: &Arc<Core>, project: &str, id: u64, ticket: &Ticket, work: Work) {

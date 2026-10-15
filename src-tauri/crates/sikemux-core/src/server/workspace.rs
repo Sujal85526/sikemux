@@ -27,6 +27,7 @@ use crate::protocol::{
 
 use super::chat;
 use super::connection::{blocking, ClientConn};
+use super::wake::Wake;
 use super::{Core, CoreError, CoreResult};
 use crate::acp::pickers;
 
@@ -117,6 +118,9 @@ pub(crate) struct Workspaces {
     data_dir: Option<PathBuf>,
     /// Counts the looks over the agents, so one that took longer never replaces a newer one.
     asked: AtomicU64,
+    /// Tells the core the agents the app holds, or the launchers it offers,
+    /// changed.
+    pub(crate) wake: Wake,
 }
 
 pub(crate) struct ChatChoice {
@@ -165,6 +169,7 @@ impl Workspaces {
             providers: data_dir.map(Providers::new),
             data_dir: data_dir.map(Path::to_path_buf),
             asked: AtomicU64::new(0),
+            wake: Wake::default(),
         }
     }
 
@@ -281,6 +286,7 @@ impl Workspaces {
 
     fn set_launchers(&self, launchers: Vec<Launcher>) {
         self.lock().launchers = launchers;
+        self.wake.now();
     }
 
     /// Keeps what the core last heard of an account's sign-in on the
@@ -429,6 +435,7 @@ impl Workspaces {
                 .retain(|asleep| chats.iter().any(|chat| chat.agent_id == asleep.agent_id));
             published.saved.chats = Some(chats);
             self.save(&published.saved);
+            self.wake.now();
         }
         Ok(())
     }

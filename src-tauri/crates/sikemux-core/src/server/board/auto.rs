@@ -26,8 +26,6 @@ const MAX_LAUNCHER_CHARS: usize = 256;
 const MAX_MODEL_CHARS: usize = 200;
 const MAX_CHECK_BYTES: usize = 4096;
 const MAX_STATUS_CHARS: usize = 60;
-/// How often Auto looks for cards to start.
-const LOOK_EVERY_MS: u64 = 2_000;
 
 /// Where a card's run ends when its checks pass.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -332,15 +330,11 @@ pub(crate) fn has_work(core: &Core) -> bool {
 }
 
 /// Starts an agent on each card Auto may take, while it has places free.
-pub(super) fn tick(core: &Arc<Core>) {
+pub(super) fn start_free(core: &Arc<Core>) {
     let now = unix_ms();
     let launchers = core.workspaces.has_launchers();
     let starts: Vec<(String, u64, String)> = {
         let mut state = core.boards.lock();
-        if now.saturating_sub(state.auto_looked) < LOOK_EVERY_MS {
-            return;
-        }
-        state.auto_looked = now;
         let projects: Vec<String> = state
             .boards
             .iter()
@@ -406,7 +400,7 @@ pub(super) fn tick(core: &Arc<Core>) {
         let core = core.clone();
         tokio::spawn(async move {
             let started = start(&core, &project, id, &agent).await;
-            core.boards.lock().jobs.remove(&(project.clone(), id));
+            core.boards.end_job(&(project.clone(), id));
             if let Err(error) = started {
                 let gone = core.chats.get(&agent).is_none();
                 if gone {

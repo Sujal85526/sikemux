@@ -34,6 +34,7 @@ mod spawn;
 mod tools;
 mod transcript;
 mod upgrade;
+mod wake;
 mod window;
 mod workspace;
 
@@ -909,6 +910,7 @@ async fn poll_sessions(core: Arc<Core>) {
 async fn device_views(core: Arc<Core>) {
     let mut ticker = tokio::time::interval(DEVICE_VIEW_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut window = None;
     loop {
         ticker.tick().await;
         let seen = core.seen.on_phones(core.on_phones());
@@ -916,10 +918,12 @@ async fn device_views(core: Arc<Core>) {
             let event = Event::AgentsSeen { agent_ids: seen };
             core.broadcast_to(&event, |client| client.peer.is_local());
         }
-        questions::tick(&core);
-        board::tick(&core);
+        let now = core.window.client_id();
+        if now != window {
+            window = now;
+            core.agents_changed();
+        }
         core.publish_device_view();
-        messages::deliver_waiting(&core);
     }
 }
 
@@ -989,6 +993,26 @@ pub(crate) async fn run_core(
         tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.harness.mailbox.wake,
+            messages::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.harness.questions.wake,
+            questions::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.boards.wake,
+            board::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.workspaces.wake,
+            |core| core.agents_changed(),
+        )),
         tokio::spawn(notify::run(core.clone())),
         tokio::spawn(network_watch::run(core.clone())),
     ];

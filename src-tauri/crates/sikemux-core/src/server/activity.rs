@@ -32,6 +32,7 @@ impl Core {
             self.journal_agent(agent_id, happened);
         }
         let agent_id = agent_id.to_owned();
+        let came_to_rest = matches!(activity, Activity::Finished { .. } | Activity::Problem(_));
         match activity {
             Activity::Started => {
                 self.seen.started(&agent_id);
@@ -63,11 +64,24 @@ impl Core {
                 });
             }
         }
+        if came_to_rest {
+            self.agents_changed();
+        }
     }
 
     /// The agent stopped running, whether it ended by itself or was closed.
     pub(crate) fn note_agent_gone(&self, agent_id: &str) {
         self.journal_agent(agent_id, Happened::Gone);
+        self.agents_changed();
+    }
+
+    /// Something about the agents changed that the messages waiting for them,
+    /// their questions and the board depend on: one came to rest, started,
+    /// went away, or the window opened or closed.
+    pub(crate) fn agents_changed(&self) {
+        self.harness.mailbox.wake.now();
+        self.harness.questions.wake.now();
+        self.boards.wake.now();
     }
 
     fn journal_agent(&self, agent_id: &str, happened: Happened) {

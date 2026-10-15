@@ -238,6 +238,7 @@ impl Chat {
                         payload.get("stopReason").and_then(Value::as_str) == Some("cancelled");
                     if !cancelled && self.feed.running_subagents() > 0 {
                         self.held.store(true, Ordering::Release);
+                        core.agents_changed();
                         None
                     } else {
                         Some(Activity::Finished { cancelled })
@@ -445,6 +446,9 @@ impl Chat {
         }
         self.feed.set_start(start.clone());
         self.readiness.send_replace(Readiness::Ready(start));
+        if let Some(core) = self.core.upgrade() {
+            core.agents_changed();
+        }
     }
 
     pub(crate) fn is_ready(&self) -> bool {
