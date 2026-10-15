@@ -71,7 +71,10 @@ export interface GitCommit {
 export interface CommitOwner {
     name: string;
     cli: string;
+    cliVersion?: string;
     model?: string;
+    /** The version of Sikemux the agent ran in. */
+    sikemux?: string;
     /** The agent the footer names. */
     chat: string;
     title?: string;

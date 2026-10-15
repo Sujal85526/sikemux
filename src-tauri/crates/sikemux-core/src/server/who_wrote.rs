@@ -38,7 +38,12 @@ pub(crate) struct AgentOwner {
     pub name: String,
     pub cli: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// The version of Sikemux the agent ran in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sikemux: Option<String>,
     /// The agent the footer names.
     pub chat: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -128,7 +133,9 @@ fn owners(core: &Core, agents: Vec<Agent>, listed: &[Listed]) -> Vec<AgentOwner>
                 project,
                 name: agent.name,
                 cli: agent.cli,
+                cli_version: agent.cli_version,
                 model: agent.model,
+                sikemux: agent.sikemux,
                 chat: agent.chat,
             }
         })

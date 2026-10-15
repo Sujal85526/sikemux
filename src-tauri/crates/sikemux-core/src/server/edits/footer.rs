@@ -40,7 +40,7 @@ pub(crate) fn footer(
     };
     for author in owners.writers() {
         if !agents.iter().any(|agent| agent.chat == author.agent_id) {
-            agents.push(agent(author));
+            agents.push(agent(core, author));
         }
     }
     if agents.is_empty() {
@@ -90,11 +90,18 @@ fn made_of(dir: &Path, index: Option<&Path>, amend: bool) -> Result<(String, Vec
     Ok((tree, parents))
 }
 
-pub(super) fn agent(author: &Author) -> Agent {
+/// `author` as it is now: the CLI's version and the model of its open chat,
+/// else the model of its latest edit, and the Sikemux it runs in.
+pub(super) fn agent(core: &Core, author: &Author) -> Agent {
+    let chat = core.chats.get(&author.agent_id);
     Agent {
         name: author.name.clone(),
         cli: author.cli.clone(),
-        model: author.model.clone(),
+        cli_version: chat.as_ref().and_then(|chat| chat.cli_version()),
+        model: chat
+            .and_then(|chat| chat.current_launch().model)
+            .or_else(|| author.model.clone()),
+        sikemux: Some(core.build.version.clone()),
         chat: author.agent_id.clone(),
     }
 }
@@ -103,15 +110,11 @@ pub(super) fn agent(author: &Author) -> Agent {
 /// chat or terminal it runs in does.
 pub(super) fn known(core: &Core, dir: &Path, agent_id: &str) -> Option<Agent> {
     if let Some(author) = latest(core, dir, agent_id) {
-        return Some(agent(&author));
+        return Some(agent(core, &author));
     }
-    let chat = core
-        .chats
-        .list()
-        .into_iter()
-        .find(|chat| chat.agent_id == agent_id);
+    let chat = core.chats.get(agent_id);
     let cli = match &chat {
-        Some(chat) => chat.provider.clone(),
+        Some(chat) => chat.provider().to_owned(),
         None => core.all_sessions().iter().find_map(|session| {
             let owner = session.owner();
             (owner.agent_id.as_deref() == Some(agent_id))
@@ -119,15 +122,13 @@ pub(super) fn known(core: &Core, dir: &Path, agent_id: &str) -> Option<Agent> {
                 .flatten()
         })?,
     };
-    let name = core
-        .names
-        .name(agent_id)
-        .or_else(|| chat.and_then(|chat| chat.name))
-        .unwrap_or_else(|| cli.clone());
+    let name = core.names.name(agent_id).unwrap_or_else(|| cli.clone());
     Some(Agent {
         name,
         cli,
-        model: None,
+        cli_version: chat.as_ref().and_then(|chat| chat.cli_version()),
+        model: chat.and_then(|chat| chat.current_launch().model),
+        sikemux: Some(core.build.version.clone()),
         chat: agent_id.to_owned(),
     })
 }
@@ -164,6 +165,7 @@ pub(crate) fn verified(core: &Core, dir: &Path, commit: &str) -> Result<Vec<Agen
 
 fn recorded(core: &Core, project: &str, chat: &str) -> bool {
     core.names.name(chat).is_some()
+        || core.names.ran_session(chat).is_some()
         || !core
             .edits
             .matching(project, |edit| edit.agent_id == chat)

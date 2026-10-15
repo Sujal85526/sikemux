@@ -1084,6 +1084,9 @@ impl Reader {
     }
 
     fn system(&mut self, message: &Value) {
+        if let Some(version) = text(message, "claude_code_version") {
+            self.sink.cli_version(version);
+        }
         match text(message, "subtype") {
             Some("session_state_changed") if text(message, "state") == Some("idle") => self.idle(),
             // Claude Code opens every turn with this, including the ones background work starts.

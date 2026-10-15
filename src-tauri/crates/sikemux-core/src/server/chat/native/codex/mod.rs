@@ -511,15 +511,24 @@ impl Backend for Codex {
         let (reading, _) = Reading::start(driver.clone(), lines);
         let failed = |error: String| start_error(&process, error);
 
-        rpc.request(
-            "initialize",
-            json!({
-                "clientInfo": { "name": "sikemux", "title": "Sikemux", "version": env!("CARGO_PKG_VERSION") },
-                "capabilities": { "experimentalApi": true, "requestAttestation": false },
-            }),
-        )
-        .await
-        .map_err(failed)?;
+        let initialized = rpc
+            .request(
+                "initialize",
+                json!({
+                    "clientInfo": { "name": "sikemux", "title": "Sikemux", "version": env!("CARGO_PKG_VERSION") },
+                    "capabilities": { "experimentalApi": true, "requestAttestation": false },
+                }),
+            )
+            .await
+            .map_err(failed)?;
+        // Codex names itself as `<client>/<its version> (<system>) …`.
+        let version = initialized["userAgent"]
+            .as_str()
+            .and_then(|agent| agent.split_once('/'))
+            .and_then(|(_, rest)| rest.split_whitespace().next());
+        if let Some(version) = version {
+            driver.sink.cli_version(version);
+        }
         rpc.notify("initialized", Value::Null).map_err(failed)?;
         if let Some(library) = launch.env.get(crate::skills::LIBRARY_ENV) {
             let added = rpc

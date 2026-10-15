@@ -167,6 +167,11 @@ impl Sink {
         self.chat.running.load(Ordering::Acquire)
     }
 
+    /// The agent's CLI said which version it is.
+    pub fn cli_version(&self, version: &str) {
+        self.chat.note_cli_version(version);
+    }
+
     /// The agent began work nobody here asked for, such as answering a
     /// background task that finished.
     pub fn work_started(&self) {

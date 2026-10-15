@@ -2,14 +2,13 @@
 //! holds, then the host's signature over them.
 //!
 //! ```text
-//! Agent: Otter (claude, opus, chat 0199…, host 7f3a9c21d0e4b5a6)
+//! Agent: Otter (claude 2.1.257, opus 4.7, sikemux 0.5.3, chat 0199…, host 7f3a9c21d0e4b5a6)
 //! Agent-Signature: <ed25519 signature in base64>
 //! ```
 //!
-//! The name, cli and model only say what the agent was called. The chat and
-//! the host are what a reader can check: the host signs them with the commit's
-//! tree and parents, so a footer written by hand or copied onto another commit
-//! does not check out.
+//! The host signs every field of every line with the commit's tree and
+//! parents, so a footer written or edited by hand, or copied onto another
+//! commit, does not check out. A field the host did not know is left out.
 
 use base64::engine::general_purpose::STANDARD_NO_PAD as BASE64;
 use base64::Engine;
@@ -17,6 +16,7 @@ use iroh::{PublicKey, SecretKey, Signature};
 
 const AGENT: &str = "Agent: ";
 const SIGNATURE: &str = "Agent-Signature: ";
+const SIKEMUX: &str = "sikemux ";
 /// How much of the host's key an agent line shows, enough to pick it out of
 /// the hosts a reader knows.
 const HOST_CHARS: usize = 16;
@@ -26,8 +26,49 @@ const SCISSORS: &str = " ------------------------ >8 ------------------------";
 pub struct Agent {
     pub name: String,
     pub cli: String,
+    /// The version of the agent's CLI.
+    pub cli_version: Option<String>,
     pub model: Option<String>,
+    /// The version of Sikemux the agent ran in.
+    pub sikemux: Option<String>,
     pub chat: String,
+}
+
+impl Agent {
+    /// `self` with every field as its line can show it, so the line reads
+    /// back as the agent it was written from.
+    fn shown(&self) -> Self {
+        let optional = |text: Option<&String>, read: fn(&str) -> String| {
+            text.map(|text| read(text)).filter(|text| !text.is_empty())
+        };
+        let model =
+            optional(self.model.as_ref(), words).filter(|model| !model.starts_with(SIKEMUX));
+        Self {
+            name: words(&self.name),
+            cli: one_word(&self.cli),
+            cli_version: optional(self.cli_version.as_ref(), one_word),
+            model,
+            sikemux: optional(self.sikemux.as_ref(), one_word),
+            chat: one_word(&self.chat),
+        }
+    }
+}
+
+/// `text` on one line without the marks that split an agent line.
+fn words(text: &str) -> String {
+    let plain: String = text
+        .chars()
+        .map(|c| match c {
+            ',' | '(' | ')' => ' ',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect();
+    plain.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn one_word(text: &str) -> String {
+    words(text).replace(' ', "-")
 }
 
 /// What a commit is made of besides its message, which the signature covers.
@@ -38,13 +79,18 @@ pub struct Commit<'a> {
 
 /// The footer naming `agents` in `commit`, signed with the host's `key`.
 pub fn footer(agents: &[Agent], commit: &Commit, key: Option<&SecretKey>) -> Vec<String> {
+    let agents: Vec<Agent> = agents
+        .iter()
+        .map(Agent::shown)
+        .filter(|agent| !agent.name.is_empty() && !agent.cli.is_empty() && !agent.chat.is_empty())
+        .collect();
     let host = key.map(SecretKey::public);
     let mut lines: Vec<String> = agents
         .iter()
         .map(|agent| agent_line(agent, host.as_ref()))
         .collect();
     if let (Some(key), Some(host), false) = (key, host, agents.is_empty()) {
-        let signature = key.sign(signed(commit, &host, agents).as_bytes());
+        let signature = key.sign(signed(commit, &host, &agents).as_bytes());
         lines.push(format!(
             "{SIGNATURE}{}",
             BASE64.encode(signature.to_bytes())
@@ -54,13 +100,25 @@ pub fn footer(agents: &[Agent], commit: &Commit, key: Option<&SecretKey>) -> Vec
 }
 
 fn agent_line(agent: &Agent, host: Option<&PublicKey>) -> String {
+    let cli = match &agent.cli_version {
+        Some(version) => format!("{} {version}", agent.cli),
+        None => agent.cli.clone(),
+    };
+    let sikemux = agent
+        .sikemux
+        .as_ref()
+        .map(|version| format!("{SIKEMUX}{version}"));
     let chat = format!("chat {}", agent.chat);
     let host = host.map(|host| format!("host {}", short(host)));
-    let parts: Vec<&str> = [Some(agent.cli.as_str()), agent.model.as_deref()]
-        .into_iter()
-        .chain([Some(chat.as_str()), host.as_deref()])
-        .flatten()
-        .collect();
+    let parts: Vec<&str> = [
+        Some(cli.as_str()),
+        agent.model.as_deref(),
+        sikemux.as_deref(),
+    ]
+    .into_iter()
+    .chain([Some(chat.as_str()), host.as_deref()])
+    .flatten()
+    .collect();
     format!("{AGENT}{} ({})", agent.name, parts.join(", "))
 }
 
@@ -68,14 +126,26 @@ fn short(host: &PublicKey) -> String {
     host.to_string()[..HOST_CHARS].to_owned()
 }
 
+/// What the host signs: each field by its length, so no field can run into
+/// the next.
 fn signed(commit: &Commit, host: &PublicKey, agents: &[Agent]) -> String {
-    let mut text = format!("sikemux agent footer 1\ntree {}\n", commit.tree);
+    let field = |text: &str| format!("{}:{text}", text.len());
+    let optional = |text: &Option<String>| field(text.as_deref().unwrap_or_default());
+    let mut text = format!("sikemux agent footer 2\ntree {}\n", field(commit.tree));
     for parent in commit.parents {
-        text.push_str(&format!("parent {parent}\n"));
+        text.push_str(&format!("parent {}\n", field(parent)));
     }
-    text.push_str(&format!("host {host}\n"));
+    text.push_str(&format!("host {}\n", field(&host.to_string())));
     for agent in agents {
-        text.push_str(&format!("chat {}\n", agent.chat));
+        text.push_str(&format!(
+            "agent {} {} {} {} {} {}\n",
+            field(&agent.name),
+            field(&agent.cli),
+            optional(&agent.cli_version),
+            optional(&agent.model),
+            optional(&agent.sikemux),
+            field(&agent.chat),
+        ));
     }
     text
 }
@@ -118,7 +188,7 @@ pub fn verify(
 /// Each agent line of `message`'s footer with the host it names, and its
 /// signature.
 fn read(message: &str) -> (Vec<(Agent, Option<String>)>, Option<&str>) {
-    let lines = last_paragraph(message.trim_end()).lines();
+    let lines = last_paragraph(without_closing_comments(message)).lines();
     let mut agents = Vec::new();
     let mut signature = None;
     for line in lines {
@@ -142,17 +212,30 @@ fn parse_agent(value: &str) -> Option<(Agent, Option<String>)> {
         None => None,
     };
     let chat = parts.pop()?.strip_prefix("chat ")?.to_owned();
+    let sikemux = match parts.last()?.strip_prefix(SIKEMUX) {
+        Some(version) if parts.len() > 1 => {
+            parts.pop();
+            Some(version.to_owned())
+        }
+        _ => None,
+    };
     let (cli, model) = match parts.as_slice() {
         [cli] => (*cli, None),
         [cli, model] => (*cli, Some((*model).to_owned())),
         _ => return None,
+    };
+    let (cli, cli_version) = match cli.split_once(' ') {
+        Some((cli, version)) => (cli, Some(version.to_owned())),
+        None => (cli, None),
     };
     let name = name.trim();
     (!name.is_empty() && !chat.is_empty()).then(|| {
         let agent = Agent {
             name: name.to_owned(),
             cli: cli.to_owned(),
+            cli_version,
             model,
+            sikemux,
             chat,
         };
         (agent, host)
@@ -234,6 +317,19 @@ fn without_footer(message: &str) -> String {
         [] => before.trim_end().to_owned(),
         kept => format!("{before}\n\n{}", kept.join("\n")),
     }
+}
+
+/// `message` without the comment lines git keeps at its end when it does not
+/// clean the message up, such as the conflicts of a merge made with `--no-edit`.
+fn without_closing_comments(message: &str) -> &str {
+    let mut message = message.trim_end();
+    while let Some((before, last)) = message.rsplit_once('\n') {
+        if !last.starts_with('#') {
+            break;
+        }
+        message = before.trim_end();
+    }
+    message
 }
 
 fn last_paragraph(message: &str) -> &str {

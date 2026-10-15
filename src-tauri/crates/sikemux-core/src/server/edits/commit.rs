@@ -108,7 +108,9 @@ pub(crate) fn commit(
             .authors
             .iter()
             .find(|author| author.agent_id == agent_id);
-        let signer = me.map(agent).or_else(|| known(core, dir, agent_id));
+        let signer = me
+            .map(|me| agent(core, me))
+            .or_else(|| known(core, dir, agent_id));
         let key = core.remote.host_key();
         let signed = |commit: &Commit| {
             let footer =

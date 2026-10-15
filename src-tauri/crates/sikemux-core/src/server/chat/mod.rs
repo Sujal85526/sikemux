@@ -197,6 +197,8 @@ pub(crate) struct Chat {
     /// Why the turn in progress failed, said before the turn or the chat ends.
     failure: Mutex<Option<String>>,
     edits: super::edits::Open,
+    /// The version of the agent's CLI, once the agent has said it.
+    cli_version: Mutex<Option<String>>,
 }
 
 impl Chat {
@@ -376,6 +378,16 @@ impl Chat {
 
     /// The agent began work nobody here asked for, such as answering a
     /// background task that finished.
+    pub(crate) fn note_cli_version(&self, version: &str) {
+        if let Ok(mut known) = self.cli_version.lock() {
+            *known = Some(version.to_owned()).filter(|version| !version.is_empty());
+        }
+    }
+
+    pub(crate) fn cli_version(&self) -> Option<String> {
+        self.cli_version.lock().ok().and_then(|known| known.clone())
+    }
+
     pub(crate) fn work_started(&self) {
         if !self.running.load(Ordering::Acquire) && !self.unprompted.swap(true, Ordering::AcqRel) {
             self.emit(ChatEventKind::TurnStarted, serde_json::json!({}));
@@ -833,6 +845,7 @@ impl Chat {
                 session: handed.session,
                 backend: handed.backend,
                 agent: handed.released.record(),
+                cli_version: self.cli_version(),
             },
             released: handed.released,
             subscribers,
@@ -869,6 +882,7 @@ pub(crate) struct LiveChat {
     session: native::SessionState,
     backend: Value,
     pub agent: native::AgentRecord,
+    cli_version: Option<String>,
 }
 
 /// A [`LiveChat`] and the pipes to its agent, still open in this process.
@@ -1161,6 +1175,7 @@ impl Chats {
             unreported: AtomicBool::new(flags.running || flags.unprompted || flags.held),
             failure: Mutex::new(None),
             edits: Default::default(),
+            cli_version: Mutex::new(None),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1408,6 +1423,9 @@ pub(crate) fn adopt(
         .insert(core, live.launch, live.origin, Some((feed, live.flags)))
         .map_err(|error| error.to_string())?;
     chat.set_current(live.current);
+    if let Some(version) = &live.cli_version {
+        chat.note_cli_version(version);
+    }
     for client in subscribers {
         chat.feed.subscribe(client);
     }

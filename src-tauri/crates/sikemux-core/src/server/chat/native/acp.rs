@@ -408,6 +408,9 @@ impl Backend for Acp {
             .map_err(failed)?;
         let initialized: InitializeResponse =
             serde_json::from_value(initialized).map_err(|error| failed(error.to_string()))?;
+        if let Some(agent) = &initialized.agent_info {
+            driver.sink.cli_version(&agent.version);
+        }
         let mut capabilities = params(&initialized.agent_capabilities)?;
         let steering = air::steering_supported(&params(&initialized.meta)?);
         capabilities["steering"] = json!(steering);

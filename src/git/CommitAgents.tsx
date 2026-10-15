@@ -40,7 +40,8 @@ function openOwner(owner: CommitOwner, repo: string): void {
 function describe(owner: CommitOwner): string {
     const who = owner.title ? `${owner.title} — ${owner.name}` : owner.name;
     const reach = owner.open ? "open now" : owner.sessionId ? "click to resume" : "its session is gone";
-    return `${who} (${owner.cli}) wrote this · ${reach}`;
+    const ran = [owner.cliVersion ? `${owner.cli} ${owner.cliVersion}` : owner.cli, owner.model, owner.sikemux && `Sikemux ${owner.sikemux}`];
+    return `${who} (${ran.filter(Boolean).join(", ")}) wrote this · ${reach}`;
 }
 
 /** The agents a commit's signed footer names, each opening its session. `compact` shows only their marks when there are several. */
