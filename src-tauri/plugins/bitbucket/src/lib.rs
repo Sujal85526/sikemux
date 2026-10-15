@@ -206,6 +206,7 @@ fn dispatch<'a>(ctx: &'a PluginContext, method: &'a str, input: Value) -> Plugin
         "pull" => answer(input, move |q| pulls::get(data_dir, q)),
         "pullFiles" => answer(input, move |q| pulls::files(data_dir, q)),
         "pullCommits" => answer(input, move |q| pulls::commits(data_dir, q)),
+        "commitPulls" => answer(input, move |q| pulls::of_commit(data_dir, q)),
         "commitAuthors" => answer(input, move |q| pulls::commit_authors(data_dir, q)),
         "pullReviews" => answer(input, move |q| pulls::reviews(data_dir, q)),
         "timeline" if is_issue(&input) => answer(input, move |q| issues::timeline(data_dir, q)),

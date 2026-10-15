@@ -273,6 +273,28 @@ pub async fn get(data_dir: &Path, input: PullRef) -> GithubResult<Pull> {
 }
 
 #[derive(Deserialize)]
+pub struct CommitRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub sha: String,
+}
+
+/// The pull requests that hold the commit `sha`, the merged one first.
+pub async fn of_commit(data_dir: &Path, input: CommitRef) -> GithubResult<Vec<Pull>> {
+    if !input.sha.chars().all(|c| c.is_ascii_hexdigit()) || input.sha.len() < 7 {
+        return Err(GithubError::BadArg(format!(
+            "`{}` is not a commit hash",
+            input.sha
+        )));
+    }
+    let path = input.repo.path(&format!("/commits/{}/pulls", input.sha))?;
+    let rows: Vec<PullRow> = client::get(data_dir, &path, &[]).await?;
+    let mut pulls: Vec<Pull> = rows.into_iter().map(Pull::from).collect();
+    pulls.sort_by_key(|pull| pull.state != "merged");
+    Ok(pulls)
+}
+
+#[derive(Deserialize)]
 struct FileRow {
     filename: String,
     status: String,

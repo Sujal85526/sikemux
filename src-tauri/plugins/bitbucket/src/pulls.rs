@@ -254,6 +254,34 @@ pub async fn list(data_dir: &Path, input: ListQuery) -> BitbucketResult<Vec<Pull
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CommitRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub sha: String,
+}
+
+/// The pull requests that hold the commit `sha`, the merged one first.
+pub async fn of_commit(data_dir: &Path, input: CommitRef) -> BitbucketResult<Vec<Pull>> {
+    if !input.sha.chars().all(|c| c.is_ascii_hexdigit()) || input.sha.len() < 7 {
+        return Err(BitbucketError::BadArg(format!(
+            "`{}` is not a commit hash",
+            input.sha
+        )));
+    }
+    let path = input
+        .repo
+        .path(&format!("/commit/{}/pullrequests", input.sha))?;
+    let rows: Vec<PullRow> = client::get_all(data_dir, &path, &[], 1).await?;
+    let mut pulls: Vec<Pull> = rows
+        .into_iter()
+        .map(|row| Pull::from_row(&input.repo, row))
+        .collect();
+    pulls.sort_by_key(|pull| pull.state != "merged");
+    Ok(pulls)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Thread {
     #[serde(flatten)]
     pub repo: RepoRef,
