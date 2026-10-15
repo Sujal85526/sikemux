@@ -1,4 +1,4 @@
-import { useCallback, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 import { gitOverviewR, notify, reportError, sendToBoard, swallow, useActiveProjectCwd } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import {
@@ -21,6 +21,7 @@ import {
     IconTimer,
     IconUser,
     Markdown,
+    ResizeHandle,
     SkeletonRows,
     type ContextMenuItem,
 } from "../../../plugin-api/ui";
@@ -36,7 +37,7 @@ import {
 } from "../api";
 import { jiraBoardsR, jiraFiltersR, jiraIssueR, jiraProjectsR, jiraSearchR, jiraStatusR } from "../resources";
 import { copyIssue, issueMenu, openIssue } from "../issueLinks";
-import { jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
+import { jiraSettings, jqlOf, mentions, updateJiraView, useJiraView, type JiraList } from "../state";
 import { statusCounts, withStatuses } from "../statusFilter";
 import { JiraBoard } from "./JiraBoard";
 import { Avatar, ProjectAvatar } from "./JiraFace";
@@ -169,13 +170,46 @@ function JiraWorkspace({ paneId, active, sites }: { paneId: string; active: bool
                     onSelect={(key) => updateJiraView(paneId, { issue: key })}
                 />
             )}
-            {view.list.kind === "board" && !view.issue ? null : view.issue ? (
-                <IssueDetail active={active} issueKey={view.issue} site={site} onClose={() => updateJiraView(paneId, { issue: null })} />
-            ) : (
-                <div className="jira-detail">
-                    <EmptyState message="Pick an issue to read it, comment, move it along or assign it." />
-                </div>
+            {view.list.kind === "board" && !view.issue ? null : (
+                <DetailSlot>
+                    {view.issue ? (
+                        <IssueDetail active={active} issueKey={view.issue} site={site} onClose={() => updateJiraView(paneId, { issue: null })} />
+                    ) : (
+                        <div className="jira-detail">
+                            <EmptyState message="Pick an issue to read it, comment, move it along or assign it." />
+                        </div>
+                    )}
+                </DetailSlot>
             )}
+        </div>
+    );
+}
+
+const DETAIL_MIN = 360;
+const LIST_MIN = 260;
+
+function DetailSlot({ children }: { children: ReactNode }) {
+    const slot = useRef<HTMLDivElement>(null);
+    const width = jiraSettings.useSelect((settings) => settings.detailWidth);
+    const room = () => {
+        const pane = slot.current?.parentElement;
+        const sidebar = pane?.querySelector<HTMLElement>(":scope > .jira-sidebar");
+        return (pane?.clientWidth ?? 0) - (sidebar?.offsetWidth ?? 0) - LIST_MIN - 16;
+    };
+    return (
+        <div className="jira-detail-slot" ref={slot} style={width ? { width } : undefined}>
+            <ResizeHandle
+                targetRef={slot}
+                axis="x"
+                grows={-1}
+                min={DETAIL_MIN}
+                max={room}
+                size={width}
+                label="Resize the list and the issue"
+                className="jira-split"
+                onResize={(detailWidth) => jiraSettings.update((settings) => ({ ...settings, detailWidth }))}
+            />
+            {children}
         </div>
     );
 }

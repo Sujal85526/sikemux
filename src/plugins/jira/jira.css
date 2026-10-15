@@ -1,7 +1,7 @@
 .jira-pane {
     --jira-panel: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
     display: grid;
-    grid-template-columns: 208px minmax(260px, 0.9fr) minmax(340px, 1.4fr);
+    grid-template-columns: 208px minmax(260px, 1fr) auto;
     gap: 8px;
     height: 100%;
     min-height: 0;
@@ -360,6 +360,55 @@
     padding: 12px 16px 16px;
 }
 
+.jira-detail > * {
+    width: 100%;
+    max-width: 980px;
+    margin-inline: auto;
+}
+
+.jira-detail-slot {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: max(360px, calc((100cqw - 224px) * 0.55));
+    max-width: calc(100cqw - 224px - 260px);
+    min-width: 360px;
+    min-height: 0;
+}
+
+.jira-detail-slot > .jira-detail {
+    flex: 1;
+}
+
+.jira-split {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -8px;
+    z-index: 3;
+    width: 8px;
+    cursor: col-resize;
+    outline: none;
+    touch-action: none;
+}
+
+.jira-split::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3.5px;
+    width: 1px;
+    background: transparent;
+    transition: background var(--dur-1);
+}
+
+.jira-split:hover::after,
+.jira-split:active::after,
+.jira-split:focus-visible::after {
+    background: var(--acc-line);
+}
+
 .jira-detail-head h2 {
     margin: 8px 0 0;
     font-size: var(--text-lg);
@@ -425,6 +474,9 @@
     }
 
     .jira-detail-side {
+        position: sticky;
+        top: 12px;
+        align-self: start;
         grid-column: 2;
         grid-row: 1;
     }
@@ -616,7 +668,7 @@
 }
 
 .jira-pane.board.with-issue {
-    grid-template-columns: 208px minmax(0, 1fr) minmax(400px, 0.9fr);
+    grid-template-columns: 208px minmax(0, 1fr) auto;
 }
 
 .pane:has(> .jira-pane) {
@@ -625,7 +677,7 @@
 
 @container jira-pane (max-width: 1100px) {
     .jira-pane.board.with-issue {
-        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.9fr);
+        grid-template-columns: minmax(0, 1fr) auto;
     }
 
     .jira-pane.board.with-issue > .jira-sidebar {

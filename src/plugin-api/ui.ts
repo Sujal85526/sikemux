@@ -17,3 +17,4 @@ export { codeFence, type AgentChoice } from "../agents/agentTargets";
 export type { AgentDelivery } from "../agents/agentInbox";
 export { TreeContextMenu as ContextMenu, type CtxItem as ContextMenuItem } from "../rail/FileTree";
 export { useCardDrag } from "../ui/kanbanDrag";
+export { ResizeHandle } from "../git/ResizeHandle";
