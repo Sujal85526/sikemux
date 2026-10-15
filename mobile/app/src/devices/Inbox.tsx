@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useRef, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import type { ConnectionLike } from '@sikemux/native';
@@ -7,7 +7,7 @@ import type { AgentQuestion, QuestionAnswer } from '@mac/agents/agentQuestions';
 import type { CollisionMark } from '@mac/agents/collisions';
 import { agentLabel } from '@mac/agents/catalog';
 import { formatAge, formatDuration } from '@mac/lib/format';
-import type { Attention, Digest, InboxItem, InboxTier } from '@/core/protocol';
+import type { Attention, Digest, InboxItem, InboxTier, RemoteAgent } from '@/core/protocol';
 import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Chip, IconButton } from '@/ui/controls';
@@ -16,6 +16,7 @@ import { Collided, Dot, NeedsYou, Working } from '@/ui/status';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles } from '@/ui/theme';
 import { problem as problemOf } from './hub';
 import { useHostQuestions } from './questions';
+import { WorkerRow, workersOf } from './RemoteWorker';
 
 type Tab = 'terminals' | 'board';
 
@@ -42,8 +43,8 @@ function byTier(items: readonly InboxItem[]): { tier: InboxTier; items: InboxIte
   return runs;
 }
 
-function itemTitle(item: InboxItem): string {
-  return item.title ?? item.card?.title ?? agentLabel(item.cli ?? 'agent');
+function itemTitle(item: InboxItem): string | undefined {
+  return item.title ?? item.card?.title ?? (item.host ? undefined : agentLabel(item.cli ?? 'agent'));
 }
 
 /** Opens what an item is about: its pull request, its chat, or the tab that lists its terminal or card. */
@@ -118,6 +119,7 @@ const InboxRow = memo(function InboxRow({
       <Row
         mark={item.cli ? <AgentIcon provider={item.cli} size={20} /> : <Icon name="IconBoard" size={17} />}
         name={item.name}
+        host={item.host}
         title={itemTitle(item)}
         place={place}
         detail={item.what}
@@ -152,7 +154,7 @@ const InboxRow = memo(function InboxRow({
             {question.choices.map((choice, index) => (
               <Chip key={index} title={choice.label} busy={busy} onPress={() => onAct({ item, given: { choice: index } })} />
             ))}
-            <Chip title={question.secret ? 'Answer privately…' : 'Reply…'} onPress={() => onOpen(item)} />
+            {item.host ? null : <Chip title={question.secret ? 'Answer privately…' : 'Reply…'} onPress={() => onOpen(item)} />}
           </View>
         ) : null}
         {item.kind === 'assumption' && full ? (
@@ -203,6 +205,7 @@ function AwayDigest({
             key={item.id}
             mark={item.cli ? <AgentIcon provider={item.cli} size={20} /> : <Icon name="IconBoard" size={17} />}
             name={item.name}
+            host={item.host}
             title={itemTitle(item)}
             detail={item.detail ?? item.handoff?.result ?? item.handoff?.answer ?? item.what}
             end={<ItemEnd item={item} />}
@@ -225,6 +228,7 @@ export function Inbox({
   items,
   working,
   collisions,
+  workers,
   attentions,
   full,
   placeOf,
@@ -238,6 +242,8 @@ export function Inbox({
   items: readonly InboxItem[];
   working: number;
   collisions?: Record<string, CollisionMark>;
+  /** Workers on linked hosts, each shown under the first row of the agent that started it. */
+  workers: readonly RemoteAgent[];
   attentions: readonly Attention[];
   full: boolean;
   placeOf: (item: InboxItem) => string | undefined;
@@ -252,6 +258,8 @@ export function Inbox({
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [note, setNote] = useState<string>();
   const open = opener(core, onTab);
+  const firstOf = new Map<string, string>();
+  for (const item of items) if (item.agentId && !firstOf.has(item.agentId)) firstOf.set(item.agentId, item.id);
 
   const act = async (act: Act) => {
     if (!connection || busy.has(act.item.id)) return;
@@ -294,18 +302,22 @@ export function Inbox({
           <SectionLabel count={tier === 'progress' ? working : undefined}>{TIER_LABELS[tier]}</SectionLabel>
           <Rows>
             {run.map((item) => (
-              <InboxRow
-                key={item.id}
-                item={item}
-                collision={item.agentId ? collisions?.[item.agentId] : undefined}
-                place={placeOf(item)}
-                attention={item.requestId ? attentions.find((attention) => attention.id === item.requestId) : undefined}
-                question={item.questionId ? questions.find((question) => question.id === item.questionId) : undefined}
-                full={full}
-                busy={busy.has(item.id)}
-                onOpen={onOpen}
-                onAct={onAct}
-              />
+              <Fragment key={item.id}>
+                <InboxRow
+                  item={item}
+                  collision={item.agentId ? collisions?.[item.agentId] : undefined}
+                  place={placeOf(item)}
+                  attention={item.requestId ? attentions.find((attention) => attention.id === item.requestId) : undefined}
+                  question={item.questionId ? questions.find((question) => question.id === item.questionId) : undefined}
+                  full={full}
+                  busy={busy.has(item.id)}
+                  onOpen={onOpen}
+                  onAct={onAct}
+                />
+                {item.agentId && firstOf.get(item.agentId) === item.id
+                  ? workersOf(workers, item.agentId).map((worker) => <WorkerRow key={worker.agentId} worker={worker} nested />)
+                  : null}
+              </Fragment>
             ))}
           </Rows>
         </View>

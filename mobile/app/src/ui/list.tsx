@@ -26,6 +26,7 @@ export function Rows({ children, style }: { children: ReactNode; style?: StylePr
 export function Row({
   mark,
   name,
+  host,
   title,
   detail,
   place,
@@ -38,7 +39,9 @@ export function Row({
   mark?: ReactNode;
   /** The agent's name, set before its title as the Mac's rail does. */
   name?: string;
-  title: string;
+  /** The linked host the agent runs on, set after its name. */
+  host?: string;
+  title?: string;
   detail?: ReactNode;
   /** The project the row belongs to, marked with the folder the Mac's rail puts beside it. */
   place?: string;
@@ -62,8 +65,13 @@ export function Row({
           {name ? (
             <>
               {name}
-              <Text style={styles.rowDot}> · </Text>
-              <Text style={styles.rowAfterName}>{title}</Text>
+              {host ? <Text style={styles.rowAfterName}> on {host}</Text> : null}
+              {title ? (
+                <>
+                  <Text style={styles.rowDot}> · </Text>
+                  <Text style={styles.rowAfterName}>{title}</Text>
+                </>
+              ) : null}
             </>
           ) : (
             title

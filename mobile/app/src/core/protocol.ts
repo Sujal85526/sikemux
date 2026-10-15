@@ -177,6 +177,26 @@ export type InboxItem = {
   url?: string;
   handoff?: Handoff;
   recordings: Recording[];
+  /** The linked host the agent runs on, when it is not this one. */
+  host?: string;
+};
+
+export type RemoteStatus = AgentGroup | 'stopped' | 'starting' | 'asleep';
+
+/** A worker an agent here started on a linked host. */
+export type RemoteAgent = {
+  agentId: string;
+  name: string;
+  /** What this host calls the host it runs on. */
+  host: string;
+  hostId: string;
+  cli: string;
+  status: RemoteStatus;
+  /** The agent here that started it. */
+  lead?: string;
+  project: string;
+  /** Its host answers now. */
+  reachable: boolean;
 };
 
 /** The host's inbox, ranked by the core. */
@@ -187,6 +207,8 @@ export type Inbox = {
   agentMessages?: Record<string, number>;
   /** Agents that just collided with another over a file, by agent id. */
   collisions?: Record<string, CollisionMark>;
+  /** Workers agents here started on linked hosts; hosts from before links leave it out. */
+  remoteAgents?: RemoteAgent[];
 };
 
 /** What the `digest` call says happened since the person left. */
@@ -211,8 +233,27 @@ export type PendingPairing = { id: string; deviceId: string; name: string; platf
 /** A device paired with the host, and what it may do there. */
 export type PairedClient = { id: string; name: string; platform: string; access: DeviceAccess; pairedAt: number; lastSeen?: number };
 
+/** Another host on the account linked with this one, so agents on either can start agents on the other. */
+export type LinkedHost = {
+  /** Its key. */
+  id: string;
+  name: string;
+  platform: string;
+  linkedAt: number;
+  lastSeen?: number;
+  connected: boolean;
+  /** Agents of shared teams on it. */
+  agents: number;
+};
+
 /** What the `pairing` call answers, and `answerPairing` and `changeDevice` after them. */
-export type Pairing = { pending: PendingPairing[]; devices: PairedClient[] };
+export type Pairing = {
+  pending: PendingPairing[];
+  devices: PairedClient[];
+  links?: LinkedHost[];
+  /** Other hosts asking to link with this one. */
+  pendingLinks?: PendingPairing[];
+};
 
 /** Kept with the paired host, so it is a name the core sends as is. */
 export type BuildChannel = 'dev' | 'nightly' | 'stable';
@@ -266,12 +307,14 @@ function keepInbox(previous: Inbox, next: Inbox): Inbox {
   const items = keepItems(previous.items, next.items, (item) => item.id);
   const agentMessages = same(previous.agentMessages, next.agentMessages) ? previous.agentMessages : next.agentMessages;
   const collisions = same(previous.collisions, next.collisions) ? previous.collisions : next.collisions;
+  const remoteAgents = next.remoteAgents && keepItems(previous.remoteAgents ?? [], next.remoteAgents, (agent) => agent.agentId);
   return items === previous.items &&
     previous.working === next.working &&
     agentMessages === previous.agentMessages &&
-    collisions === previous.collisions
+    collisions === previous.collisions &&
+    remoteAgents === previous.remoteAgents
     ? previous
-    : { items, working: next.working, agentMessages, collisions };
+    : { items, working: next.working, agentMessages, collisions, remoteAgents };
 }
 export const readHost = (json: string) => readCore<HostInfo>(json);
 export const readDigest = (json: string) => readCore<Digest>(json);

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -14,6 +14,7 @@ import { deviceName, type PairedDevice, updateDevice } from '@/devices/paired';
 import { Board } from '@/devices/Board';
 import { ForgetSheet, useForget } from '@/devices/ForgetSheet';
 import { ProjectSheet } from '@/devices/ProjectSheet';
+import { WorkerRow, workersOf } from '@/devices/RemoteWorker';
 import { Inbox } from '@/devices/Inbox';
 import { useDigest } from '@/devices/digest';
 import { summary } from '@/devices/status';
@@ -190,6 +191,11 @@ function Agents({
   const listed = new Set(snapshot.inbox.items.map((item) => item.agentId));
   const scoped = snapshot.chats.filter((chat) => !scope || inProject(scope, chat.cwd));
   const idle = scoped.filter((chat) => !listed.has(chat.agentId) && (provider === 'all' || chat.provider === provider));
+  const workers = (snapshot.inbox.remoteAgents ?? []).filter((worker) => !listed.has(worker.agentId));
+  const leads = new Set([...items.map((item) => item.agentId), ...idle.map((chat) => chat.agentId)]);
+  const strays = scope
+    ? []
+    : workers.filter((worker) => !(worker.lead && leads.has(worker.lead)) && (provider === 'all' || worker.cli === provider));
   const placeOf = (item: InboxItem) => {
     const where = item.card?.project ?? item.project;
     return scope || !where ? undefined : projectName(snapshot, where);
@@ -203,6 +209,7 @@ function Agents({
         items={items}
         working={snapshot.inbox.working}
         collisions={snapshot.inbox.collisions}
+        workers={workers}
         attentions={snapshot.attentions}
         full={full}
         placeOf={placeOf}
@@ -216,19 +223,33 @@ function Agents({
           <SectionLabel>{AGENT_LABELS.idle}</SectionLabel>
           <Rows>
             {idle.map((chat) => (
-              <ChatRow
-                key={chat.agentId}
-                core={core}
-                chat={chat}
-                collision={snapshot.inbox.collisions?.[chat.agentId]}
-                place={scope ? undefined : projectName(snapshot, chat.cwd)}
-              />
+              <Fragment key={chat.agentId}>
+                <ChatRow
+                  core={core}
+                  chat={chat}
+                  collision={snapshot.inbox.collisions?.[chat.agentId]}
+                  place={scope ? undefined : projectName(snapshot, chat.cwd)}
+                />
+                {workersOf(workers, chat.agentId).map((worker) => (
+                  <WorkerRow key={worker.agentId} worker={worker} nested />
+                ))}
+              </Fragment>
+            ))}
+          </Rows>
+        </>
+      ) : null}
+      {strays.length ? (
+        <>
+          <SectionLabel>On linked hosts</SectionLabel>
+          <Rows>
+            {strays.map((worker) => (
+              <WorkerRow key={worker.agentId} worker={worker} />
             ))}
           </Rows>
         </>
       ) : null}
       <Recent core={core} snapshot={snapshot} scope={scope} provider={provider} full={full} hostName={hostName} />
-      {!items.length && !scoped.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
+      {!items.length && !scoped.length && !strays.length && !snapshot.recent.some((chat) => !scope || chat.project === scope.id) ? (
         <Text style={styles.empty}>{scope ? `No agents in ${scope.name}.` : 'No agents running.'}</Text>
       ) : null}
     </>

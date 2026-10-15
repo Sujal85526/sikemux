@@ -509,6 +509,9 @@
   .rows .row .t b, .nav .mid .named b { font-weight: inherit; color: var(--text-primary); }
   .rows .row .t i, .nav .mid .named i { font-style: normal; color: var(--ink-faint); margin: 0 5px; }
   .rows .row .t em, .nav .mid .named em { font-style: normal; color: var(--text-tertiary); }
+  .rows .row.worker { margin-left: 30px; }
+  .rows .row.worker.gone .t b { color: var(--text-tertiary); }
+  .ibelow .ask { font-size: 12.5px; line-height: 1.4; color: var(--text-tertiary); }
   .rows .row.more { min-height: 40px; padding-left: 38px; }
   .rows .row.more .t { font-size: 13px; font-weight: 400; color: var(--text-tertiary); }
   .scope-sheet { top: auto; padding: 8px 16px 34px; }
@@ -1347,6 +1350,31 @@
       <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
       <div class="screen">
         <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
+        <div class="host-head"><div class="where"><i class="live"></i>Online · 2 agents</div><h1>MacBook Pro</h1></div>
+        <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span><span>Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
+        <div class="pad grow">
+          <div class="glabel">Needs you</div>
+          <div class="rows">
+            <div class="row"><span class="mark codex">{{IconCodex:20}}</span><div class="body"><div class="t"><b>Wren</b><em> on studio</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Asks you</div></div><span class="status-slot"><span class="dot warn"></span></span></div>
+            <div class="ibelow"><div class="said">Keep the old CSV importer, or drop it with this change?</div><div class="ichips"><span>Keep it</span><span>Drop it</span></div></div>
+          </div>
+          <div class="glabel">Working <span class="n">2</span></div>
+          <div class="rows">
+            <div class="row"><span class="mark claude">{{IconClaude:20}}</span><div class="body"><div class="t"><b>Cedar</b><i>·</i><em>Move the ledger to cents</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Working</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row worker"><span class="mark claude">{{IconClaude:16}}</span><div class="body"><div class="t"><b>Otter</b><em> on studio</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Working</div></div><span class="status-slot"><span class="loader"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>
+            <div class="row worker gone"><span class="mark codex" style="opacity:.5">{{IconCodex:16}}</span><div class="body"><div class="t"><b>Fern</b><em> on build-box</em></div><div class="s"><span class="place">{{IconFolder:11}}</span>ledger · Out of reach</div></div><span class="status-slot"><span class="dot off"></span></span></div>
+          </div>
+        </div>
+        <div class="fab">{{IconPlus:18}}New chat</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Workers on linked hosts</b><div class="note">An agent here can start workers on another host linked to the same account; they run there, on that host's own sign-ins. Each sits right under the agent that started it, a little in from it and with a smaller mark, as the agent's name and the host it runs on: Otter on studio. The line under it is its project there and the rail's word for where it is, and the end shows the same squares, ring or dot as any agent. Its chat lives on its own host, so tapping it does nothing here. When its host can't be reached the row dims, the dot goes hollow and its line says Out of reach in place of its state. A worker that waits on the person comes up under Needs you on its own row instead, named with its host the same way, and its question is answered from that row like any other; its chat is not here, so there is no Reply…. A worker whose lead has closed, or is a terminal agent the list doesn't show, gathers under On linked hosts at the end while all projects are shown.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Devices</span><span style="flex:1"></span><span class="icon-btn">{{IconMore:18}}</span></div>
         <div class="host-head"><div class="where"><i class="live"></i>Online · 4 agents</div><h1>MacBook Pro</h1></div>
         <div class="host-bar"><div class="host-tabs"><span class="on">Agents <i class="count">1</i></span><span>Terminals</span><span>Board</span></div><span class="host-project"><span class="folder">{{IconFolder:14}}</span>All projects<span class="ch">{{IconChevron:12}}</span></span></div>
         <div class="pad grow">
@@ -1462,7 +1490,7 @@
 <!-- ================================================================ -->
 <section class="flow on-host">
   <h2>Letting hosts and phones in</h2>
-  <p>The phone answers for its owner what used to wait at the computer: a host with no browser is added to the account by its code, and a phone asking to connect to a host is let in, or not, from another phone already on the account with full control.</p>
+  <p>The phone answers for its owner what used to wait at the computer: a host with no browser is added to the account by its code, and a phone asking to connect to a host, or another host asking to link with it, is let in, or not, from another phone already on the account with full control.</p>
   <div class="phones">
 
     <figure><div class="phone"><div class="island"></div>
@@ -1531,6 +1559,46 @@
       </div>
       <div class="home-bar"></div></div>
       <figcaption><b>A paired device</b><div class="note">The Mac's two levels of access, in its words: Full control starts chats, answers agents and types in terminals; Watch only sees them and answers what agents ask. Switching takes effect at once. Remove from this host unpairs it and ends its connections; it can ask again from its own Devices.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen">
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span><span style="flex:1;text-align:center;font-weight:600;color:var(--text-primary)">Paired devices</span><span style="width:60px"></span></div>
+        <div class="pad grow">
+          <div class="glabel">Paired</div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconPhone:18}}</span><div class="body"><div class="t">Kishore's iPhone</div><div class="s">Full control · this phone</div></div></div>
+          </div>
+          <div class="glabel">Asking to link</div>
+          <div class="rows">
+            <div class="row"><span class="mark" style="color:var(--text-primary)">{{IconDesktop:18}}</span><div class="body"><div class="t">build-box</div><div class="s">Linux · from your account</div></div></div>
+            <div class="ibelow"><div class="ask">Agents on build-box could start agents on MacBook Pro, signed in as you here.</div><div class="ichips"><span>Decline</span><span class="primary">Allow</span></div></div>
+          </div>
+          <div class="glabel">Linked hosts</div>
+          <div class="rows">
+            <div class="row"><span class="mark">{{IconLaptop:18}}</span><div class="body"><div class="t">studio</div><div class="s">macOS · connected · 2 agents</div></div><span class="chev">{{IconChevron:14}}</span></div>
+            <div class="row"><span class="mark">{{IconDesktop:18}}</span><div class="body"><div class="t">render-01</div><div class="s">Linux · seen 3d ago</div></div><span class="chev">{{IconChevron:14}}</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>Linked hosts</b><div class="note">Hosts on the same account can link, so an agent on one starts workers on the other. Below the paired devices, another host asking to link leads, with its name, its system and that it came from your account, a line saying its agents could start agents on this host, and Decline and Allow as chips. A link is asked for once, from the other host, and raises the same notification as a phone asking to connect. Then every linked host: its system, connected or when it was last seen, and how many agents work across the link. Tapping one opens it. Only a phone that may answer pairing requests may answer or remove a link.</div></figcaption>
+    </figure>
+
+    <figure><div class="phone"><div class="island"></div>
+      <div class="status"><span>9:41</span><span class="bars"><i></i><i></i></span></div>
+      <div class="screen" style="opacity:.35">
+        <div class="nav"><span class="back">{{IconChevron:18}}Back</span></div>
+      </div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <h3>studio</h3>
+        <div class="sheet-note">macOS · linked 3d ago · 2 agents across the link. Its agents can start agents here, and agents here can start them there.</div>
+        <div class="btn danger">Remove link</div>
+      </div>
+      <div class="home-bar"></div></div>
+      <figcaption><b>A linked host</b><div class="note">What the link is and when it was made. Remove link ends it on both hosts: agents on either can no longer start workers on the other, and to link again the other host asks again.</div></figcaption>
     </figure>
 
   </div>

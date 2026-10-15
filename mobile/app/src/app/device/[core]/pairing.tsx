@@ -5,13 +5,13 @@ import type { ConnectionLike } from '@sikemux/native';
 
 import { ACCESS_OPTIONS, platformName } from '@mac/remote/access';
 import { formatAgo } from '@mac/lib/format';
-import { readPairing, type DeviceAccess, type PairedClient, type Pairing } from '@/core/protocol';
+import { type DeviceAccess, type LinkedHost, type PairedClient, type Pairing, readPairing } from '@/core/protocol';
 import { useDeviceId } from '@/device/identity';
 import { problem as problemOf, useDevices, useLive } from '@/devices/hub';
 import { deviceName } from '@/devices/paired';
 import { useCardArrivals } from '@/notify/responses';
 import { haptics } from '@/ui/haptics';
-import { Icon } from '@/ui/Icon';
+import { DeviceIcon, Icon } from '@/ui/Icon';
 import { Button, Chip, Track } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { useMinute } from '@/ui/motion';
@@ -119,6 +119,55 @@ function DeviceSheet({
   );
 }
 
+const hostKind = (platform: string) => (platform === 'linux' ? 'desktop' : 'laptop');
+
+/** A host linked with this one: what the link is, and ending it. */
+function LinkSheet({
+  link,
+  now,
+  onClose,
+  onRemove,
+}: {
+  link?: LinkedHost;
+  now: number;
+  onClose: () => void;
+  onRemove: (id: string) => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const type = useType();
+  return (
+    <Sheet visible={!!link} onClose={onClose}>
+      {link ? (
+        <View style={styles.sheet}>
+          <Text style={styles.sheetTitle} numberOfLines={1}>
+            {link.name}
+          </Text>
+          <Text style={type.meta}>
+            {platformName(link.platform)} · linked {formatAgo(link.linkedAt, now)} · {agentCount(link.agents)} across the link. Its agents
+            can start agents here, and agents here can start them there.
+          </Text>
+          <Button
+            kind="danger"
+            title="Remove link"
+            onPress={() => {
+              onRemove(link.id);
+              onClose();
+            }}
+            style={styles.remove}
+          />
+        </View>
+      ) : null}
+    </Sheet>
+  );
+}
+
+const agentCount = (count: number) => `${count} agent${count === 1 ? '' : 's'}`;
+
+function linkDetail(link: LinkedHost, now: number): string {
+  const reach = link.connected ? 'connected' : link.lastSeen ? `seen ${formatAgo(link.lastSeen, now)}` : 'never connected';
+  return [platformName(link.platform), reach, link.agents ? agentCount(link.agents) : null].filter(Boolean).join(' · ');
+}
+
 /** Who may connect to a host: the devices asking now, answered here, and those already paired, changed or removed here. */
 export default function HostPairing() {
   const styles = useStyles(makeStyles);
@@ -132,12 +181,15 @@ export default function HostPairing() {
   const connection = live.status === 'open' ? live.connection : undefined;
   const { pairing, problem, busy, reread, answer, setAccess } = usePairing(connection);
   const [editing, setEditing] = useState<string>();
+  const [linkOpen, setLinkOpen] = useState<string>();
   const phone = useDeviceId();
   const hostName = device ? deviceName(device) : 'Host';
   useCardArrivals(core, 'pairing', reread);
 
   const now = minute * 60_000;
   const pending = pairing?.pending.filter((request) => request.expiresAt > now) ?? [];
+  const asking = pairing?.pendingLinks?.filter((request) => request.expiresAt > now) ?? [];
+  const links = pairing?.links ?? [];
   return (
     <Screen>
       <Nav back="Back" title="Paired devices" />
@@ -186,6 +238,46 @@ export default function HostPairing() {
             </Rows>
           </>
         ) : null}
+        {asking.length ? (
+          <>
+            <SectionLabel>Asking to link</SectionLabel>
+            <Rows>
+              {asking.map((request) => (
+                <View key={request.id}>
+                  <Row
+                    mark={<DeviceIcon kind={hostKind(request.platform)} size={18} />}
+                    title={request.name || 'A host'}
+                    detail={`${platformName(request.platform)} · from your account`}
+                  />
+                  <Text style={styles.ask}>
+                    Agents on {request.name || 'that host'} could start agents on {hostName}, signed in as you here.
+                  </Text>
+                  <View style={styles.chips}>
+                    <Chip title="Decline" busy={busy === request.id} onPress={() => void answer(request.id, null)} />
+                    <Chip title="Allow" primary busy={busy === request.id} onPress={() => void answer(request.id, 'full')} />
+                  </View>
+                </View>
+              ))}
+            </Rows>
+          </>
+        ) : null}
+        {links.length ? (
+          <>
+            <SectionLabel>Linked hosts</SectionLabel>
+            <Rows>
+              {links.map((link) => (
+                <Row
+                  key={link.id}
+                  mark={<DeviceIcon kind={hostKind(link.platform)} size={18} color={colors.secondary} />}
+                  title={link.name}
+                  detail={linkDetail(link, now)}
+                  end={<Icon name="IconChevron" size={14} color={colors.rest} />}
+                  onPress={() => setLinkOpen(link.id)}
+                />
+              ))}
+            </Rows>
+          </>
+        ) : null}
         {!pairing && !problem ? <Text style={styles.note}>Asking {hostName}…</Text> : null}
         {problem ? (
           <Text style={[styles.note, styles.problem]} accessibilityLiveRegion="polite">
@@ -198,6 +290,12 @@ export default function HostPairing() {
         onClose={() => setEditing(undefined)}
         onAccess={(id, access) => void setAccess(id, access)}
       />
+      <LinkSheet
+        link={links.find((link) => link.id === linkOpen)}
+        now={now}
+        onClose={() => setLinkOpen(undefined)}
+        onRemove={(id) => void setAccess(id, null)}
+      />
     </Screen>
   );
 }
@@ -209,6 +307,7 @@ const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
     body: { paddingHorizontal: 16 },
+    ask: { ...type.meta, fontSize: 12.5, lineHeight: 17, paddingLeft: TEXT_INSET, paddingRight: 8 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingLeft: TEXT_INSET, paddingTop: 2, paddingBottom: 8 },
     note: { ...type.meta, fontSize: 13, paddingHorizontal: 8, paddingTop: 16 },
     problem: { color: colors.danger },
