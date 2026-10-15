@@ -263,7 +263,9 @@ fn plan(
             .chain(removed_by.values())
             .copied()
             .collect();
-        let others = authors.iter().any(|author| Some(*author) != me);
+        let others = authors.iter().any(|author| {
+            Some(*author) != me && !owners.authors[*author].agents().any(|id| id == agent_id)
+        });
         let whole = !others && names(named, path);
         if !whole && !me.is_some_and(|me| authors.contains(&me)) {
             let mut by: BTreeSet<String> = authors.iter().map(|at| name(Some(*at))).collect();

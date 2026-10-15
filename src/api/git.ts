@@ -138,7 +138,7 @@ export type DiffRow = [kind: 0 | 1 | 2, line: number, text: string] | [kind: 3, 
 
 export const DIFF_ROW = { context: 0, added: 1, deleted: 2, hidden: 3 } as const;
 
-/** An agent that wrote some of a checkout's uncommitted lines. */
+/** An agent that wrote some of a checkout's uncommitted lines, or the agents at work when no one of them could have, named "Otter or Briar". */
 export interface ChangeAuthor {
     agentId: string;
     name: string;
@@ -146,6 +146,8 @@ export interface ChangeAuthor {
     model?: string;
     /** The chat run of its latest edit. */
     feed: string;
+    /** The agents it stands for, when several could have made the change. */
+    shared?: string[];
 }
 
 /** `count` lines from `start` that `author` wrote last; `over` is the agent whose lines it rewrote there. */

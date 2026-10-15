@@ -35,8 +35,19 @@ fn footer(
         let made_of = scope.spawn(|| made_of(dir, index, amend));
         let writers: Result<Vec<Agent>, String> = match named {
             Some(named) => Ok(named.iter().filter_map(|id| known(core, dir, id)).collect()),
-            None => staged_in(core, dir, index)
-                .map(|(owners, _)| owners.writers().map(|author| agent(core, author)).collect()),
+            None => staged_in(core, dir, index).map(|(owners, _)| {
+                owners
+                    .writers()
+                    .flat_map(|author| match author.shared.is_empty() {
+                        true => vec![agent(core, author)],
+                        false => author
+                            .shared
+                            .iter()
+                            .filter_map(|id| known(core, dir, id))
+                            .collect(),
+                    })
+                    .collect()
+            }),
         };
         let made_of = made_of
             .join()
@@ -254,7 +265,8 @@ pub(crate) fn commit(
         .map(|(owners, _)| {
             owners
                 .writers()
-                .map(|author| author.agent_id.clone())
+                .flat_map(Author::agents)
+                .map(str::to_owned)
                 .collect()
         })
         .unwrap_or_default();

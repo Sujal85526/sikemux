@@ -31,6 +31,9 @@ impl Core {
         if let Some(happened) = happened {
             self.journal_agent(agent_id, happened);
         }
+        if matches!(activity, Activity::Started | Activity::Working) {
+            self.edits.working(agent_id);
+        }
         let agent_id = agent_id.to_owned();
         let came_to_rest = matches!(activity, Activity::Finished { .. } | Activity::Problem(_));
         match activity {

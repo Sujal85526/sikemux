@@ -815,9 +815,11 @@ is working on.
 
 ### Committing in a shared checkout
 
-`git_commit` commits only the lines you wrote, leaving other agents' changes
-and the files on disk as they are. `paths` also takes changes no agent wrote in
-those files or folders, unless another agent changed them too. It returns the
+`git_commit` commits only the lines you wrote, with your edit tools or your
+commands, leaving other agents' changes and the files on disk as they are.
+`paths` also takes changes no agent wrote in those files or folders, and those
+made while your commands and another agent's ran at once, unless another agent
+changed them too. It returns the
 commit, its files and what was left. In the shared checkout Sikemux refuses
 `git add -A`, `commit -a`, `stash`, `reset --hard` and the like; in a git
 worktree of your own they are allowed.

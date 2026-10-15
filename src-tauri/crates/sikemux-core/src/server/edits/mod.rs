@@ -1,18 +1,23 @@
 //! Which agent changed which lines of which file, turn by turn: every edit a
-//! chat agent's tools made, as its driver reported it. Kept in `edits/` in the
-//! data folder, one file of JSON lines per project, newest last. Paths and
-//! lines only, never what the files hold.
+//! chat agent's tools made, as its driver reported it, and every change made
+//! outside them while agents worked, by the command or terminal agent most
+//! likely behind it. Kept in `edits/` in the data folder, one file of JSON
+//! lines per project, newest last. Paths and lines only; what changed files
+//! held goes beside it, in the project's folder, until they are committed.
 
 pub(crate) mod commit;
 pub(crate) mod footer;
 mod lines;
+mod outside;
 mod owners;
+mod prior;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard, Weak};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -32,12 +37,16 @@ const MAX_OPEN_CALLS: usize = 32;
 /// Files bigger than this are not read to find where an edit landed.
 const MAX_READ_BYTES: u64 = 16 * 1024 * 1024;
 
-/// One file one tool call changed.
+/// One file one tool call, or one change outside the edit tools, changed.
+/// With no agent, the change is the person's, unless it is `shared`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Edit {
     pub at: u64,
     pub agent_id: String,
+    /// The agents at work when no one of them could have made the change.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub cli: String,
@@ -187,11 +196,23 @@ fn json_lines<'a>(edits: impl IntoIterator<Item = &'a Edit>) -> String {
 struct Store {
     folder: Option<PathBuf>,
     logs: Mutex<HashMap<String, Log>>,
+    priors: Mutex<HashMap<String, prior::Priors>>,
+    outside: outside::Outside,
+}
+
+enum Job {
+    Done(Done),
+    /// An agent is at work.
+    Working(String),
+    /// The person saved a file in Sikemux's editor.
+    Saved(PathBuf),
+    /// A file changed in a watched checkout.
+    Changed,
 }
 
 pub(crate) struct Edits {
     store: Arc<Store>,
-    done: mpsc::Sender<Done>,
+    jobs: mpsc::Sender<Job>,
 }
 
 /// Which of a project's edits to read; each filter left out matches all.
@@ -214,8 +235,10 @@ impl Edits {
         let store = Arc::new(Store {
             folder: data_dir.map(|dir| dir.join(FOLDER)),
             logs: Mutex::new(HashMap::new()),
+            priors: Mutex::new(HashMap::new()),
+            outside: outside::Outside::default(),
         });
-        let (done, queue) = mpsc::channel();
+        let (jobs, queue) = mpsc::channel();
         let writer = store.clone();
         let spawned = std::thread::Builder::new()
             .name("sikemux-edits".into())
@@ -223,7 +246,21 @@ impl Edits {
         if let Err(error) = spawned {
             eprintln!("sikemux core: edits will not be kept: {error}");
         }
-        Self { store, done }
+        Self { store, jobs }
+    }
+
+    /// `agent_id` is at work, so changes in its checkout are watched.
+    pub(crate) fn working(&self, agent_id: &str) {
+        let _ = self.jobs.send(Job::Working(agent_id.to_owned()));
+    }
+
+    /// The person saved `path` in Sikemux's editor.
+    pub(crate) fn saved(&self, path: PathBuf) {
+        let _ = self.jobs.send(Job::Saved(path));
+    }
+
+    fn wake(&self) {
+        let _ = self.jobs.send(Job::Changed);
     }
 
     /// Notes what `chat`'s tool call `tool_call_id` changed.
@@ -239,7 +276,7 @@ impl Edits {
             tool_call_id,
             changes,
         };
-        let _ = self.done.send(done);
+        let _ = self.jobs.send(Job::Done(done));
     }
 
     /// The edits in a project that `filter` matches, oldest first.
@@ -276,19 +313,7 @@ impl Edits {
     }
 
     fn matching(&self, project: &str, keep: impl Fn(&Edit) -> bool) -> Vec<Edit> {
-        let mut logs = self.store.lock();
-        let kept = logs.contains_key(project)
-            || self.store.file(project).is_some_and(|file| file.exists());
-        if !kept {
-            return Vec::new();
-        }
-        self.store
-            .log(&mut logs, project)
-            .edits
-            .iter()
-            .filter(|edit| keep(edit))
-            .cloned()
-            .collect()
+        self.store.matching(project, keep)
     }
 }
 
@@ -299,10 +324,44 @@ impl Store {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn file(&self, project: &str) -> Option<PathBuf> {
+    /// The name a project's record goes by, and the folder beside it.
+    fn stem(&self, project: &str) -> Option<PathBuf> {
         let digest = hex::encode(Sha256::digest(project.as_bytes()));
-        let name = format!("{}.jsonl", digest.get(..16).unwrap_or(&digest));
-        self.folder.as_ref().map(|folder| folder.join(name))
+        let stem = digest.get(..16).unwrap_or(&digest);
+        self.folder.as_ref().map(|folder| folder.join(stem))
+    }
+
+    fn file(&self, project: &str) -> Option<PathBuf> {
+        self.stem(project).map(|stem| stem.with_extension("jsonl"))
+    }
+
+    /// Runs `work` on what is kept of a project's changed files, saving it after.
+    fn priors<T>(&self, project: &str, work: impl FnOnce(&mut prior::Priors) -> T) -> T {
+        let mut priors = self
+            .priors
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let priors = priors
+            .entry(project.to_owned())
+            .or_insert_with(|| prior::Priors::load(self.stem(project)));
+        let done = work(priors);
+        priors.save();
+        done
+    }
+
+    fn matching(&self, project: &str, keep: impl Fn(&Edit) -> bool) -> Vec<Edit> {
+        let mut logs = self.lock();
+        let kept =
+            logs.contains_key(project) || self.file(project).is_some_and(|file| file.exists());
+        if !kept {
+            return Vec::new();
+        }
+        self.log(&mut logs, project)
+            .edits
+            .iter()
+            .filter(|edit| keep(edit))
+            .cloned()
+            .collect()
     }
 
     /// A project's log, read from its file the first time it is asked for.
@@ -326,29 +385,73 @@ impl Store {
         })
     }
 
-    /// Writes down tool calls as they finish, all that wait at once in one go.
-    fn write(&self, queue: &mpsc::Receiver<Done>, core: &Weak<Core>) {
-        while let Ok(first) = queue.recv() {
+    /// Writes down tool calls as they finish, all that wait at once in one go,
+    /// and the changes outside the edit tools once their grace has passed.
+    fn write(&self, queue: &mpsc::Receiver<Job>, core: &Weak<Core>) {
+        let mut due: Option<u64> = None;
+        loop {
+            let first = match due {
+                Some(due) => {
+                    let wait = Duration::from_millis(due.saturating_sub(unix_ms()));
+                    match queue.recv_timeout(wait) {
+                        Ok(job) => Some(job),
+                        Err(mpsc::RecvTimeoutError::Timeout) => None,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
+                }
+                None => match queue.recv() {
+                    Ok(job) => Some(job),
+                    Err(_) => return,
+                },
+            };
             let Some(core) = core.upgrade() else { return };
-            let projects = core.workspaces.project_paths();
-            let mut batch: HashMap<String, Vec<Edit>> = HashMap::new();
-            for mut done in std::iter::once(first).chain(queue.try_iter()) {
-                let named = core.names.get(&done.agent_id);
-                let project = match &named {
-                    Some(named) => named.project.clone(),
-                    None => project_of(&done.cwd, &projects),
-                };
-                core.collisions
-                    .wrote(&core, &done.agent_id, &done.cwd, &mut done.changes);
-                batch
-                    .entry(project)
-                    .or_default()
-                    .extend(edits(done, named.map(|named| named.name)));
+            let mut done = Vec::new();
+            for job in first.into_iter().chain(queue.try_iter()) {
+                match job {
+                    Job::Done(finished) => done.push(finished),
+                    Job::Working(agent_id) => self.outside.working(&core, self, &agent_id),
+                    Job::Saved(path) => self.outside.saved(&core, self, &path),
+                    Job::Changed => {}
+                }
             }
-            for (project, edits) in batch {
-                self.append(&project, &edits);
-                core.collisions.landed(&core, &project, &edits);
+            if !done.is_empty() {
+                self.finished(&core, done);
             }
+            due = self.outside.settle(&core, self);
+        }
+    }
+
+    fn finished(&self, core: &Arc<Core>, finished: Vec<Done>) {
+        let projects = core.workspaces.project_paths();
+        let mut batch: HashMap<String, Vec<Edit>> = HashMap::new();
+        for mut done in finished {
+            let named = core.names.get(&done.agent_id);
+            let project = match &named {
+                Some(named) => named.project.clone(),
+                None => project_of(&done.cwd, &projects),
+            };
+            core.collisions
+                .wrote(core, &done.agent_id, &done.cwd, &mut done.changes);
+            batch
+                .entry(project)
+                .or_default()
+                .extend(edits(done, named.map(|named| named.name)));
+        }
+        for (project, edits) in batch {
+            self.append(&project, &edits);
+            for edit in &edits {
+                let path = Path::new(&edit.path);
+                if let Some((_, project)) = self.outside.checkout_of(path) {
+                    let text = prior::text_of(path);
+                    self.priors(&project, |priors| {
+                        priors.keep(
+                            &edit.path,
+                            text.as_ref().map(|(text, meta)| (text.as_str(), meta)),
+                        );
+                    });
+                }
+            }
+            core.collisions.landed(core, &project, &edits);
         }
     }
 
@@ -411,6 +514,7 @@ fn edits(done: Done, name: Option<String>) -> impl Iterator<Item = Edit> {
         Edit {
             at,
             agent_id: agent_id.clone(),
+            shared: Vec::new(),
             name: name.clone(),
             cli: cli.clone(),
             model: model.clone(),

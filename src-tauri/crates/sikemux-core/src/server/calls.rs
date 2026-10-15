@@ -106,6 +106,12 @@ pub(crate) async fn call(
         "edits" => answer(edits(&core, parse(params)?).await?),
         "changeOwners" => answer(change_owners(&core, parse(params)?).await?),
         "commitStaged" => answer(commit_staged(&core, parse(params)?).await?),
+        "personSaved" => {
+            only_window(&core, client)?;
+            let params: PersonSavedParams = parse(params)?;
+            core.edits.saved(params.path);
+            answer(())
+        }
         "commitOwners" => answer(who_wrote::call(&core, parse(params)?).await?),
         "inbox" => answer(inbox(&core).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
@@ -319,6 +325,11 @@ async fn agents_in_app(core: &Arc<Core>, params: AgentsInAppParams) -> CoreResul
         Ok(())
     })
     .await
+}
+
+#[derive(Deserialize)]
+struct PersonSavedParams {
+    path: PathBuf,
 }
 
 #[derive(Deserialize)]

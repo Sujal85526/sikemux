@@ -1,7 +1,8 @@
 //! Which agent wrote each uncommitted line of a checkout: a file's recorded
 //! edits replayed in order, each moving the lines the ones before it wrote,
-//! then laid over what git reports as changed. Where something the record
-//! does not know of changed a file, its lines are left without an owner.
+//! then laid over what git reports as changed. Lines the person wrote, and
+//! those of a file something the record does not know of changed, are left
+//! without an owner.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -44,6 +45,8 @@ impl Owners {
     }
 }
 
+/// An agent, or the agents at work together when no one of them could have
+/// made a change, named "Otter or Briar", with no agent id of its own.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Author {
@@ -54,6 +57,16 @@ pub(crate) struct Author {
     pub model: Option<String>,
     /// The chat run of its latest edit.
     pub feed: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub shared: Vec<String>,
+}
+
+impl Author {
+    /// The agent, or each of the agents it stands for.
+    pub(crate) fn agents(&self) -> impl Iterator<Item = &str> {
+        let own = self.shared.is_empty().then_some(&self.agent_id);
+        own.into_iter().chain(&self.shared).map(String::as_str)
+    }
 }
 
 /// The changed lines of a file agents wrote, by its path in the checkout.
@@ -445,31 +458,50 @@ pub(super) fn latest(core: &Core, dir: &Path, agent_id: &str) -> Option<Author> 
 }
 
 fn author(core: &Core, edit: &Edit) -> Author {
+    let name = |agent_id: &str| core.names.name(agent_id);
+    let name = if edit.shared.is_empty() {
+        name(&edit.agent_id)
+            .or_else(|| edit.name.clone())
+            .unwrap_or_else(|| edit.cli.clone())
+    } else {
+        let names: Vec<String> = edit
+            .shared
+            .iter()
+            .map(|agent_id| name(agent_id).unwrap_or_else(|| agent_id.clone()))
+            .collect();
+        match names.split_last() {
+            Some((last, rest)) if !rest.is_empty() => format!("{} or {last}", rest.join(", ")),
+            _ => names.concat(),
+        }
+    };
     Author {
         agent_id: edit.agent_id.clone(),
-        name: core
-            .names
-            .name(&edit.agent_id)
-            .or_else(|| edit.name.clone())
-            .unwrap_or_else(|| edit.cli.clone()),
+        name,
         cli: edit.cli.clone(),
         model: edit.model.clone(),
         feed: edit.feed.clone(),
+        shared: edit.shared.clone(),
     }
 }
 
-/// The agents met while replaying, each by its latest edit.
+/// The agents met while replaying, each by its latest edit. The person is
+/// met too, so their edits take lines back, but owns none in the end.
 #[derive(Default)]
 struct Agents<'a> {
-    index: HashMap<&'a str, usize>,
+    index: HashMap<(&'a str, &'a [String]), usize>,
     latest: Vec<&'a Edit>,
 }
 
 impl<'a> Agents<'a> {
+    fn person(&self, at: usize) -> bool {
+        let edit = self.latest[at];
+        edit.agent_id.is_empty() && edit.shared.is_empty()
+    }
+
     fn of(&mut self, edit: &'a Edit) -> usize {
         let at = *self
             .index
-            .entry(&edit.agent_id)
+            .entry((&edit.agent_id, &edit.shared))
             .or_insert(self.latest.len());
         if at == self.latest.len() {
             self.latest.push(edit);
@@ -481,6 +513,14 @@ impl<'a> Agents<'a> {
 
     /// `files` with their agents numbered again among only those they name.
     fn owners(self, core: &Core, mut files: Vec<FileOwners>) -> Owners {
+        for file in &mut files {
+            file.lines.retain(|run| !self.person(run.author));
+            for run in &mut file.lines {
+                run.over = run.over.filter(|over| !self.person(*over));
+            }
+            file.removed.retain(|removal| !self.person(removal.author));
+        }
+        files.retain(|file| !file.lines.is_empty() || !file.removed.is_empty());
         let mut numbers: Vec<Option<usize>> = vec![None; self.latest.len()];
         let mut authors = Vec::new();
         files.sort_unstable_by(|a, b| a.path.cmp(&b.path));

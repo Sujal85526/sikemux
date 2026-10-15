@@ -38,7 +38,7 @@ const MAX_CALLS: usize = 256;
 /// file changed.
 const MAX_SHELL_RUNS: usize = 8;
 /// How long a change on disk waits for an agent's edit tool to say it made it.
-const GRACE_MS: u64 = 1500;
+pub(crate) const GRACE_MS: u64 = 1500;
 /// A burst of edits to the same lines makes one note, once it has been quiet
 /// this long, or at the latest this long after it began.
 const QUIET_MS: u64 = 4000;
@@ -1208,7 +1208,8 @@ impl Collisions {
                 fit(&mut state);
             }
         }
-        let all = core.edits.of_file(&project, &path.to_string_lossy(), None);
+        let mut all = core.edits.of_file(&project, &path.to_string_lossy(), None);
+        all.retain(|edit| edit.at <= at);
         let (lines, total) = authors(&all);
         if total.is_some_and(|total| total != line_count(&prior)) {
             return;
@@ -1340,10 +1341,18 @@ impl Collisions {
         (likely, working)
     }
 
+    /// Whether an agent's edit tool is changing `path` now.
+    pub(crate) fn editing(&self, path: &Path) -> bool {
+        self.lock().calls.values().any(|call| {
+            matches!(call.kind.as_str(), "edit" | "delete" | "move")
+                && call.paths.iter().any(|called| called == path)
+        })
+    }
+
     /// The agents in `project` that could have changed a file at `at` with no
     /// edit tool: the chat agents then running a command, a subagent or a
     /// background task, and the terminal agents then working.
-    fn at_work(
+    pub(crate) fn at_work(
         &self,
         core: &Core,
         listed: &[super::messages::Listed],
