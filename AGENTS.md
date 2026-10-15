@@ -35,6 +35,21 @@
 - When a change breaks an existing test, decide whether the behaviour it pins was meant
   to change. Update the test only if so; otherwise fix the code.
 
+## Speed and size
+
+- What a person feels must never get visibly worse: startup, typing, scrolling,
+  opening a pane, a terminal under heavy output. Making any of it faster is
+  always welcome.
+- Size and speed trade against each other; make that trade only where nobody can
+  feel it. Build cold code for size and keep hot paths (terminal output,
+  serialization, search, git) at full speed. Measure both sides before choosing.
+- The checks hold what a person would feel, not today's numbers plus a margin:
+  `pnpm perf:budget` for the bundle and `pnpm perf` for timings in WebKit. When
+  one fails, fix the code. Raise a limit only when the limit itself was wrong,
+  and say why.
+- A change that adds weight (a dependency, a font, an image, a crate in the
+  core) says what it costs the DMG.
+
 ## Releasing
 
 - Follow `docs/releasing.md`. Releases publish only from the Release workflow, started by
