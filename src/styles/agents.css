@@ -1034,6 +1034,10 @@
 .agent-tree .proj-child {
     cursor: default;
 }
+.agent-row:not(.recent) > .agent-row-text > .agent-title,
+.tab-wrap.agent-tab .tab-label {
+    color: var(--text-primary);
+}
 .agent-row-text {
     flex: 1;
     min-width: 0;

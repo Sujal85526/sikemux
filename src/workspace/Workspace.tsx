@@ -468,6 +468,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                         title: agent.title,
                         active: key === activeKey,
                         note: agent.name,
+                        className: "agent-tab",
                         icon: (
                             <span className={`agent-glyph ${agent.type}`}>
                                 <AgentIcon type={agent.type} size={19} />
