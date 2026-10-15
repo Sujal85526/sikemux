@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { messageLetters } from '@mac/chat/agentLetters';
+import { EARLIER_LOST } from '@mac/chat/earlier';
 import { durationLabel } from '@mac/chat/durationLabel';
 import { basename } from '@mac/lib/paths';
 import { rateLabel, sentLabel, type RowMeta } from '@mac/chat/messageMeta';
@@ -516,6 +517,16 @@ export function Earlier({ failed, loading, onRetry }: { failed: boolean; loading
     <View style={styles.earlier}>
       {loading ? <Working /> : <View style={styles.earlierIdle} />}
       <Text style={styles.earlierText}>Loading earlier messages…</Text>
+    </View>
+  );
+}
+
+/** Stands above a chat whose host no longer keeps its first turns. */
+export function EarlierLost() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.earlier}>
+      <Text style={styles.earlierText}>{EARLIER_LOST}</Text>
     </View>
   );
 }

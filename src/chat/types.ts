@@ -190,6 +190,8 @@ export interface ChatState {
     nextId: number;
     revision: number;
     awaitingReplay: boolean;
+    /* The host no longer keeps the turns before the first one shown. */
+    earlierLost: boolean;
     /* A turn has begun and its first message has not arrived yet. */
     turnOpening: { at: number | null } | null;
     /* The agent is retrying a request the network or its service failed. */

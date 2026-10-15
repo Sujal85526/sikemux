@@ -4,6 +4,9 @@ import type { ChatAction, ChatMessage, ChatState } from "./types";
 /** How many turns one trip back through a long chat brings from the host. */
 export const PAGE_TURNS = 20;
 
+/** Said above a chat whose host no longer keeps its first turns. */
+export const EARLIER_LOST = "Earlier messages are no longer kept.";
+
 /** A page of turns from before what a remote view holds, as the host sent it. */
 export type EarlierPage = { number: number; actions: ChatAction[] };
 

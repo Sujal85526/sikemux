@@ -1365,7 +1365,9 @@ impl Feed {
     }
 
     /// A phone, or the host's own app once the chat outgrew the replay, is sent
-    /// the chat's last turns and pages back through the rest.
+    /// the chat's last turns and pages back through the rest. A chat that
+    /// outgrew the replay with nowhere to keep the rest starts with a note
+    /// that its earlier turns are gone.
     fn attachment(
         &self,
         inner: &Inner,
@@ -1376,7 +1378,9 @@ impl Feed {
         let missed = since
             .filter(|since| since.feed == self.id && since.seq <= inner.seq)
             .and_then(|since| inner.recent.since(since.seq, peer));
-        let paged = inner.replay.keeps_history() && (!peer.is_local() || inner.replay.is_trimmed());
+        let trimmed = inner.replay.is_trimmed();
+        let lost = trimmed && !inner.replay.keeps_history();
+        let paged = lost || (inner.replay.keeps_history() && (!peer.is_local() || trimmed));
         match (inner.start.clone(), missed) {
             _ if inner.closed => ChatAttachment::Missing,
             (Some(_), Some(events)) => ChatAttachment::Resumed {
@@ -1384,12 +1388,24 @@ impl Feed {
                 mark: self.mark(inner),
             },
             (Some(start), None) => {
-                let (replay, older_before) = if paged {
+                let (mut replay, older_before) = if paged {
                     let tail = inner.replay.tail();
                     (tail.events, tail.older_before)
                 } else {
                     (inner.replay.events(), None)
                 };
+                if lost {
+                    replay.insert(
+                        0,
+                        ChatEvent {
+                            kind: ChatEventKind::SessionUpdate,
+                            payload: json!({
+                                "sessionId": start.session_id,
+                                "update": { "sessionUpdate": "earlier_turns_lost" },
+                            }),
+                        },
+                    );
+                }
                 ChatAttachment::Live {
                     start: Box::new(start),
                     permission_mode: inner.permission_mode.clone(),
@@ -2163,7 +2179,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_phone_is_sent_the_last_turns_and_the_host_app_everything() {
+    async fn the_last_turns_go_to_a_phone_and_to_the_app_once_the_replay_is_trimmed() {
         let dir = tempfile::tempdir().unwrap();
         let feed = Feed::new("agent".into(), "default".into(), Some(dir.path()));
         feed.set_start(ChatStart {
@@ -2226,5 +2242,26 @@ mod tests {
             panic!("a phone takes up a chat longer than the replay");
         };
         assert_eq!(older_before, Some(58 * 5));
+
+        inner.replay = Replay::new(MAX_REPLAY_BYTES, 12, None);
+        for n in 0..60 {
+            turn(&mut inner.replay, n);
+        }
+        for peer in [&Peer::Local, &phone] {
+            let ChatAttachment::Live {
+                replay,
+                older_before,
+                ..
+            } = feed.attachment(&inner, peer, standing(), None)
+            else {
+                panic!("a chat longer than the replay is taken up without its history");
+            };
+            assert_eq!(
+                session_update_kind(&replay[0].payload),
+                Some("earlier_turns_lost")
+            );
+            assert_eq!(asked(&replay), asks(58..60));
+            assert_eq!(older_before, None);
+        }
     }
 }

@@ -17,7 +17,7 @@ import { apiUrl } from '@/account/config';
 import { Folds, FoldsContext } from '@/chat/folds';
 import { SharedFilesContext } from '@/chat/hostFiles';
 import { useTranscriptScroll } from '@/chat/transcriptScroll';
-import { Activity, Earlier, Message, ProviderContext, WorkSummary } from '@/chat/Transcript';
+import { Activity, Earlier, EarlierLost, Message, ProviderContext, WorkSummary } from '@/chat/Transcript';
 import { phoneCipher } from '@/share/cipher';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Nav, Screen } from '@/ui/screen';
@@ -220,6 +220,8 @@ function SharedChat({ session }: { session: ShareSession }) {
                         loading={snapshot.earlier === 'loading'}
                         onRetry={session.loadEarlier}
                       />
+                    ) : state.earlierLost ? (
+                      <EarlierLost />
                     ) : null
                   }
                   ListFooterComponent={

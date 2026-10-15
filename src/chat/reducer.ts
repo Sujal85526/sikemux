@@ -42,6 +42,7 @@ export const initialChatState: ChatState = {
     nextId: 1,
     revision: 0,
     awaitingReplay: false,
+    earlierLost: false,
     turnOpening: null,
     retrying: null,
 };
@@ -679,6 +680,8 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
                 revision: state.revision + 1,
             };
         }
+        case "earlier_turns_lost":
+            return { ...state, earlierLost: true, revision: state.revision + 1 };
         case "message_rewound": {
             const messageId = textOf(update.messageId);
             return messageId ? rewind(state, messageId) : state;

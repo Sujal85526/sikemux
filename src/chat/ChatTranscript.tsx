@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode, type RefObject, type UIEv
 import type { Agent } from "../state/types";
 import { ChatActivity } from "./ChatActivity";
 import { ChatMessageRow } from "./ChatMessageRow";
+import { EARLIER_LOST } from "./earlier";
 import { FoldMemoryContext, type FoldMemory } from "./longText";
 import { rowMeta } from "./messageMeta";
 import { PermissionRequest } from "./PermissionRequest";
@@ -90,6 +91,11 @@ export function ChatTranscript({
     return (
         <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
             <div className="chat-scroll-content" ref={contentRef}>
+                {state.earlierLost && (
+                    <div className="chat-earlier" role="status">
+                        {EARLIER_LOST}
+                    </div>
+                )}
                 {before}
                 <FoldMemoryContext value={foldMemory}>
                     {state.messages.slice(firstRow).map((message, offset) => {

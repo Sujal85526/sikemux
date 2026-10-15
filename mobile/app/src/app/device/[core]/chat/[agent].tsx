@@ -21,7 +21,7 @@ import { AnsweredQuestion, AssumedQuestion, OpenQuestion } from '@/chat/Question
 import { useQuestions } from '@/chat/questions';
 import { hasLiveWork, liveKey, liveWork } from '@/chat/liveWork';
 import { stripMeta, stripOwner } from '@/chat/messageMeta';
-import { Activity, Earlier, Message, ProviderContext, Queued, WorkSummary } from '@/chat/Transcript';
+import { Activity, Earlier, EarlierLost, Message, ProviderContext, Queued, WorkSummary } from '@/chat/Transcript';
 import { useChat } from '@/chat/useChat';
 import { retry as reconnect, useDevices, useLive, type Live } from '@/devices/hub';
 import { dismissCardsFor } from '@/notify/cards';
@@ -332,6 +332,8 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                       ListHeaderComponent={
                         chat.hasEarlier ? (
                           <Earlier failed={chat.earlier === 'failed'} loading={chat.earlier === 'loading'} onRetry={session.loadEarlier} />
+                        ) : state.earlierLost ? (
+                          <EarlierLost />
                         ) : null
                       }
                       ListFooterComponent={
