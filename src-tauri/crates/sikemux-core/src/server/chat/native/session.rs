@@ -480,7 +480,10 @@ pub(crate) async fn run<B: Backend>(
             } = Carried::from(rebind);
             let sink = sink(quiet_load);
             chat.emit(ChatEventKind::Status, json!({ "state": "initializing" }));
-            let (backend, opened) = B::start(&launch, sink.clone()).await?;
+            chat.feed.hold();
+            let started = B::start(&launch, sink.clone()).await;
+            chat.feed.let_out();
+            let (backend, opened) = started?;
             sink.loaded();
             let state = SessionState {
                 session_id: opened.session_id,
