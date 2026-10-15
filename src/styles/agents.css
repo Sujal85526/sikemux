@@ -935,49 +935,6 @@
 .agent-attention .panel-label {
     color: var(--warn);
 }
-.agent-row.attention {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.agent-row.attention .agent-title {
-    min-width: 0;
-}
-.agent-row.asking {
-    height: auto;
-    min-height: 28px;
-    align-items: flex-start;
-    padding-top: 6px;
-    padding-bottom: 7px;
-}
-.agent-row.asking > .agent-glyph,
-.agent-row.asking > .agent-activity {
-    height: 18px;
-    align-items: center;
-}
-.agent-asking {
-    display: grid;
-    flex: 1;
-    gap: 2px;
-    min-width: 0;
-    text-align: left;
-}
-.agent-asking > .agent-title {
-    line-height: 18px;
-}
-.agent-question {
-    display: -webkit-box;
-    overflow: hidden;
-    color: var(--text-secondary);
-    font-size: 11.5px;
-    line-height: 1.4;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow-wrap: anywhere;
-}
-.agent-question.failed {
-    color: var(--danger);
-}
 .inbox-count {
     flex: none;
     font-family: var(--mono);
@@ -990,20 +947,20 @@
     gap: var(--space-1);
     padding: 0 var(--space-2) var(--space-1h) calc(var(--space-2) + var(--mark) + var(--space-2));
 }
-.inbox-overlap .proj-child-ic {
-    color: var(--warn);
-}
-/* Shrinks by `min-width: 0` rather than a percentage cap. A percentage
-   max-width on a flex item makes the row resolve its intrinsic width, which
-   is the expensive layout path this rail cannot afford. */
-.agent-attention-project {
+.inbox-why {
     flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 10px;
-    color: var(--text-tertiary);
+}
+.inbox-why.failed {
+    color: var(--danger);
+}
+.inbox-why + svg {
+    margin-left: 3px;
+}
+.inbox-project {
+    flex: none;
 }
 
 /* New chat, terminal and browser sit right under the scope track, a short step above the first group. */
@@ -1081,7 +1038,8 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
 }
-.agent-row.two-line {
+.agent-row.two-line,
+.workspace-rail[data-density="compact"] .agent-row.two-line {
     height: 40px;
     align-items: flex-start;
     padding-top: 5px;

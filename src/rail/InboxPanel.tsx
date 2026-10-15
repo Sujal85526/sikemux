@@ -1,22 +1,18 @@
 import { useState } from "react";
 import { acpApi } from "../api/acp";
 import { agentQuestionsApi } from "../api/agentQuestions";
-import type { ChangeOwners } from "../api/git";
 import type { InboxItem } from "../api/inbox";
 import { isAgentType } from "../agents/catalog";
 import { AgentLabel } from "../agents/AgentLabel";
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
-import { useChangeOwners } from "../git/changeOwners";
-import { formatDuration } from "../lib/format";
 import { basename } from "../lib/paths";
 import { agentDisplay } from "../state/agentStatus";
 import * as cmd from "../state/commands";
 import { agentWindowId, ownerSessionId, projectSessionId } from "../state/selectors";
 import { getState, useStore, type StoreState } from "../state/store";
 import { reportError } from "../state/toast";
-import { AgentIcon, IconFile, IconMessage, IconRecord, IconTerminal, IconWarning } from "../ui/Icons";
+import { AgentIcon, IconFolder, IconTerminal } from "../ui/Icons";
 import { Panel, PanelHeader } from "../ui/Panel";
-import { TreeItem } from "./AgentRowTree";
 import { dismissDigest, useInbox } from "./useInbox";
 
 /** The project an item belongs to among those open: its agent's, else its folder's. */
@@ -81,11 +77,12 @@ export function InboxPanel() {
 function InboxRow({ item }: { item: InboxItem }) {
     const elsewhere = useStore((s) => itemSessionId(s, item) !== s.activeSessionId);
     const { cli, project, tier } = item;
+    const why = item.detail ? `${item.what}: ${item.detail}` : item.what;
     return (
         <div className="agent-row-wrap">
-            <button className="agent-row attention asking" onClick={() => openItem(item)}>
+            <button className="agent-row two-line" title={why} onClick={() => openItem(item)}>
                 <span className={`agent-glyph ${cli}`}>{isAgentType(cli) ? <AgentIcon type={cli} size={20} /> : <IconTerminal size={16} />}</span>
-                <span className="agent-asking">
+                <span className="agent-row-text">
                     <span className="agent-title">
                         <AgentLabel
                             agent={{
@@ -94,15 +91,21 @@ function InboxRow({ item }: { item: InboxItem }) {
                             }}
                         />
                     </span>
-                    <span className={`agent-question${item.kind === "failed" ? " failed" : ""}`}>
-                        {item.detail ? `${item.what}: ${item.detail}` : item.what}
+                    <span className="agent-row-project">
+                        <span className={`inbox-why${item.kind === "failed" ? " failed" : ""}`}>{why}</span>
+                        {elsewhere && project && (
+                            <>
+                                <IconFolder size={11} />
+                                <span className="inbox-project">{basename(project)}</span>
+                            </>
+                        )}
                     </span>
                 </span>
-                {elsewhere && project && <span className="agent-attention-project">{basename(project)}</span>}
-                <AgentStateIndicator display={agentDisplay(tier === "needs" ? "blocked" : "done")} />
             </button>
+            <span className="row-status">
+                <AgentStateIndicator display={agentDisplay(tier === "needs" ? "blocked" : "done")} />
+            </span>
             {tier === "needs" && <InboxAnswers item={item} />}
-            {tier === "review" && <InboxEvidence item={item} />}
         </div>
     );
 }
@@ -144,60 +147,5 @@ function InboxAnswers({ item: { agentId, requestId, choices, questionId, kind } 
                 ))}
             </div>
         )
-    );
-}
-
-/** The other agents' lines this one rewrote in the files it changed, as the git panel words it. */
-function overlaps(owners: ChangeOwners | undefined, agentId: string | null, files: readonly string[]): string[] {
-    const notes = new Set<string>();
-    const me = owners?.authors.findIndex((author) => author.agentId === agentId);
-    for (const file of owners?.files ?? []) {
-        if (!files.some((path) => path.endsWith(`/${file.path}`))) continue;
-        for (const { author, over } of file.lines)
-            if (author === me && over !== undefined) notes.add(`changed ${owners!.authors[over].name}'s edit in ${basename(file.path)}`);
-    }
-    return [...notes];
-}
-
-/** What the agent says it did and what shows it, ahead of the diff the git panel holds. */
-function InboxEvidence({ item }: { item: InboxItem }) {
-    const { handoff, agentId, recordings } = item;
-    const files = handoff?.files ?? [];
-    const project = item.project ?? "";
-    const owners = useChangeOwners(project, false, files.length > 0);
-    const said = handoff?.result ?? handoff?.answer;
-    const link = (key: string, label: string, open: () => void) => (
-        <button key={key} type="button" className="agent-tree-link agent-tree-mono" title={key} onClick={open}>
-            {label}
-        </button>
-    );
-    return (
-        <div className="proj-children agent-tree">
-            {said && (
-                <TreeItem icon={<IconMessage size={12} />}>
-                    <span title={said}>{said}</span>
-                </TreeItem>
-            )}
-            {files.length > 0 && (
-                <TreeItem icon={<IconFile size={12} />}>
-                    {files.map((path) =>
-                        link(path, basename(path), () => {
-                            showProject(item);
-                            cmd.openDiff(path.slice(project.length + 1));
-                        }),
-                    )}
-                </TreeItem>
-            )}
-            {overlaps(owners, agentId, files).map((note) => (
-                <TreeItem key={note} icon={<IconWarning size={12} />} className="inbox-overlap">
-                    <span>{note}</span>
-                </TreeItem>
-            ))}
-            {agentId && recordings.length > 0 && (
-                <TreeItem icon={<IconRecord size={12} />}>
-                    {recordings.map(({ path, seconds }) => link(path, formatDuration(seconds * 1000), () => cmd.openFileOnDesk(agentId, path)))}
-                </TreeItem>
-            )}
-        </div>
     );
 }
