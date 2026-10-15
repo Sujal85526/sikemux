@@ -794,13 +794,17 @@ async fn an_upgrade_carries_running_chats_over_with_their_agents() {
             .await
             .expect("prompt");
     }
-    let asked = until_chats(&mut events, asking.clone(), |_, event| {
-        event.kind == ChatEventKind::PermissionRequest
-    })
-    .await;
-    until_chats(&mut events, holding.clone(), |_, event| {
-        said(std::slice::from_ref(event)).contains("holding")
-    })
+    let asked = until_chats(
+        &mut events,
+        asking.iter().chain(&holding).cloned().collect(),
+        |agent_id, event| {
+            if asking.iter().any(|asking| asking == agent_id) {
+                event.kind == ChatEventKind::PermissionRequest
+            } else {
+                said(std::slice::from_ref(event)).contains("holding")
+            }
+        },
+    )
     .await;
     let agents = children(core.pid());
     assert_eq!(agents.len(), 6, "{agents:?}");
