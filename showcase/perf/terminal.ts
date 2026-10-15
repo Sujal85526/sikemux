@@ -50,10 +50,18 @@ export async function terminal({
   cmd.selectSession(SESSION);
   cmd.selectWindowId(WINDOW);
   await sleep(1500);
-  const output = backend.terminalOutput(PANE);
-  const input = document.querySelector<HTMLTextAreaElement>(
+  const deadline = performance.now() + 30_000;
+  let output = backend.terminalOutput(PANE);
+  let input = document.querySelector<HTMLTextAreaElement>(
     `[data-pane-id="${PANE}"] .xterm-helper-textarea`,
   );
+  while ((!output || !input) && performance.now() < deadline) {
+    await sleep(250);
+    output = backend.terminalOutput(PANE);
+    input = document.querySelector<HTMLTextAreaElement>(
+      `[data-pane-id="${PANE}"] .xterm-helper-textarea`,
+    );
+  }
   if (!output || !input) throw new Error("the terminal is not on screen");
   input.focus();
   const frameMs = await restingFrame();
