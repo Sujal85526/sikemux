@@ -74,16 +74,3 @@ fn moved(key: &str, staged: bool, generation: u64) -> Option<Value> {
 }
 
 const REMEMBERED_CHECKOUTS: usize = 32;
-
-/// The trailer lines naming the agents whose work is staged in `repo`; none
-/// when the core cannot be asked.
-pub(super) async fn commit_trailers(manager: &PtyManager, repo: &str) -> Vec<String> {
-    let Ok(client) = manager.client().await else {
-        return Vec::new();
-    };
-    call(&client, "commitTrailers".to_owned(), json!({ "dir": repo }))
-        .await
-        .ok()
-        .and_then(|lines| serde_json::from_value(lines).ok())
-        .unwrap_or_default()
-}

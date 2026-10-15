@@ -423,7 +423,8 @@ async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> 
 
 /// Answers one tool call from the client at `peer` on the tool endpoint's
 /// `port`, as the agent whose processes hold that connection, whatever agent
-/// it names. The call is counted whether or not it succeeds.
+/// it names, or as a commit the core runs. The call is counted whether or not
+/// it succeeds.
 pub(crate) async fn call(
     core: &Arc<Core>,
     mut request: HarnessRequest,
@@ -431,11 +432,23 @@ pub(crate) async fn call(
     port: u16,
 ) -> Result<Value, String> {
     validate_harness(&request)?;
-    request.agent_id = tokio::task::spawn_blocking(move || super::callers::identify(peer, port))
-        .await
-        .ok()
-        .flatten();
+    let grant = if request.method == COMMIT_FOOTER_METHOD {
+        tokio::task::spawn_blocking(move || super::callers::take_commit_grant(peer, port))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    request.agent_id = match grant {
+        Some(_) => None,
+        None => tokio::task::spawn_blocking(move || super::callers::identify(peer, port))
+            .await
+            .ok()
+            .flatten(),
+    };
     if request.agent_id.is_none()
+        && grant.is_none()
         && AGENT_METHODS
             .iter()
             .any(|prefix| request.method.starts_with(prefix))
@@ -446,7 +459,7 @@ pub(crate) async fn call(
         ));
     }
     let tool = tool_name(&request);
-    let result = dispatch(core, request).await;
+    let result = dispatch(core, request, grant).await;
     if let (Some(tool), Some(path)) = (tool, core.harness.tool_calls.clone()) {
         let succeeded = result.is_ok();
         tokio::task::spawn_blocking(move || record_tool_call(&path, &tool, succeeded));
@@ -454,7 +467,11 @@ pub(crate) async fn call(
     result
 }
 
-async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value, String> {
+async fn dispatch(
+    core: &Arc<Core>,
+    mut request: HarnessRequest,
+    grant: Option<super::callers::CommitGrant>,
+) -> Result<Value, String> {
     if request.method == TOOLS_MANIFEST_METHOD {
         return crate::cli::manifest::served();
     }
@@ -505,7 +522,7 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         "board.update" => board::update(core, &request).await,
         "review.verdict" => board::verdict(core, &request).await,
         "git.commit" => super::edits::commit::call(core, &request).await,
-        COMMIT_FOOTER_METHOD => super::edits::footer::call(core, &request).await,
+        COMMIT_FOOTER_METHOD => super::edits::footer::call(core, &request, grant).await,
         "browser.record" => {
             let agent_id = request.agent_id.clone();
             let answer = forward(core, request).await?;

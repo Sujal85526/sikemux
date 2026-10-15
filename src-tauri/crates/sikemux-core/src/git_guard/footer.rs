@@ -1,8 +1,9 @@
-//! How an agent's own `git commit` or `git merge` gets the footer naming the
-//! agents whose lines it holds. The shim runs it with hooks of ours in front of the
-//! repository's: they run its hooks as before, then ask the core for the
-//! footer once git has settled what the commit holds, and add it to the
-//! message. What the commit holds is git's business alone.
+//! How an agent's own `git commit` or `git merge`, and a commit the core runs
+//! for the git panel or Auto, gets the footer naming the agents whose lines it
+//! holds. It runs with hooks of ours in front of the repository's: they run
+//! its hooks as before, then ask the core for the footer once git has settled
+//! what the commit holds, and add it to the message. What the commit holds is
+//! git's business alone.
 //!
 //! The footer goes in at `prepare-commit-msg`, which runs even with
 //! `--no-verify`, or at `commit-msg` when the message had nothing to put it
@@ -37,15 +38,19 @@ pub(super) fn folder(data_dir: &Path) -> PathBuf {
 }
 
 /// Has `command`, the real git about to run `git <options> commit <args>` or
-/// `merge <args>`, run our hooks in front of the repository's.
-pub(super) fn prepare(command: &mut Command, git: &Path, options: &[String], args: &[String]) {
-    let Some(folder) = std::env::var_os(HOOKS).map(PathBuf::from) else {
-        return;
-    };
+/// `merge <args>`, run our hooks, linked in `folder`, in front of the
+/// repository's.
+pub(super) fn prepare(
+    command: &mut Command,
+    folder: &Path,
+    git: &Path,
+    options: &[String],
+    args: &[String],
+) {
     let Some(theirs) = repo_hooks(git, options) else {
         return;
     };
-    let Ok(ours) = hooks_for(&folder, &theirs) else {
+    let Ok(ours) = hooks_for(folder, &theirs) else {
         return;
     };
     let amend = args

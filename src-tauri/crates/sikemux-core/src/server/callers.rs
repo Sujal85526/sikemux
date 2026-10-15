@@ -8,10 +8,14 @@
 //! an update runs the new core in this same process, so its pid cannot be
 //! taken by another process while it is recorded. The start time recorded
 //! beside it still guards the moment between collecting it and forgetting it.
+//!
+//! A `git commit` the core runs itself is no agent, but its hooks may ask once
+//! for the commit's footer while it runs.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::{LazyLock, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 /// Processes that made calls lately, looked at first: an agent's tool server
 /// makes every call it sends from the one process.
@@ -24,10 +28,24 @@ struct Root {
     agent_id: String,
 }
 
+struct Grant {
+    started: u64,
+    commit: CommitGrant,
+    until: Instant,
+}
+
+/// Whom a commit the core runs names: `agents`, whose lines were staged as it
+/// began, else `fallback`.
+pub(crate) struct CommitGrant {
+    pub agents: Vec<String>,
+    pub fallback: Option<String>,
+}
+
 #[derive(Default)]
 struct Known {
     roots: HashMap<u32, Root>,
     recent: VecDeque<(u32, u64)>,
+    commits: HashMap<u32, Grant>,
 }
 
 static KNOWN: LazyLock<Mutex<Known>> = LazyLock::new(Mutex::default);
@@ -57,6 +75,67 @@ pub(crate) fn started(pid: u32, agent_id: &str) {
     );
 }
 
+/// Lets the `git commit` at `pid`, a child of this process not yet collected,
+/// ask for its footer once within `lasting`.
+pub(crate) fn grant_commit(
+    pid: u32,
+    agents: Vec<String>,
+    fallback: Option<&str>,
+    lasting: Duration,
+) {
+    let Some(started) = platform::started(pid) else {
+        return;
+    };
+    let mut known = known();
+    let now = Instant::now();
+    known.commits.retain(|_, grant| grant.until > now);
+    known.commits.insert(
+        pid,
+        Grant {
+            started,
+            commit: CommitGrant {
+                agents,
+                fallback: fallback.map(str::to_owned),
+            },
+            until: now + lasting,
+        },
+    );
+}
+
+/// The commit at `pid` ended; whatever it did not ask for goes.
+pub(crate) fn end_commit(pid: u32) {
+    known().commits.remove(&pid);
+}
+
+/// The grant of the commit whose processes hold the loopback connection from
+/// `peer` to this core's `port`, used up by this ask. Blocks while it reads
+/// the process table.
+pub(crate) fn take_commit_grant(peer: SocketAddr, port: u16) -> Option<CommitGrant> {
+    if !peer.ip().is_loopback() {
+        return None;
+    }
+    let live: Vec<(u32, u64)> = {
+        let mut known = known();
+        let now = Instant::now();
+        known.commits.retain(|pid, grant| {
+            grant.until > now && platform::started(*pid) == Some(grant.started)
+        });
+        known
+            .commits
+            .iter()
+            .map(|(pid, grant)| (*pid, grant.started))
+            .collect()
+    };
+    if live.is_empty() {
+        return None;
+    }
+    let socket = platform::Socket::find(peer.port(), port)?;
+    let (_, commit) = descendants(live)
+        .into_iter()
+        .find(|(pid, _)| socket.held_by(*pid))?;
+    known().commits.remove(&commit).map(|grant| grant.commit)
+}
+
 /// The agent whose process holds the client end of the loopback connection
 /// from `peer` to this core's `port`. Blocks while it reads the process table.
 pub(crate) fn identify(peer: SocketAddr, port: u16) -> Option<String> {
@@ -84,8 +163,9 @@ pub(crate) fn identify(peer: SocketAddr, port: u16) -> Option<String> {
         .find(|(pid, started)| platform::started(*pid) == Some(*started) && socket.held_by(*pid))
         .map(|(pid, _)| pid)
         .or_else(|| {
-            descendants(&roots)
+            descendants(roots.iter().map(|(pid, (started, _))| (*pid, *started)))
                 .into_iter()
+                .map(|(pid, _)| pid)
                 .find(|pid| socket.held_by(*pid))
         })?;
     let agent = agent_above(holder, &roots);
@@ -122,26 +202,27 @@ fn agent_above(mut pid: u32, roots: &HashMap<u32, (u64, String)>) -> Option<Stri
     None
 }
 
-/// Every process below an agent's process, nearest first.
-fn descendants(roots: &HashMap<u32, (u64, String)>) -> Vec<u32> {
+/// Every process at or below each of `roots`, given with its start time,
+/// nearest first, each with the root it is under.
+fn descendants(roots: impl IntoIterator<Item = (u32, u64)>) -> Vec<(u32, u32)> {
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     let mut started = HashMap::new();
     for (pid, parent, start) in platform::processes() {
         children.entry(parent).or_default().push(pid);
         started.insert(pid, start);
     }
-    let mut queue: VecDeque<u32> = roots
-        .iter()
-        .filter(|(pid, (root_started, _))| started.get(pid) == Some(root_started))
-        .map(|(pid, _)| *pid)
+    let mut queue: VecDeque<(u32, u32)> = roots
+        .into_iter()
+        .filter(|(pid, root_started)| started.get(pid) == Some(root_started))
+        .map(|(pid, _)| (pid, pid))
         .collect();
-    let mut seen: HashSet<u32> = queue.iter().copied().collect();
+    let mut seen: HashSet<u32> = queue.iter().map(|(pid, _)| *pid).collect();
     let mut found = Vec::new();
-    while let Some(pid) = queue.pop_front() {
-        found.push(pid);
+    while let Some((pid, root)) = queue.pop_front() {
+        found.push((pid, root));
         for child in children.get(&pid).into_iter().flatten() {
             if seen.insert(*child) {
-                queue.push_back(*child);
+                queue.push_back((*child, root));
             }
         }
     }

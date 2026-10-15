@@ -2,54 +2,60 @@
 //! way a commit is made here: the git panel, `git_commit`, Auto, and an
 //! agent's own `git commit` through the git shim.
 
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
+use std::process::Output;
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::owners::{git, latest, run, staged_in, Author};
 use crate::cli::protocol::HarnessRequest;
+use crate::server::callers::{self, CommitGrant};
 use crate::server::connection::blocking;
 use crate::server::names::project_of;
 use crate::server::Core;
 use crate::trailers::{self, Agent, Commit};
 
 /// The footer for committing what `dir` has staged, or what `index` holds when
-/// git commits from an index of its own: every agent whose lines it holds,
-/// else `fallback`. An `amend` keeps the agents of the commit it replaces.
-pub(crate) fn footer(
+/// git commits from an index of its own: every agent whose lines it holds, or
+/// the agents `named` when that was worked out before, else `fallback`. An
+/// `amend` keeps the agents of the commit it replaces.
+fn footer(
     core: &Core,
     dir: &Path,
+    named: Option<&[String]>,
     fallback: Option<&str>,
     index: Option<&Path>,
     amend: bool,
 ) -> Result<Vec<String>, String> {
-    let ((owners, base), (tree, parents)) = std::thread::scope(|scope| {
+    let (writers, (tree, parents)) = std::thread::scope(|scope| {
         let made_of = scope.spawn(|| made_of(dir, index, amend));
-        let owners = staged_in(core, dir, index);
+        let writers: Result<Vec<Agent>, String> = match named {
+            Some(named) => Ok(named.iter().filter_map(|id| known(core, dir, id)).collect()),
+            None => staged_in(core, dir, index)
+                .map(|(owners, _)| owners.writers().map(|author| agent(core, author)).collect()),
+        };
         let made_of = made_of
             .join()
             .unwrap_or_else(|_| Err("git did not run".to_owned()));
-        owners.and_then(|owners| Ok((owners, made_of?)))
+        writers.and_then(|writers| Ok((writers, made_of?)))
     })?;
     let mut agents = if amend {
         verified(core, dir, "HEAD")?
     } else {
         Vec::new()
     };
-    for author in owners.writers() {
-        if !agents.iter().any(|agent| agent.chat == author.agent_id) {
-            agents.push(agent(core, author));
+    for writer in writers {
+        if !agents.iter().any(|agent| agent.chat == writer.chat) {
+            agents.push(writer);
         }
     }
     if agents.is_empty() {
         agents.extend(fallback.and_then(|id| known(core, dir, id)));
     }
-    let parents = match (amend, base) {
-        (false, Some(base)) => std::iter::once(base).chain(parents).collect(),
-        _ => parents,
-    };
     let commit = Commit {
         tree: &tree,
         parents: &parents,
@@ -61,8 +67,8 @@ pub(crate) fn footer(
     ))
 }
 
-/// The tree `index` makes, and the parents a commit of it takes besides
-/// `HEAD`: those of `HEAD` when amending it, else those of a merge underway.
+/// The tree `index` makes, and the parents a commit of it takes: those of
+/// `HEAD` when amending it, else `HEAD` and those of a merge underway.
 fn made_of(dir: &Path, index: Option<&Path>, amend: bool) -> Result<(String, Vec<String>), String> {
     let text = |out: Vec<u8>| String::from_utf8_lossy(&out).trim().to_owned();
     let tree = text(run(dir, &["write-tree"], index, None)?);
@@ -81,10 +87,11 @@ fn made_of(dir: &Path, index: Option<&Path>, amend: bool) -> Result<(String, Vec
                 "MERGE_HEAD",
             ],
         )?;
-        std::fs::read_to_string(merging.trim())
-            .unwrap_or_default()
-            .split_whitespace()
-            .map(str::to_owned)
+        let head = git(dir, &["rev-parse", "--verify", "--quiet", "HEAD"]).ok();
+        let merged = std::fs::read_to_string(merging.trim()).unwrap_or_default();
+        head.iter()
+            .map(|head| head.trim().to_owned())
+            .chain(merged.split_whitespace().map(str::to_owned))
             .collect()
     };
     Ok((tree, parents))
@@ -181,13 +188,25 @@ struct Pending {
     amend: bool,
 }
 
-/// The footer for the commit an agent's `git commit` is making, which the git
-/// shim asks for from the commit's hooks.
-pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
-    let agent_id = request
-        .agent_id
-        .clone()
-        .ok_or("only an agent's commits carry a footer")?;
+/// The footer for the commit an agent's `git commit`, or one the core runs
+/// under `grant`, is making, which its hooks ask for.
+pub(crate) async fn call(
+    core: &Arc<Core>,
+    request: &HarnessRequest,
+    grant: Option<CommitGrant>,
+) -> Result<Value, String> {
+    let (named, fallback) = match grant {
+        Some(grant) => (Some(grant.agents), grant.fallback),
+        None => (
+            None,
+            Some(
+                request
+                    .agent_id
+                    .clone()
+                    .ok_or("only an agent's commits carry a footer")?,
+            ),
+        ),
+    };
     let pending: Pending =
         serde_json::from_value(request.params.clone()).map_err(|error| error.to_string())?;
     let (core, dir) = (core.clone(), PathBuf::from(&request.project));
@@ -195,7 +214,8 @@ pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
         Ok(footer(
             &core,
             &dir,
-            Some(&agent_id),
+            named.as_deref(),
+            fallback.as_deref(),
             pending.index.as_deref(),
             pending.amend,
         )?)
@@ -203,4 +223,55 @@ pub(crate) async fn call(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
     .await
     .map(Value::from)
     .map_err(|error| error.to_string())
+}
+
+/// How long a commit the core runs may take, hooks and all.
+const COMMIT_WAIT: Duration = Duration::from_secs(5 * 60);
+const COMMIT_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
+
+/// Commits what `dir` has staged with `message`, plus `args`, through the
+/// hooks an agent's own commit runs: once the repository's hooks are done,
+/// ours put on the footer naming the agents whose lines were staged as it
+/// began, else `fallback`. Only this git may ask for that footer, and only
+/// once. Whose lines they are is worked out first, since a hook that reformats
+/// the files leaves the record unable to say.
+pub(crate) fn commit(
+    core: &Core,
+    dir: &Path,
+    args: &[&str],
+    message: &str,
+    fallback: Option<&str>,
+) -> Result<Output, String> {
+    let mut command = sikemux_process::user_environment::command("git");
+    command
+        .args(["-c", "core.fsmonitor=false", "commit", "-F", "-"])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_EDITOR", "true");
+    crate::git_guard::shim::sign_commit(&mut command, dir);
+    let staged: Vec<String> = staged_in(core, dir, None)
+        .map(|(owners, _)| {
+            owners
+                .writers()
+                .map(|author| author.agent_id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let git = Cell::new(None);
+    let output = sikemux_process::run_with_pid(
+        &mut command,
+        Some(message.as_bytes()),
+        COMMIT_WAIT,
+        COMMIT_OUTPUT_LIMIT,
+        None,
+        |pid| {
+            callers::grant_commit(pid, staged, fallback, COMMIT_WAIT);
+            git.set(Some(pid));
+        },
+    );
+    if let Some(pid) = git.get() {
+        callers::end_commit(pid);
+    }
+    output.map_err(|error| format!("git did not run: {error}"))
 }

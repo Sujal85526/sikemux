@@ -10,6 +10,7 @@ use std::ffi::OsString;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::OnceLock;
 
 use serde_json::{json, Value};
@@ -154,6 +155,22 @@ pub(crate) fn environment(path: Option<&str>) -> Vec<(String, String)> {
     env
 }
 
+/// Has `command`, a `git commit` the core runs in `dir`, put the footer on
+/// through the hooks an agent's own commit runs. Nothing before [`install`].
+pub(crate) fn sign_commit(command: &mut Command, dir: &Path) {
+    let (Some(hooks), Some(git)) = (
+        HOOKS_FOLDER.get(),
+        sikemux_process::user_environment::git_program(),
+    ) else {
+        return;
+    };
+    let options = ["-C".to_owned(), dir.to_string_lossy().into_owned()];
+    footer::prepare(command, hooks, &git, &options, &[]);
+    if let Some(endpoint) = ENDPOINT.get() {
+        command.env("SIKEMUX_CLI_ENDPOINT", endpoint);
+    }
+}
+
 /// The shim's folder, for a shell to put first on PATH again after its
 /// profile has run.
 pub(crate) fn folder() -> Option<&'static Path> {
@@ -235,8 +252,16 @@ fn run(args: Vec<OsString>) -> i32 {
         .first()
         .is_some_and(|sub| sub == "commit" || sub == "merge")
     {
-        let options = &words[..words.len() - subcommand.len()];
-        footer::prepare(&mut command, &git, options, &subcommand[1..]);
+        if let Some(folder) = std::env::var_os(footer::HOOKS) {
+            let options = &words[..words.len() - subcommand.len()];
+            footer::prepare(
+                &mut command,
+                Path::new(&folder),
+                &git,
+                options,
+                &subcommand[1..],
+            );
+        }
     }
     let error = command.args(&args).exec();
     eprintln!("git: {}: {error}", git.display());

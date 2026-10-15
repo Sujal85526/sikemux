@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::server::{edits, Core};
 
 const QUICK: Duration = Duration::from_secs(60);
-/// Pushing and fetching wait on the network, and a commit on its hooks.
+/// Pushing and fetching wait on the network.
 pub(crate) const SLOW: Duration = Duration::from_secs(5 * 60);
 const CHECK: Duration = Duration::from_secs(30 * 60);
 const OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
@@ -251,9 +251,10 @@ pub(super) fn commit_all(
         return Ok(false);
     }
     git(tree, &["add", "--all"])?;
-    let footer = edits::footer(core, tree, Some(agent), None, false)?;
-    let message = crate::trailers::append(message, &footer);
-    git_in(tree, &["commit", "--quiet", "-m", &message], SLOW)?;
+    let output = edits::footer::commit(core, tree, &["--quiet"], message, Some(agent))?;
+    if !output.status.success() {
+        return Err(format!("git commit failed: {}", said(&output)));
+    }
     Ok(true)
 }
 

@@ -46,7 +46,6 @@ pub(crate) fn for_person(method: &str) -> bool {
             | "agentMessages"
             | "edits"
             | "changeOwners"
-            | "commitTrailers"
             | "commitOwners"
             | "inbox"
             | "digest"
@@ -106,7 +105,7 @@ pub(crate) async fn call(
         "boardRetry" => answer(board::person_retry(&core, params).await?),
         "edits" => answer(edits(&core, parse(params)?).await?),
         "changeOwners" => answer(change_owners(&core, parse(params)?).await?),
-        "commitTrailers" => answer(commit_trailers(&core, parse(params)?).await?),
+        "commitStaged" => answer(commit_staged(&core, parse(params)?).await?),
         "commitOwners" => answer(who_wrote::call(&core, parse(params)?).await?),
         "inbox" => answer(inbox(&core).await?),
         "digest" => answer(digest(&core, parse(params)?).await?),
@@ -328,9 +327,6 @@ struct CheckoutParams {
     dir: PathBuf,
     #[serde(default)]
     staged: bool,
-    /// Who to name when no agent wrote what is staged.
-    #[serde(default)]
-    agent_id: Option<String>,
     /// The asker's name for the checkout's current state, when it watches it.
     #[serde(default)]
     generation: Option<String>,
@@ -356,14 +352,26 @@ async fn change_owners(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<O
     .await
 }
 
-/// The signed footer naming the agents whose work a commit of what is staged holds.
-async fn commit_trailers(core: &Arc<Core>, params: CheckoutParams) -> CoreResult<Vec<String>> {
+#[derive(Deserialize)]
+struct CommitParams {
+    dir: PathBuf,
+    message: String,
+}
+
+/// Commits what the person staged in the git panel, with the footer naming
+/// the agents whose lines it holds. What git said.
+async fn commit_staged(core: &Arc<Core>, params: CommitParams) -> CoreResult<String> {
     let core = core.clone();
     blocking(move || {
-        Ok(
-            edits::footer(&core, &params.dir, params.agent_id.as_deref(), None, false)
-                .unwrap_or_default(),
-        )
+        let output = edits::footer::commit(&core, &params.dir, &[], &params.message, None)?;
+        let said = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
+        if output.status.success() {
+            Ok(said(&output.stdout))
+        } else if output.stderr.trim_ascii().is_empty() {
+            Err(said(&output.stdout).into())
+        } else {
+            Err(said(&output.stderr).into())
+        }
     })
     .await
 }
