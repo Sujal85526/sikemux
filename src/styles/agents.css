@@ -23,7 +23,9 @@
 .agent-glyph {
     display: flex;
 }
-.agent-glyph.term,
+.agent-glyph.term {
+    color: var(--live);
+}
 .sess-icon.ssh {
     color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
 }
