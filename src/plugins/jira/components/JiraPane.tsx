@@ -547,6 +547,29 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                             <IconExternal size={12} />
                         </button>
                         <span className="jira-grow" />
+                        <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
+                            <IconClose size={12} />
+                        </button>
+                    </span>
+                    <h2>{issue.summary}</h2>
+                    {menu}
+                </header>
+                <aside className="jira-detail-side">
+                    <div className="jira-status-row">
+                        <Dropdown
+                            label={`Status: ${issue.status}`}
+                            value={issue.status}
+                            title="Move this issue along its workflow"
+                            className={`jira-status-button jira-status-${issue.statusCategory || "new"}`}
+                            options={issue.transitions.map((transition) => ({
+                                value: transition.id,
+                                label: transition.to,
+                                meta: transition.name.toLowerCase() === transition.to.toLowerCase() ? undefined : transition.name,
+                                className: `jira-status jira-status-${transition.toCategory || "new"}`,
+                            }))}
+                            onChange={(id) => void run("Move issue", () => jiraApi.transition(issue.key, id, site || undefined))}
+                            disabled={busy || issue.transitions.length === 0}
+                        />
                         <button
                             type="button"
                             className="jira-chip"
@@ -565,28 +588,7 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
                             }>
                             Send to board
                         </button>
-                        <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
-                            <IconClose size={12} />
-                        </button>
-                    </span>
-                    <h2>{issue.summary}</h2>
-                    {menu}
-                </header>
-                <aside className="jira-detail-side">
-                    <Dropdown
-                        label={`Status: ${issue.status}`}
-                        value={issue.status}
-                        title="Move this issue along its workflow"
-                        className={`jira-status-button jira-status-${issue.statusCategory || "new"}`}
-                        options={issue.transitions.map((transition) => ({
-                            value: transition.id,
-                            label: transition.to,
-                            meta: transition.name.toLowerCase() === transition.to.toLowerCase() ? undefined : transition.name,
-                            className: `jira-status jira-status-${transition.toCategory || "new"}`,
-                        }))}
-                        onChange={(id) => void run("Move issue", () => jiraApi.transition(issue.key, id, site || undefined))}
-                        disabled={busy || issue.transitions.length === 0}
-                    />
+                    </div>
                     <section className="jira-fields" aria-label="Details">
                         <div className="jira-fields-title">Details</div>
                         <Field label="Assignee">

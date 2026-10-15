@@ -468,8 +468,15 @@
     min-width: 0;
 }
 
-.jira-detail-side > :first-child {
-    align-self: flex-start;
+.jira-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.jira-status-row .jira-chip {
+    height: 28px;
 }
 
 @container (min-width: 540px) {
