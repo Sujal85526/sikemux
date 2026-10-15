@@ -255,7 +255,8 @@ const COMMIT_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 /// ours put on the footer naming the agents whose lines were staged as it
 /// began, else `fallback`. Only this git may ask for that footer, and only
 /// once. Whose lines they are is worked out first, since a hook that reformats
-/// the files leaves the record unable to say.
+/// the files leaves the record unable to say. A commit naming nobody runs
+/// without our hooks.
 pub(crate) fn commit(
     core: &Core,
     dir: &Path,
@@ -263,14 +264,6 @@ pub(crate) fn commit(
     message: &str,
     fallback: Option<&str>,
 ) -> Result<Output, String> {
-    let mut command = sikemux_process::user_environment::command("git");
-    command
-        .args(["-c", "core.fsmonitor=false", "commit", "-F", "-"])
-        .args(args)
-        .current_dir(dir)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_EDITOR", "true");
-    crate::git_guard::shim::sign_commit(&mut command, dir);
     let staged: Vec<String> = staged_in(core, dir, None, false)
         .map(|(owners, _)| {
             owners
@@ -280,6 +273,17 @@ pub(crate) fn commit(
                 .collect()
         })
         .unwrap_or_default();
+    let signed = !staged.is_empty() || fallback.is_some();
+    let mut command = sikemux_process::user_environment::command("git");
+    command
+        .args(["-c", "core.fsmonitor=false", "commit", "-F", "-"])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_EDITOR", "true");
+    if signed {
+        crate::git_guard::shim::sign_commit(&mut command, dir);
+    }
     let git = Cell::new(None);
     let output = sikemux_process::run_with_pid(
         &mut command,
@@ -288,8 +292,10 @@ pub(crate) fn commit(
         COMMIT_OUTPUT_LIMIT,
         None,
         |pid| {
-            callers::grant_commit(pid, staged, fallback, COMMIT_WAIT);
-            git.set(Some(pid));
+            if signed {
+                callers::grant_commit(pid, staged, fallback, COMMIT_WAIT);
+                git.set(Some(pid));
+            }
         },
     );
     if let Some(pid) = git.get() {
