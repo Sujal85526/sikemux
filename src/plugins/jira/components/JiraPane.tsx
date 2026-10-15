@@ -523,55 +523,55 @@ function IssueBody({ issue, site, refresh, onClose }: { issue: JiraIssue; site: 
 
     return (
         <article className="jira-detail" aria-label={`${issue.key} ${issue.summary}`}>
-            <header className="jira-detail-head" onContextMenu={(event) => setMenu(event, issueMenu(issue))}>
-                <span className="jira-detail-key">
-                    <IssueTypeIcon type={issue.issueType} />
-                    <button type="button" className="jira-key link" title="Open in browser" onClick={() => openIssue(issue)}>
-                        {issue.key}
-                    </button>
-                    <button
-                        type="button"
-                        className="jira-icon-button"
-                        title="Copy link"
-                        aria-label="Copy link"
-                        onClick={() => copyIssue(issue.url, "link")}>
-                        <IconCopy size={12} />
-                    </button>
-                    <button
-                        type="button"
-                        className="jira-icon-button"
-                        title="Open in browser"
-                        aria-label="Open in browser"
-                        onClick={() => openIssue(issue)}>
-                        <IconExternal size={12} />
-                    </button>
-                    <span className="jira-grow" />
-                    <button
-                        type="button"
-                        className="jira-chip"
-                        title="Put this issue on the open project's board as a card for agents"
-                        onClick={() =>
-                            void sendToBoard({
-                                title: issue.summary,
-                                details: issue.description,
-                                ticket: ticketOf(issue),
-                                subtasks: issue.subtasks
-                                    .filter((sub) => sub.statusCategory !== "done")
-                                    .map((sub) => ({ title: sub.summary, details: "", ticket: ticketOf(sub) })),
-                                blockedBy: issue.blockedBy,
-                                blocks: issue.blocks,
-                            })
-                        }>
-                        Send to board
-                    </button>
-                    <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
-                        <IconClose size={12} />
-                    </button>
-                </span>
-                <h2>{issue.summary}</h2>
-                {menu}
-            </header>
             <div className="jira-detail-body">
+                <header className="jira-detail-head" onContextMenu={(event) => setMenu(event, issueMenu(issue))}>
+                    <span className="jira-detail-key">
+                        <IssueTypeIcon type={issue.issueType} />
+                        <button type="button" className="jira-key link" title="Open in browser" onClick={() => openIssue(issue)}>
+                            {issue.key}
+                        </button>
+                        <button
+                            type="button"
+                            className="jira-icon-button"
+                            title="Copy link"
+                            aria-label="Copy link"
+                            onClick={() => copyIssue(issue.url, "link")}>
+                            <IconCopy size={12} />
+                        </button>
+                        <button
+                            type="button"
+                            className="jira-icon-button"
+                            title="Open in browser"
+                            aria-label="Open in browser"
+                            onClick={() => openIssue(issue)}>
+                            <IconExternal size={12} />
+                        </button>
+                        <span className="jira-grow" />
+                        <button
+                            type="button"
+                            className="jira-chip"
+                            title="Put this issue on the open project's board as a card for agents"
+                            onClick={() =>
+                                void sendToBoard({
+                                    title: issue.summary,
+                                    details: issue.description,
+                                    ticket: ticketOf(issue),
+                                    subtasks: issue.subtasks
+                                        .filter((sub) => sub.statusCategory !== "done")
+                                        .map((sub) => ({ title: sub.summary, details: "", ticket: ticketOf(sub) })),
+                                    blockedBy: issue.blockedBy,
+                                    blocks: issue.blocks,
+                                })
+                            }>
+                            Send to board
+                        </button>
+                        <button type="button" className="jira-icon-button" title="Close" aria-label="Close the issue" onClick={onClose}>
+                            <IconClose size={12} />
+                        </button>
+                    </span>
+                    <h2>{issue.summary}</h2>
+                    {menu}
+                </header>
                 <aside className="jira-detail-side">
                     <Dropdown
                         label={`Status: ${issue.status}`}

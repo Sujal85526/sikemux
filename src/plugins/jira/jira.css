@@ -475,19 +475,25 @@
 @container (min-width: 540px) {
     .jira-detail-body {
         grid-template-columns: minmax(0, 1fr) minmax(190px, 240px);
+        grid-template-rows: auto 1fr;
+        grid-template-areas:
+            "head side"
+            "main side";
+    }
+
+    .jira-detail-head {
+        grid-area: head;
     }
 
     .jira-detail-side {
         position: sticky;
         top: 12px;
         align-self: start;
-        grid-column: 2;
-        grid-row: 1;
+        grid-area: side;
     }
 
     .jira-detail-main {
-        grid-column: 1;
-        grid-row: 1;
+        grid-area: main;
     }
 }
 
