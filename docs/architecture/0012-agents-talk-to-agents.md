@@ -30,13 +30,17 @@ MCP server every agent is launched with.
   holds its name only while it is open: closing it frees the name, and a chat opened again
   gets a new one. Leads do not choose names. The person can rename one. Tools, `@`
   mentions in the composer, tabs and the rail all use the name.
-- **A tool call proves who is calling.** Each agent is launched with its own secret, and
-  the core checks it on every harness call. An agent id the caller merely states is not
-  trusted. The key the secrets come from lives only in the core's memory and passes to a
-  new core through a pipe on upgrade, so no agent can work out another's secret from a file.
+- **The core knows who is calling from the processes it started.** The core starts every
+  agent and records its process and start time. A call that needs an agent identity is
+  answered only when the process holding the connection descends from one of those
+  processes, and it is that agent's call whatever agent id it states. A process outside
+  every agent's tree, including one re-parented to launchd or init, is refused. Nothing
+  secret travels in an agent's environment or tool config, where any process of the same
+  user could read it. An update runs the new core in the same process, so the agents stay
+  its children and it records them again as it takes them up.
 - **Only Sikemux's own window and notch act as the person.** The core checks the code
   signature of the process on the other end of its socket. Answering questions and
-  permissions, adding board cards as the person, board settings and agent secrets need a
+  permissions, adding board cards as the person and board settings need a
   verified window or notch; an agent's shell may read but not act as the person. A build
   not signed by Sikemux's team trusts the app and notch in its own bundle by path, as a dev
   build does; a team-signed build never falls back to a path.
@@ -78,8 +82,9 @@ MCP server every agent is launched with.
 
 ## Consequences
 
-- Every launch path that hands an agent `sikemux-tools` also hands it its secret: terminal
-  agents, chats the app starts and chats a device starts.
+- Every way an agent's tools reach the core must run inside the agent's own process tree.
+  Claude, Codex, OpenCode, OMP, Grok, Hermes and Pi start their MCP servers as their own
+  descendants; a CLI that moved them into a shared daemon would lose its agent tools.
 - The core keeps per-agent names, parent links, queued messages and open questions on disk,
   so they survive a window reload, a core upgrade, a crash and a restart.
 - Messages, questions and the board move on events and deadlines of their own, not a
@@ -92,6 +97,9 @@ MCP server every agent is launched with.
 
 ## Alternatives considered
 
+- **A per-agent secret in the environment.** Shipped first and replaced: on macOS any
+  process of the same user reads another's environment (`ps -E`), so an agent could take
+  another's secret and act as it.
 - **Claude's own cross-session messaging.** Rejected: Claude only, and it drops messages
   to the headless, prompt-skipping sessions Sikemux runs.
 - **Claude channels for delivery.** Rejected: research preview, needs a development flag

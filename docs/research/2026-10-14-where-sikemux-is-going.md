@@ -531,9 +531,9 @@ The weak spots are trust, review and durability.
 **Status after the fixes (2026-10-15, on `main`, in no release yet).** The audit above is kept as found.
 - Problem 1, fixed: the core checks the code signature of whatever connects to its socket; only Sikemux's
   own window and notch act as the person. A second registration no longer breaks the real window, only
-  the app can swap in a new core binary, and the agent key lives in memory, not a file. Builds not signed
-  by Sikemux's team trust their own app and notch by path. Still open: each agent's secret travels in its
-  environment, which other processes running as the person can read (`ps -E`); Linux checks by path only.
+  the app can swap in a new core binary, and the core tells which agent made a tool call from the process
+  tree it started, so nothing secret sits in an agent's environment. Builds not signed by Sikemux's team
+  trust their own app and notch by path. Still open: Linux checks the window and notch by path only.
 - Problem 2, fixed: every agent Sikemux starts runs git through a guard that refuses sweeping commands in
   the shared checkout and allows them in its own worktree. Still open: Grok in bypass mode rebuilds its
   PATH from the login shell and slips past.
@@ -548,8 +548,7 @@ The weak spots are trust, review and durability.
 - Problem 7, fixed: events and per-item deadlines replace the tick for messages, questions, the board
   and Auto; looping pairs are held after a few rounds and named in the inbox. A per-project message log
   shows on the Mac board and the phone.
-- Left: spawn across hosts with lineage, collision warnings between agents in the shared checkout, and
-  taking secrets out of agents' environments.
+- Left: spawn across hosts with lineage, and collision warnings between agents in the shared checkout.
 
 ---
 
