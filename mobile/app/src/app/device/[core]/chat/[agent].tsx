@@ -430,6 +430,9 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                         animateAutoScrollToBottom: false,
                       }}
                       onScroll={onScroll}
+                      // Throttled scroll events can miss where a drag or fling stops, leaving the arrow up at the end.
+                      onScrollEndDrag={onScroll}
+                      onMomentumScrollEnd={onScroll}
                       onContentSizeChange={onContentSizeChange}
                       onLayout={onListLayout}
                       scrollEventThrottle={100}
