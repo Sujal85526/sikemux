@@ -135,7 +135,7 @@ impl Manifest {
              Sikemux runs other agents beside you, each named with a word such as Otter: agent_list shows them, agent_send messages one, agent_spawn starts one and agent_read shows what one said. \
              Message one to hand it work that is its own or to work with it; for a piece of your own task, use your own subagents. \
              When you need an answer to go on, ask puts the question to your lead, or to the person when you have none. Read the agents topic of {} first. \
-             Other agents may share your checkout: commit with git_commit, which commits only the lines you wrote, never with git add -A, git commit -a, git stash or git reset --hard.",
+             Other agents may share your checkout: commit with git_commit, which commits only the lines you wrote, never with git add -A, git commit -a, git stash or git reset --hard, which Sikemux refuses there and allows only in a git worktree of your own.",
             self.guide.name, self.guide.name, self.guide.name
         );
         if self.offers_simulator() {
