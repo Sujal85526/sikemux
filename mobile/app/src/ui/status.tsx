@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
+import { collisionLabel, type CollisionMark } from '@mac/agents/collisions';
+
 import { Icon } from './Icon';
 import { useAnimating } from './motion';
 import { fonts, type Palette, useColors, useStyles } from './theme';
@@ -84,6 +86,17 @@ export function ShellCount({ count }: { count: number }) {
       accessibilityLabel={`${count} ${count === 1 ? 'shell or monitor' : 'shells or monitors'} running`}>
       <Icon name="IconCommand" size={11} color={colors.warn} />
       <Text style={styles.countText}>{count}</Text>
+    </View>
+  );
+}
+
+/** An agent that just changed the same lines, or the same claimed file, as another: the Mac rail's merge mark. */
+export function Collided({ mark }: { mark: CollisionMark }) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.count} accessible accessibilityLabel={collisionLabel(mark)}>
+      <Icon name="IconMerge" size={11} color={mark.claim ? colors.warn : colors.danger} />
     </View>
   );
 }

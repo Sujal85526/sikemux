@@ -5,6 +5,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { agentLabel } from '@mac/agents/catalog';
+import type { CollisionMark } from '@mac/agents/collisions';
 import { formatAge } from '@mac/lib/format';
 import { AGENT_LABELS } from '@mac/state/agentStatus';
 import type { ChatInfo, InboxItem, ProjectInfo, RecentInfo, SessionInfo, Snapshot } from '@/core/protocol';
@@ -23,7 +24,7 @@ import { AgentIcon, Icon } from '@/ui/Icon';
 import { Button, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
 import { Nav, Screen, useBottomGap } from '@/ui/screen';
-import { NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
+import { Collided, NeedsYou, ShellCount, SubagentCount, Working } from '@/ui/status';
 import { fonts, isLight, type Palette, typeFor, useColors, useStyles, useType, translucent } from '@/ui/theme';
 
 type Tab = 'agents' | 'terminals' | 'board';
@@ -201,6 +202,7 @@ function Agents({
         connection={connection}
         items={items}
         working={snapshot.inbox.working}
+        collisions={snapshot.inbox.collisions}
         attentions={snapshot.attentions}
         full={full}
         placeOf={placeOf}
@@ -214,7 +216,13 @@ function Agents({
           <SectionLabel>{AGENT_LABELS.idle}</SectionLabel>
           <Rows>
             {idle.map((chat) => (
-              <ChatRow key={chat.agentId} core={core} chat={chat} place={scope ? undefined : projectName(snapshot, chat.cwd)} />
+              <ChatRow
+                key={chat.agentId}
+                core={core}
+                chat={chat}
+                collision={snapshot.inbox.collisions?.[chat.agentId]}
+                place={scope ? undefined : projectName(snapshot, chat.cwd)}
+              />
             ))}
           </Rows>
         </>
@@ -242,7 +250,17 @@ function terminalDetail(session: SessionInfo): string {
 
 /* A host sends its whole view several times a second while an agent works; each row redraws only when its own
    item changed, which the hub keeps as the same object otherwise. */
-const ChatRow = memo(function ChatRow({ core, chat, place }: { core: string; chat: ChatInfo; place?: string }) {
+const ChatRow = memo(function ChatRow({
+  core,
+  chat,
+  collision,
+  place,
+}: {
+  core: string;
+  chat: ChatInfo;
+  collision?: CollisionMark;
+  place?: string;
+}) {
   const display = chatDisplay(chat);
   return (
     <Row
@@ -255,6 +273,7 @@ const ChatRow = memo(function ChatRow({ core, chat, place }: { core: string; cha
         <>
           {display.subagents ? <SubagentCount count={display.subagents} /> : null}
           {display.tasks ? <ShellCount count={display.tasks} /> : null}
+          {collision ? <Collided mark={collision} /> : null}
         </>
       }
       onPress={() => router.push(`/device/${core}/chat/${chat.agentId}`)}

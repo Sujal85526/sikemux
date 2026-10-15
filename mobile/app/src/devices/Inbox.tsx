@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import type { ConnectionLike } from '@sikemux/native';
 
 import type { AgentQuestion, QuestionAnswer } from '@mac/agents/agentQuestions';
+import type { CollisionMark } from '@mac/agents/collisions';
 import { agentLabel } from '@mac/agents/catalog';
 import { formatAge, formatDuration } from '@mac/lib/format';
 import type { Attention, Digest, InboxItem, InboxTier } from '@/core/protocol';
@@ -11,7 +12,7 @@ import { haptics } from '@/ui/haptics';
 import { AgentIcon, Icon } from '@/ui/Icon';
 import { Chip, IconButton } from '@/ui/controls';
 import { Row, Rows, SectionLabel } from '@/ui/list';
-import { Dot, NeedsYou, Working } from '@/ui/status';
+import { Collided, Dot, NeedsYou, Working } from '@/ui/status';
 import { fonts, type Palette, radius, typeFor, useColors, useStyles } from '@/ui/theme';
 import { problem as problemOf } from './hub';
 import { useHostQuestions } from './questions';
@@ -89,6 +90,7 @@ function HandoffLines({ item }: { item: InboxItem }) {
 
 const InboxRow = memo(function InboxRow({
   item,
+  collision,
   place,
   attention,
   question,
@@ -98,6 +100,7 @@ const InboxRow = memo(function InboxRow({
   onAct,
 }: {
   item: InboxItem;
+  collision?: CollisionMark;
   place?: string;
   attention?: Attention;
   question?: AgentQuestion;
@@ -118,7 +121,12 @@ const InboxRow = memo(function InboxRow({
         title={itemTitle(item)}
         place={place}
         detail={item.what}
-        end={<ItemEnd item={item} />}
+        end={
+          <>
+            {collision ? <Collided mark={collision} /> : null}
+            <ItemEnd item={item} />
+          </>
+        }
         onPress={() => onOpen(item)}
       />
       <View style={styles.below}>
@@ -216,6 +224,7 @@ export function Inbox({
   connection,
   items,
   working,
+  collisions,
   attentions,
   full,
   placeOf,
@@ -228,6 +237,7 @@ export function Inbox({
   connection?: ConnectionLike;
   items: readonly InboxItem[];
   working: number;
+  collisions?: Record<string, CollisionMark>;
   attentions: readonly Attention[];
   full: boolean;
   placeOf: (item: InboxItem) => string | undefined;
@@ -287,6 +297,7 @@ export function Inbox({
               <InboxRow
                 key={item.id}
                 item={item}
+                collision={item.agentId ? collisions?.[item.agentId] : undefined}
                 place={placeOf(item)}
                 attention={item.requestId ? attentions.find((attention) => attention.id === item.requestId) : undefined}
                 question={item.questionId ? questions.find((question) => question.id === item.questionId) : undefined}

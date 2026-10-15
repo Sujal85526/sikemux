@@ -4,6 +4,8 @@
  * `DeviceView` and `HostInfo` in `src-tauri/crates/sikemux-wire/src/protocol.rs`.
  */
 
+import type { CollisionMark } from '@mac/agents/collisions';
+
 export type ProjectInfo = { id: string; name: string; path: string };
 
 export type LauncherInfo = {
@@ -183,6 +185,8 @@ export type Inbox = {
   working: number;
   /** When each project, by its path, last logged a message between its agents. */
   agentMessages?: Record<string, number>;
+  /** Agents that just collided with another over a file, by agent id. */
+  collisions?: Record<string, CollisionMark>;
 };
 
 /** What the `digest` call says happened since the person left. */
@@ -261,9 +265,13 @@ export function keepUnchanged(previous: Snapshot | undefined, next: Snapshot): S
 function keepInbox(previous: Inbox, next: Inbox): Inbox {
   const items = keepItems(previous.items, next.items, (item) => item.id);
   const agentMessages = same(previous.agentMessages, next.agentMessages) ? previous.agentMessages : next.agentMessages;
-  return items === previous.items && previous.working === next.working && agentMessages === previous.agentMessages
+  const collisions = same(previous.collisions, next.collisions) ? previous.collisions : next.collisions;
+  return items === previous.items &&
+    previous.working === next.working &&
+    agentMessages === previous.agentMessages &&
+    collisions === previous.collisions
     ? previous
-    : { items, working: next.working, agentMessages };
+    : { items, working: next.working, agentMessages, collisions };
 }
 export const readHost = (json: string) => readCore<HostInfo>(json);
 export const readDigest = (json: string) => readCore<Digest>(json);
