@@ -2,6 +2,7 @@
 pub const IPC_COMMANDS: &[&str] = &[
     "acp_start",
     "acp_attach",
+    "acp_history",
     "acp_list",
     "acp_prompt",
     "acp_edit",

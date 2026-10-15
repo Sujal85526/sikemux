@@ -42,10 +42,20 @@ export type AcpAttachment =
           running: boolean;
           /** A turn ran in this session, so the provider keeps it. */
           turned: boolean;
+          /** The core's run of this chat, which paging back names. */
+          feed: string;
+          /** Set when the replay holds only the chat's last turns: `history` pages back from it. */
+          olderBefore: number | null;
       }
     | { status: "missing" }
     /* It said more than the core keeps, so it starts again from the provider's history. */
     | { status: "restart" };
+
+/** Turns from before what the page shows, and where the page before them starts. */
+export interface AcpHistory {
+    events: { kind: string; payload: Record<string, unknown> }[];
+    olderBefore: number | null;
+}
 
 export interface AcpAttachOptions {
     agentId: string;
@@ -115,6 +125,8 @@ export const acpApi = {
             cwd: options.cwd,
             configPath: options.configPath ?? null,
         }),
+    history: (agentId: string, feed: string, before: number, turns: number): Promise<AcpHistory> =>
+        invoke<AcpHistory>("acp_history", { agentId, feed, before, turns }),
     list: (): Promise<AcpChat[]> => invoke<AcpChat[]>("acp_list"),
     setPermissionMode: (agentId: string, permissionMode: AgentPermissionMode): Promise<void> =>
         invoke<void>("acp_set_permission_mode", { agentId, permissionMode }),

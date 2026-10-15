@@ -688,8 +688,56 @@ function sessionUpdate(state: ChatState, sessionId: string, update: Record<strin
     }
 }
 
+/* Turns from before what the transcript holds go above it. A subagent drawn
+   where it started takes the place of any card for it shown further down. */
+function withEarlier(state: ChatState, messages: ChatMessage[]): ChatState {
+    if (!messages.length) return state;
+    const placed = new Set<string>();
+    collectSubagents(messages, placed);
+    return { ...state, messages: [...messages, ...withoutSubagents(state.messages, placed)], revision: state.revision + 1 };
+}
+
+function collectSubagents(messages: ChatMessage[], into: Set<string>) {
+    for (const message of messages)
+        for (const part of message.parts) {
+            if (part.kind !== "subagent") continue;
+            into.add(part.subagent.sessionId);
+            collectSubagents(part.subagent.messages, into);
+        }
+}
+
+function withoutSubagents(messages: ChatMessage[], placed: ReadonlySet<string>): ChatMessage[] {
+    if (!placed.size) return messages;
+    let changed = false;
+    const kept = messages.flatMap((message): ChatMessage[] => {
+        const parts = withoutSubagentParts(message.parts, placed);
+        if (parts === message.parts) return [message];
+        changed = true;
+        return parts.length ? [{ ...message, parts }] : [];
+    });
+    return changed ? kept : messages;
+}
+
+function withoutSubagentParts(parts: ChatPart[], placed: ReadonlySet<string>): ChatPart[] {
+    let changed = false;
+    const kept = parts.flatMap((part): ChatPart[] => {
+        if (part.kind !== "subagent") return [part];
+        if (placed.has(part.subagent.sessionId)) {
+            changed = true;
+            return [];
+        }
+        const messages = withoutSubagents(part.subagent.messages, placed);
+        if (messages === part.subagent.messages) return [part];
+        changed = true;
+        return [{ ...part, subagent: { ...part.subagent, messages } }];
+    });
+    return changed ? kept : parts;
+}
+
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     switch (action.type) {
+        case "earlier":
+            return withEarlier(state, action.messages);
         case "config":
             return { ...state, setup: { ...state.setup, configOptions: action.options }, revision: state.revision + 1 };
         case "saved_usage":

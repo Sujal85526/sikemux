@@ -66,6 +66,8 @@ const live: AcpAttachment = {
     permissionMode: "workspace-write",
     running: true,
     turned: true,
+    feed: "feed-1",
+    olderBefore: null,
 };
 
 function emit(kind: AcpEvent["kind"], payload: Record<string, unknown> = {}) {

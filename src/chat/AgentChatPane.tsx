@@ -8,6 +8,7 @@ import { useStore } from "../state/store";
 import { hasPrimaryModifier } from "../lib/platform";
 import { IconArrowDown, IconFile, IconPlug, IconWarning } from "../ui/Icons";
 import { chatReducer, initialChatState } from "./reducer";
+import { EarlierTurns } from "./EarlierTurns";
 import type { ChatMessage, ChatState } from "./types";
 import { PathRootsProvider } from "./FileRef";
 import { ChatWelcome } from "./ChatWelcome";
@@ -104,16 +105,17 @@ export function AgentChatPane({
     const [state, dispatch] = useReducer(chatReducer, initialChatState);
     const [foldMemory] = useState(newFoldMemory);
     const [composerError, setComposerError] = useState<string | null>(null);
-    const { agentRef, sessionIdRef, recovery, retry, replaying, changingPermissions, appliedPermissionMode, permissionMode } = useAcpSession({
-        active,
-        agent,
-        profile,
-        cwd,
-        connection: state.connection,
-        foldMemory,
-        dispatch,
-        onError: setComposerError,
-    });
+    const { agentRef, sessionIdRef, recovery, retry, replaying, changingPermissions, appliedPermissionMode, permissionMode, earlier, loadEarlier } =
+        useAcpSession({
+            active,
+            agent,
+            profile,
+            cwd,
+            connection: state.connection,
+            foldMemory,
+            dispatch,
+            onError: setComposerError,
+        });
 
     /* A resumed session sends its history back over many frames. The pane keeps
        showing what it had until the history is all in and its text has been
@@ -397,6 +399,7 @@ export function AgentChatPane({
                                 onEdit={editable ? editMessage : undefined}
                                 before={
                                     <>
+                                        {earlier !== "none" && <EarlierTurns state={earlier} onLoad={loadEarlier} scrollRef={scrollRef} />}
                                         {(worktree.step !== null || agent.worktree) && (
                                             <Suspense fallback={null}>
                                                 <WorktreeNote step={worktree.step} worktree={agent.worktree} home={home} />

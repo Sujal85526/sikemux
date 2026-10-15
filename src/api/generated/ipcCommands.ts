@@ -2,6 +2,7 @@
 export const IPC_COMMANDS = [
     "acp_start",
     "acp_attach",
+    "acp_history",
     "acp_list",
     "acp_prompt",
     "acp_edit",

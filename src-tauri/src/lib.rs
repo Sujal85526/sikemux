@@ -286,6 +286,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             acp::acp_start,
             acp::acp_attach,
+            acp::acp_history,
             acp::acp_list,
             acp::acp_prompt,
             acp::acp_edit,

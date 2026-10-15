@@ -403,13 +403,26 @@ pub async fn acp_start(
 )]
 pub enum Attachment {
     Live {
-        start: ChatStart,
+        start: Box<ChatStart>,
         permission_mode: String,
         running: bool,
         turned: bool,
+        /// The core's run of this chat, which paging back names.
+        feed: String,
+        /// Set when the replay holds only the chat's last turns: the event
+        /// before which `acp_history` pages back.
+        older_before: Option<u64>,
     },
     Missing,
     Restart,
+}
+
+/// Turns from before what the page shows, and where the page before them starts.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatHistory {
+    events: Vec<ChatEvent>,
+    older_before: Option<u64>,
 }
 
 /// Takes up a chat the core already runs, if it runs one for this agent.
@@ -444,14 +457,17 @@ pub async fn acp_attach(
                             running,
                             turned,
                             replay: events,
-                            ..
+                            mark,
+                            older_before,
                         } => {
                             replay(&replaying, &replay_agent, events);
                             Attachment::Live {
-                                start: *start,
+                                start,
                                 permission_mode,
                                 running,
                                 turned,
+                                feed: mark.feed,
+                                older_before,
                             }
                         }
                         ChatAttachment::Missing => Attachment::Missing,
@@ -480,6 +496,28 @@ pub async fn acp_attach(
         );
     }
     Ok(attachment)
+}
+
+/// The chat's turns before event `before` of its run `feed`, for a page shown
+/// only the chat's end.
+#[tauri::command]
+pub async fn acp_history(
+    pty: State<'_, PtyManager>,
+    agent_id: String,
+    feed: String,
+    before: u64,
+    turns: u32,
+) -> Result<ChatHistory, String> {
+    bounded_text("agent id", &agent_id, MAX_AGENT_ID)?;
+    let (events, older_before) = core(&pty)
+        .await?
+        .acp_history(agent_id, feed, before, turns)
+        .await
+        .map_err(failure)?;
+    Ok(ChatHistory {
+        events,
+        older_before,
+    })
 }
 
 /// Moves a running chat to another account, on the same session.
@@ -653,14 +691,16 @@ mod tests {
     #[test]
     fn an_attachment_reads_as_the_page_expects() {
         let live = Attachment::Live {
-            start: ChatStart {
+            start: Box::new(ChatStart {
                 session_id: "s".into(),
                 capabilities: json!({}),
                 setup: json!({}),
-            },
+            }),
             permission_mode: "bypass".into(),
             running: true,
             turned: false,
+            feed: "f".into(),
+            older_before: Some(7),
         };
         assert_eq!(
             serde_json::to_value(live).unwrap(),
@@ -670,6 +710,8 @@ mod tests {
                 "permissionMode": "bypass",
                 "running": true,
                 "turned": false,
+                "feed": "f",
+                "olderBefore": 7,
             })
         );
         assert_eq!(

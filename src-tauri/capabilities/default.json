@@ -21,6 +21,7 @@
     "core:window:allow-request-user-attention",
     "allow-acp-start",
     "allow-acp-attach",
+    "allow-acp-history",
     "allow-acp-list",
     "allow-acp-prompt",
     "allow-acp-edit",

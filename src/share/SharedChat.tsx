@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { agentLabel, isAgentType } from "../agents/catalog";
 import { ChatAgentContext, ChatSubagentsContext, ReaderScrollContext } from "../chat/chatAgent";
 import { warmTranscript } from "../chat/ChatMessageRow";
 import { ChatTranscript } from "../chat/ChatTranscript";
+import { EarlierTurns } from "../chat/EarlierTurns";
 import { activityText } from "../chat/chatStatus";
 import { PathRootsProvider } from "../chat/FileRef";
 import LiveStack from "../chat/LiveStack";
@@ -78,7 +79,7 @@ export function SharedChat({ session, visible, actions }: { session: ShareSessio
 
     const before = (
         <>
-            {snapshot.hasEarlier && <EarlierTurns session={session} snapshot={snapshot} scrollRef={scrollRef} />}
+            {snapshot.hasEarlier && <EarlierTurns state={snapshot.earlier} onLoad={session.loadEarlier} scrollRef={scrollRef} />}
             {state.messages.length === 0 && (
                 <div className={`chat-connection-state ${problem ? "stopped" : "connecting"}`} role="status">
                     {!problem && <span className="chat-activity-loader" aria-hidden="true" />}
@@ -179,49 +180,6 @@ function SharedChatFoot({ snapshot }: { snapshot: ShareSnapshot }) {
         <div className="shared-chat-foot" role="status">
             <span className={`shared-chat-state${snapshot.hostOnline && live ? " live" : ""}`}>{state ?? "Read-only"}</span>
             {live && snapshot.expiresAt !== null && <span>Link ends in {endsIn(snapshot.expiresAt, now)}</span>}
-        </div>
-    );
-}
-
-/** Loads the turns before the first one shown as the reader scrolls up to it, a page at a time. */
-function EarlierTurns({
-    session,
-    snapshot,
-    scrollRef,
-}: {
-    session: ShareSession;
-    snapshot: ShareSnapshot;
-    scrollRef: RefObject<HTMLDivElement | null>;
-}) {
-    const edge = useRef<HTMLDivElement>(null);
-    const idle = snapshot.earlier === "idle";
-    useEffect(() => {
-        const root = scrollRef.current;
-        const target = edge.current;
-        if (!idle || !root || !target) return;
-        const observer = new IntersectionObserver((entries) => entries.some((entry) => entry.isIntersecting) && session.loadEarlier(), {
-            root,
-            rootMargin: "600px 0px 0px 0px",
-        });
-        observer.observe(target);
-        return () => observer.disconnect();
-    }, [idle, session, scrollRef]);
-    return (
-        <div ref={edge} className="shared-chat-earlier" role="status">
-            {snapshot.earlier === "loading" && (
-                <>
-                    <span className="chat-activity-loader" aria-hidden="true" />
-                    <span>Loading earlier messages…</span>
-                </>
-            )}
-            {snapshot.earlier === "failed" && (
-                <>
-                    <span>Couldn't load earlier messages.</span>
-                    <button type="button" onClick={session.loadEarlier}>
-                        Try again
-                    </button>
-                </>
-            )}
         </div>
     );
 }
