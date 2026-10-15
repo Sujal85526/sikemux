@@ -977,7 +977,7 @@
     margin-top: var(--space-1h);
 }
 .workspace-rail.agent-rail .agent-stats + * {
-    margin-top: var(--space-3);
+    margin-top: var(--space-4);
 }
 
 /* What an agent is tied to hangs off its row on the side rail's tree. The
