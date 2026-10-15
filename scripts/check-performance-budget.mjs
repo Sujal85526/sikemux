@@ -227,10 +227,11 @@ const budgets = [
     // Lightning CSS, Vite's minifier, keeps the spaces inside color-mix().
     // Main went past this budget on its own; this restores the room.
     // Agents messaging, asking and spawning each other added real chat UI and its styles.
+    // The masked field a secret question is answered in added the last 1 KB.
     label: "ACP chat CSS",
     pattern: /^(?:AgentSurface|chat)-.*\.css$/,
-    raw: 57_000,
-    gzip: 10_300,
+    raw: 58_000,
+    gzip: 10_500,
   },
   {
     // Includes the JetBrainsMono Nerd Font @font-face rules: a base face per
