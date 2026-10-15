@@ -48,7 +48,7 @@ from the list below.
   them a hidden page is on their screen.
 - Other agents may share this checkout: commit with `git_commit`, and see
   `agents` for the git commands refused here.
-- Plugin tools (`github_*`, `jira_*`, `slack_*` and the rest) are listed only
+- Plugin tools (`github_*`, `jira_*`, `rundeck_*`, `slack_*`…) are listed only
   when signed in, and for a code host when this project has a remote on it.
   If one is missing, ask the person to sign in from its pane and restart you.
 
