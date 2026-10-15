@@ -10,8 +10,8 @@
 //!   cancel;
 //! - `exit CODE` ends the process at once;
 //! - `who` says which account the process runs as;
-//! - `run COMMAND` runs a shell command in the session's folder and says what
-//!   it printed;
+//! - `run COMMAND` runs a shell command in the session's folder, as a tool
+//!   call, and says what it printed;
 //! - `tool METHOD JSON` calls one of Sikemux's agent tools, as the agent, and
 //!   says the answer;
 //! - anything else is echoed back.
@@ -353,7 +353,16 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
         }
         "run" => {
             let command = line.trim_start().trim_start_matches("run").trim();
-            say(&run_command(&session, command));
+            agent.update(
+                session_id,
+                json!({ "sessionUpdate": "tool_call", "toolCallId": "run-1", "title": command, "kind": "execute", "status": "in_progress" }),
+            );
+            let output = run_command(&session, command);
+            agent.update(
+                session_id,
+                json!({ "sessionUpdate": "tool_call_update", "toolCallId": "run-1", "status": "completed" }),
+            );
+            say(&output);
             "end_turn"
         }
         "tool" => {
