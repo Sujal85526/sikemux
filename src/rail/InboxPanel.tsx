@@ -87,7 +87,12 @@ function InboxRow({ item }: { item: InboxItem }) {
                 <span className={`agent-glyph ${cli}`}>{isAgentType(cli) ? <AgentIcon type={cli} size={20} /> : <IconTerminal size={16} />}</span>
                 <span className="agent-asking">
                     <span className="agent-title">
-                        <AgentLabel agent={{ name: item.name ?? undefined, title: item.title ?? item.card?.title ?? "" }} />
+                        <AgentLabel
+                            agent={{
+                                name: item.name && item.host ? `${item.name} on ${item.host}` : (item.name ?? undefined),
+                                title: item.title ?? item.card?.title ?? "",
+                            }}
+                        />
                     </span>
                     <span className={`agent-question${item.kind === "failed" ? " failed" : ""}`}>
                         {item.detail ? `${item.what}: ${item.detail}` : item.what}
