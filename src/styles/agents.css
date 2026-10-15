@@ -48,8 +48,7 @@
     color: var(--text-primary);
     font-weight: var(--weight-semibold);
 }
-.agent-row .agent-name,
-.tab-label .agent-name {
+.agent-row .agent-name {
     font-weight: var(--weight-medium);
 }
 .agent-name-sep {
@@ -62,6 +61,33 @@
 }
 .agent-surface-title .agent-name-title {
     margin-left: 2px;
+}
+/* Title first, the agent's name dim after it: the same in tabs, rail rows and the header. */
+.agent-title:has(> .agent-label-name),
+.agent-surface-title:has(> .agent-label-name) {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+}
+.agent-label-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.agent-label-name,
+.tab-note {
+    flex: none;
+    margin-left: var(--space-2);
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-normal);
+}
+.agent-row .agent-label-name {
+    margin-left: auto;
+    padding-left: var(--space-2);
+}
+.tab.active .tab-note {
+    color: color-mix(in srgb, currentColor 62%, transparent);
 }
 .agent-rename {
     min-width: 0;

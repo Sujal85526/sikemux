@@ -34,7 +34,8 @@ export interface TabDescriptor {
     badge?: ReactNode;
     className?: string;
     /** Sets the label's text apart from the tab's own colour, as an agent's name is. */
-    labelClassName?: string;
+    /** Dim text after the label, such as the name of the agent a tab holds. */
+    note?: string;
     /** Tabs next to each other with the same group are outlined together, like the panes of one split. */
     group?: string;
     /** A temporary tab the next preview replaces. Drawn in italics until `onKeep` is called for it. */
@@ -381,7 +382,8 @@ export function TabBar({
                                 : undefined
                         }>
                         {t.icon && <span className="tab-mark">{t.icon}</span>}
-                        <span className="tab-label">{t.labelClassName ? <span className={t.labelClassName}>{t.label}</span> : t.label}</span>
+                        <span className="tab-label">{t.label}</span>
+                        {t.note && <span className="tab-note">{t.note}</span>}
                         {t.badge && <span className="tab-badge">{t.badge}</span>}
                     </button>
                 </Tooltip>

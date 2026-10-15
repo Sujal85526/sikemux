@@ -1,13 +1,12 @@
 import type { Agent } from "../state/types";
 
-/** An agent as its rail row and header show it: its name, then what it is working on, dimmed. */
+/** An agent as its rail row and header show it: what it is working on, then its name, dimmed. */
 export function AgentLabel({ agent }: { agent: Pick<Agent, "name" | "title"> }) {
     if (!agent.name) return <>{agent.title}</>;
     return (
         <>
-            <span className="agent-name">{agent.name}</span>
-            <span className="agent-name-sep">·</span>
-            <span className="agent-name-title">{agent.title}</span>
+            <span className="agent-label-title">{agent.title}</span>
+            <span className="agent-label-name">{agent.name}</span>
         </>
     );
 }

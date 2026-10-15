@@ -394,7 +394,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
 
     const { tabs, paneOfTab } = useMemo(() => {
         const paneOfTab = new Map<string, { windowId: string; paneId: string }>();
-        const look = (pane: PaneNode, win: WindowT): Pick<TabDescriptor, "label" | "title" | "icon" | "labelClassName"> => {
+        const look = (pane: PaneNode, win: WindowT): Pick<TabDescriptor, "label" | "title" | "icon" | "note"> => {
             if (pane.kind === "terminal") {
                 const label = terminalLabel(win, pane, termTitles);
                 return {
@@ -411,9 +411,9 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 const agent = agentsById[pane.id];
                 const title = agent?.title ?? pane.title;
                 return {
-                    label: agent?.name ?? title,
+                    label: title,
                     title,
-                    labelClassName: agent?.name ? "agent-name" : undefined,
+                    note: agent?.name,
                     icon: agent ? (
                         <span className={`agent-glyph ${agent.type}`}>
                             <AgentIcon type={agent.type} size={19} />
@@ -464,10 +464,10 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 return [
                     {
                         id: key,
-                        label: agent.name ?? agent.title,
+                        label: agent.title,
                         title: agent.title,
                         active: key === activeKey,
-                        labelClassName: agent.name ? "agent-name" : undefined,
+                        note: agent.name,
                         icon: (
                             <span className={`agent-glyph ${agent.type}`}>
                                 <AgentIcon type={agent.type} size={19} />
