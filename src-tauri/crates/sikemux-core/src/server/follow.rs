@@ -581,6 +581,7 @@ pub(crate) async fn read(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             return Err("That agent is you".into());
         }
         let name = target.name.clone().unwrap_or_else(|| target.agent_id.clone());
+        messages::blind_between(&core, &caller, &target.agent_id, &name)?;
         let mut answer = if core.chats.get(&target.agent_id).is_some() {
             read_chat(&core, &target, cursor.as_deref())?
         } else {
@@ -674,6 +675,7 @@ fn waited(
         if waited.agent_id == caller {
             return Err("You cannot wait on yourself".into());
         }
+        messages::blind_between(core, caller, &waited.agent_id, &waited.name)?;
         if !found.iter().any(|known| known.agent_id == waited.agent_id) {
             found.push(waited);
         }

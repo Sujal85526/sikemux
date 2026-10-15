@@ -142,6 +142,25 @@ fn base_branch(repo: &Path) -> Result<String, String> {
     })
 }
 
+/// Where `project` sits inside the repository at `repo`.
+fn inside(project: &Path, repo: &Path) -> PathBuf {
+    project
+        .canonicalize()
+        .ok()
+        .zip(repo.canonicalize().ok())
+        .and_then(|(project, repo)| project.strip_prefix(&repo).ok().map(Path::to_path_buf))
+        .unwrap_or_default()
+}
+
+/// The folder beside the repository that Auto's checkouts go in.
+fn worktrees_folder(repo: &Path) -> PathBuf {
+    let name = repo
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "project".to_owned());
+    repo.with_file_name(format!("{name}.worktrees"))
+}
+
 /// Cuts a worktree for a card beside the project's checkout, on a branch of
 /// its own from the latest of the base branch.
 pub(super) fn add_worktree(project: &Path, slug: &str) -> Result<Tree, String> {
@@ -155,12 +174,7 @@ pub(super) fn add_worktree(project: &Path, slug: &str) -> Result<Tree, String> {
                 .to_owned()
         })?,
     );
-    let inside = project
-        .canonicalize()
-        .ok()
-        .zip(repo.canonicalize().ok())
-        .and_then(|(project, repo)| project.strip_prefix(&repo).ok().map(Path::to_path_buf))
-        .unwrap_or_default();
+    let inside = inside(project, &repo);
     let base = base_branch(&repo)?;
     let _ = git_in(&repo, &["fetch", "--quiet", "origin", &base], SLOW);
     let remote = format!("origin/{base}");
@@ -170,11 +184,7 @@ pub(super) fn add_worktree(project: &Path, slug: &str) -> Result<Tree, String> {
         base.clone()
     };
     let start_sha = git(&repo, &["rev-parse", &start])?;
-    let name = repo
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "project".to_owned());
-    let folder = repo.with_file_name(format!("{name}.worktrees"));
+    let folder = worktrees_folder(&repo);
     let (branch, path) = (1..=50)
         .map(|index| {
             let slug = if index == 1 {
@@ -296,4 +306,107 @@ pub(super) fn remove_worktree(repo: &Path, tree: &Path, branch: &str, remote: bo
         &["push", "--quiet", "origin", "--delete", branch],
         SLOW,
     );
+}
+
+/// A reviewer's checkout of one commit, on no branch, that it cannot write to.
+pub(super) struct Checkout {
+    pub path: PathBuf,
+    /// Where the reviewer works: the project's folder inside the checkout.
+    pub cwd: PathBuf,
+}
+
+/// Checks `head` out beside the project's checkout, detached, for a reviewer
+/// named by `slug`, and takes away the write permission on all of it.
+pub(super) fn add_checkout(
+    repo: &Path,
+    project: &Path,
+    head: &str,
+    slug: &str,
+) -> Result<Checkout, String> {
+    let folder = worktrees_folder(repo);
+    std::fs::create_dir_all(&folder)
+        .map_err(|error| format!("could not make {}: {error}", folder.display()))?;
+    let path = folder.join(format!("review-{slug}"));
+    let target = path.to_string_lossy().into_owned();
+    git_in(repo, &["worktree", "add", "--detach", &target, head], SLOW)?;
+    set_writable(&path, false);
+    Ok(Checkout {
+        cwd: path.join(inside(project, repo)),
+        path,
+    })
+}
+
+/// Gives a reviewer's checkout its write permission back and takes it away.
+pub(super) fn remove_checkout(repo: &Path, path: &Path) {
+    if !path.exists() {
+        let _ = git(repo, &["worktree", "prune"]);
+        return;
+    }
+    set_writable(path, true);
+    let target = path.to_string_lossy().into_owned();
+    if git(repo, &["worktree", "remove", "--force", &target]).is_err() {
+        if let Err(error) = std::fs::remove_dir_all(path) {
+            eprintln!("sikemux core: Auto left the review checkout {target}: {error}");
+        }
+        let _ = git(repo, &["worktree", "prune"]);
+    }
+}
+
+#[cfg(not(unix))]
+fn set_writable(_path: &Path, _writable: bool) {}
+
+#[cfg(unix)]
+fn set_writable(path: &Path, writable: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return;
+    };
+    if meta.file_type().is_symlink() {
+        return;
+    }
+    let mode = meta.permissions().mode();
+    let mode = if writable {
+        mode | 0o200
+    } else {
+        mode & !0o222
+    };
+    if writable {
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
+    }
+    if meta.is_dir() {
+        for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
+            set_writable(&entry.path(), writable);
+        }
+    }
+    if !writable {
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
+    }
+}
+
+/// What changed from `from` to `to`: a summary of the files, then the
+/// change itself, cut at `max` bytes. Whether it was cut.
+pub(super) fn diff(
+    repo: &Path,
+    from: &str,
+    to: &str,
+    max: usize,
+) -> Result<(String, bool), String> {
+    let range = format!("{from}..{to}");
+    let stat = git(repo, &["diff", "--no-color", "--stat", &range])?;
+    let patch = git_in(repo, &["diff", "--no-color", &range], SLOW)?;
+    let mut text = format!("{stat}\n\n{patch}");
+    let cut = text.len() > max;
+    if cut {
+        let mut end = max;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    Ok((text, cut))
+}
+
+/// Where the branch's own work starts on `base` as it is now.
+pub(super) fn fork_point(repo: &Path, base: &str, head: &str) -> Result<String, String> {
+    git(repo, &["merge-base", &format!("origin/{base}"), head])
 }

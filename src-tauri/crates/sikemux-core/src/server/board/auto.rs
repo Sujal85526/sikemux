@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::review::Review;
-use super::{finish, git, Board, Card, Status};
+use super::{blind, finish, git, Board, Card, Status};
 use crate::launch::providers;
 use crate::protocol::Event;
 use crate::server::connection::blocking;
@@ -55,6 +55,17 @@ impl Default for Statuses {
     }
 }
 
+/// The agent that reviews a card's change before Auto merges it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReviewerChoice {
+    /// The app's launcher it starts with, which must run another CLI than
+    /// the card's builder.
+    pub launcher: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+}
+
 /// How a project's board runs on its own.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -72,6 +83,9 @@ pub(crate) struct Settings {
     /// the card's worktree.
     pub check: Option<String>,
     pub statuses: Statuses,
+    /// Who reviews each change before it merges; none for any signed-in
+    /// agent on another CLI than its builder's.
+    pub reviewer: Option<ReviewerChoice>,
 }
 
 impl Default for Settings {
@@ -85,8 +99,32 @@ impl Default for Settings {
             finish: Finish::Merge,
             check: None,
             statuses: Statuses::default(),
+            reviewer: None,
         }
     }
+}
+
+fn known_provider(provider: Option<String>) -> Result<Option<String>, String> {
+    match provider {
+        Some(id) if providers::find(&id).is_none() => {
+            Err(format!("Sikemux does not know a provider called {id}"))
+        }
+        provider => Ok(provider),
+    }
+}
+
+fn reviewer_choice(value: &Value) -> Result<Option<ReviewerChoice>, String> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let launcher = optional(value, "launcher", MAX_LAUNCHER_CHARS)?
+        .flatten()
+        .ok_or("reviewer.launcher must name the agent that reviews")?;
+    Ok(Some(ReviewerChoice {
+        launcher,
+        provider: known_provider(optional(value, "provider", MAX_LAUNCHER_CHARS)?.flatten())?,
+        model: optional(value, "model", MAX_MODEL_CHARS)?.flatten(),
+    }))
 }
 
 fn optional(value: &Value, key: &str, max: usize) -> Result<Option<Option<String>>, String> {
@@ -117,19 +155,16 @@ impl Settings {
             settings.launcher = launcher;
         }
         if let Some(provider) = optional(params, "provider", MAX_LAUNCHER_CHARS)? {
-            if let Some(id) = provider
-                .as_deref()
-                .filter(|id| providers::find(id).is_none())
-            {
-                return Err(format!("Sikemux does not know a provider called {id}"));
-            }
-            settings.provider = provider;
+            settings.provider = known_provider(provider)?;
         }
         if let Some(model) = optional(params, "model", MAX_MODEL_CHARS)? {
             settings.model = model;
         }
         if let Some(check) = optional(params, "check", MAX_CHECK_BYTES)? {
             settings.check = check;
+        }
+        if let Some(reviewer) = params.get("reviewer") {
+            settings.reviewer = reviewer_choice(reviewer)?;
         }
         match params.get("finish").and_then(Value::as_str) {
             None => {}
@@ -172,6 +207,9 @@ pub(super) enum Stage {
     Shipping,
     /// Its pull request's checks are running.
     Checking,
+    /// Its checks passed, and an agent on another CLI reviews the change
+    /// blind before it merges.
+    Reviewing,
     /// Its agent was asked to fix what failed.
     Fixing,
     Merging,
@@ -249,6 +287,16 @@ pub(super) struct Run {
     pub fixed: bool,
     #[serde(default)]
     pub review: Review,
+    /// The reviewer at work on the change now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer: Option<blind::Reviewer>,
+    /// What the reviewer said, waiting to be acted on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<blind::Verdict>,
+    /// The commit a reviewer approved. A push of any other leaves the change
+    /// unapproved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approved: Option<String>,
 }
 
 impl Run {
@@ -268,6 +316,9 @@ impl Run {
             rebased: false,
             fixed: false,
             review: Review::default(),
+            reviewer: None,
+            verdict: None,
+            approved: None,
         }
     }
 
@@ -427,12 +478,18 @@ fn task(card: &Card, tree: &git::Tree, settings: &Settings, ticket: Option<Strin
     if !card.details.is_empty() {
         text.push_str(&format!("\n\n{}", card.details));
     }
+    if !card.acceptance.is_empty() {
+        text.push_str(&format!(
+            "\n\nAcceptance criteria, which a reviewer checks the change against:\n{}",
+            card.acceptance
+        ));
+    }
     if let Some(ticket) = ticket {
         text.push_str(&format!("\n\nTicket: {ticket}"));
     }
     let landing = match settings.finish {
         Finish::Merge => format!(
-            "waits for its checks to pass and merges it into {}",
+            "waits for its checks to pass, has an agent on another CLI review it, and merges it into {}",
             tree.base
         ),
         Finish::Pr => "leaves it for the person to review and merge".to_owned(),
@@ -536,6 +593,9 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
 /// The turn of one of Auto's agents ended: its work ships, or its card goes
 /// back to the person when the turn did not finish.
 pub(crate) fn turn_ended(core: &Arc<Core>, agent_id: &str, ending: &Ending) {
+    if blind::turn_ended(core, agent_id, ending) {
+        return;
+    }
     let found = {
         let state = core.boards.lock();
         state.boards.iter().find_map(|(project, board)| {

@@ -7,10 +7,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::auto::{Finish, Run, Settings, Stage};
+use super::auto::{Finish, Pull, Run, Settings, Stage};
 use super::codehost::{self, Checks, Feedback};
 use super::review::{self, MAX_ROUNDS};
-use super::{change_card, git, send_notices, By, Card, Changes, Status};
+use super::{blind, change_card, git, send_notices, By, Card, Changes, Status};
 use crate::server::connection::blocking;
 use crate::server::remote::unix_ms;
 use crate::server::wake::sooner;
@@ -60,7 +60,7 @@ pub(super) fn change_run(
     true
 }
 
-fn note(core: &Core, project: &str, id: u64, agent: &str, stage: Stage, note: &str) {
+pub(super) fn note(core: &Core, project: &str, id: u64, agent: &str, stage: Stage, note: &str) {
     change_run(core, project, id, agent, |_, run| {
         run.stage = stage;
         run.note = Some(note.to_owned());
@@ -70,7 +70,10 @@ fn note(core: &Core, project: &str, id: u64, agent: &str, stage: Stage, note: &s
 /// Gives the card back to the person, saying why. A run that never got its
 /// worktree leaves the card open and nobody's, for the person to start again.
 pub(crate) fn hold(core: &Core, project: &str, id: u64, agent: &str, why: String) {
+    let mut reviewer = None;
     change_run(core, project, id, agent, |card, run| {
+        reviewer = run.reviewer.take();
+        run.verdict = None;
         if run.worktree.is_empty() {
             card.owner = None;
             card.owner_name = None;
@@ -80,6 +83,9 @@ pub(crate) fn hold(core: &Core, project: &str, id: u64, agent: &str, why: String
         run.stage = Stage::Held;
         run.note = Some(why);
     });
+    if let Some(reviewer) = reviewer {
+        blind::dismiss_later(core, reviewer);
+    }
 }
 
 /// A run Auto no longer holds, because its card was moved or taken off the
@@ -96,6 +102,7 @@ pub(super) struct Dropped {
 /// Stops the agents of runs Auto no longer holds and clears their worktrees
 /// away, each once no step of it is under way.
 pub(super) fn clear_dropped(core: &Arc<Core>) {
+    blind::clear_dismissed(core);
     let ready: Vec<Dropped> = {
         let mut state = core.boards.lock();
         if state.dropped.is_empty() {
@@ -122,7 +129,12 @@ pub(super) fn clear_dropped(core: &Arc<Core>) {
 }
 
 async fn clear(core: &Arc<Core>, dropped: Dropped) {
-    let Dropped { run, discard, .. } = dropped;
+    let Dropped {
+        mut run, discard, ..
+    } = dropped;
+    if let Some(reviewer) = run.reviewer.take() {
+        blind::dismiss(core, reviewer).await;
+    }
     if core.chats.stop(&run.agent) {
         core.note_agent_gone(&run.agent);
     }
@@ -152,12 +164,12 @@ async fn clear(core: &Arc<Core>, dropped: Dropped) {
 
 /// What a step of a run works from, read once when it starts.
 #[derive(Clone)]
-struct Step {
-    project: String,
-    id: u64,
-    card: Card,
-    run: Run,
-    settings: Settings,
+pub(super) struct Step {
+    pub project: String,
+    pub id: u64,
+    pub card: Card,
+    pub run: Run,
+    pub settings: Settings,
 }
 
 impl Step {
@@ -165,7 +177,7 @@ impl Step {
         PathBuf::from(&self.run.worktree)
     }
 
-    fn agent(&self) -> &str {
+    pub(super) fn agent(&self) -> &str {
         &self.run.agent
     }
 
@@ -177,18 +189,18 @@ impl Step {
             .unwrap_or_default()
     }
 
-    fn name(&self, core: &Core) -> String {
+    pub(super) fn name(&self, core: &Core) -> String {
         core.names
             .name(self.agent())
             .or_else(|| self.card.owner_name.clone())
             .unwrap_or_else(|| "Its agent".to_owned())
     }
 
-    fn hold(&self, core: &Core, why: String) {
+    pub(super) fn hold(&self, core: &Core, why: String) {
         hold(core, &self.project, self.id, self.agent(), why);
     }
 
-    fn note(&self, core: &Core, stage: Stage, text: &str) {
+    pub(super) fn note(&self, core: &Core, stage: Stage, text: &str) {
         note(core, &self.project, self.id, self.agent(), stage, text);
     }
 }
@@ -473,9 +485,14 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
                         REVIEW_EVERY_MS << quiet.copied().unwrap_or(0).min(MAX_QUIET_DOUBLINGS)
                     }
                     Stage::Shipping | Stage::Merging | Stage::Starting => 0,
-                    Stage::Working | Stage::Fixing => {
+                    Stage::Reviewing if run.verdict.is_some() || run.reviewer.is_none() => 0,
+                    Stage::Working | Stage::Fixing | Stage::Reviewing => {
                         let key = (project.clone(), card.id, "gone");
-                        if running.contains(&run.agent) {
+                        let watched = match (&run.reviewer, run.stage) {
+                            (Some(reviewer), Stage::Reviewing) => &reviewer.agent,
+                            _ => &run.agent,
+                        };
+                        if running.contains(watched) {
                             present.push(key);
                         } else {
                             missing.push((key, run.stage));
@@ -523,6 +540,9 @@ pub(super) fn due(core: &Arc<Core>) -> Option<u64> {
             Stage::Review => step(core, project, id, None, |core, step| async move {
                 reviewing(&core, step).await;
             }),
+            Stage::Reviewing => step(core, project, id, None, |core, step| async move {
+                blind::settle(&core, step).await;
+            }),
             Stage::Shipping => ship(core, project, id),
             Stage::Starting => step(core, project, id, None, |core, step| async move {
                 step.hold(
@@ -569,7 +589,7 @@ async fn checking(core: &Arc<Core>, step: Step) {
     let waited = unix_ms().saturating_sub(step.run.checks_since.unwrap_or(0));
     match checks {
         Checks::Running => step.note(core, Stage::Checking, "Its checks are running"),
-        Checks::Passed => merge(core, &step, &pull, &head).await,
+        Checks::Passed => passed(core, &step, &pull, &head).await,
         Checks::Failed(what) => failed(core, &step, &what).await,
         Checks::None if waited < CI_START_WAIT_MS => {
             step.note(core, Stage::Checking, "Waiting for its checks to start");
@@ -580,7 +600,7 @@ async fn checking(core: &Arc<Core>, step: Step) {
                 let cwd = step.tree();
                 let checked = blocking(move || git::check(&cwd, &command).map_err(Into::into)).await;
                 match checked {
-                    Ok((true, _)) => merge(core, &step, &pull, &head).await,
+                    Ok((true, _)) => passed(core, &step, &pull, &head).await,
                     Ok((false, output)) => {
                         failed(core, &step, &format!("The check command failed:\n{output}")).await;
                     }
@@ -594,6 +614,19 @@ async fn checking(core: &Arc<Core>, step: Step) {
             ),
         },
     }
+}
+
+/// The checks passed: the change merges once a reviewer approved this very
+/// commit, and goes to one first otherwise.
+async fn passed(core: &Arc<Core>, step: &Step, pull: &Pull, head: &str) {
+    if step.run.approved.as_deref() == Some(head) {
+        return merge(core, step, pull, head).await;
+    }
+    if let Some(why) = unanswered(core, step) {
+        step.note(core, Stage::Review, &why);
+        return;
+    }
+    blind::begin(core, step, head).await;
 }
 
 /// The checks failed: the agent gets one go at fixing them.
@@ -624,7 +657,7 @@ async fn failed(core: &Arc<Core>, step: &Step, what: &str) {
 }
 
 /// Sends the agent back to work on its card with `text`.
-async fn ask(
+pub(super) async fn ask(
     core: &Arc<Core>,
     step: &Step,
     text: String,
@@ -661,7 +694,7 @@ fn unanswered(core: &Core, step: &Step) -> Option<String> {
     ))
 }
 
-async fn merge(core: &Arc<Core>, step: &Step, pull: &super::auto::Pull, head: &str) {
+pub(super) async fn merge(core: &Arc<Core>, step: &Step, pull: &Pull, head: &str) {
     if let Some(why) = unanswered(core, step) {
         step.note(core, Stage::Review, &why);
         return;

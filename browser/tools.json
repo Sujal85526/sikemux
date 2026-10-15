@@ -1716,6 +1716,48 @@
       ]
     },
     {
+      "name": "review_verdict",
+      "row": {"verb": "review", "kind": "think", "icon": "eye", "target": ["the change"]},
+      "method": "review.verdict",
+      "offered": "reviewer",
+      "description": "Give your verdict on the change Auto asked you to review: approve it to merge, or say what must change.",
+      "properties": {
+        "approve": {
+          "type": "boolean"
+        },
+        "findings": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "file": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "text"
+            ]
+          }
+        }
+      },
+      "required": [
+        "approve"
+      ]
+    },
+    {
       "name": "git_commit",
       "row": {"verb": "commit", "kind": "edit", "icon": "pull-request", "target": ["{message}"]},
       "method": "git.commit",

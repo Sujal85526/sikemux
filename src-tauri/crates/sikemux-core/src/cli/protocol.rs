@@ -222,6 +222,11 @@ pub fn is_browser_method(method: &str) -> bool {
     BROWSER_METHODS.contains(&method)
 }
 
+/// Set on a reviewer Auto starts, and on its tools server, to `reviewer`, which
+/// offers it the tools only a reviewer gets.
+pub const TOOLS_OFFER_ENV: &str = "SIKEMUX_TOOLS_OFFER";
+pub const REVIEWER_OFFER: &str = "reviewer";
+
 /// The tools server asks this as it starts: whether its agent gets the simulator tools.
 pub const SIM_OFFERED_METHOD: &str = "sim.offered";
 /// The tools server sends this when the agent cancels a simulator call it is waiting on.

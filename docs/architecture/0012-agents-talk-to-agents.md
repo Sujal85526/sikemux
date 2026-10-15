@@ -35,7 +35,8 @@ MCP server every agent is launched with.
   trusted.
 - **Messages are text, labelled as coming from an agent.** A message can never answer a
   permission prompt or change configuration. Any agent may message any other, across
-  projects.
+  projects, except Auto's reviewer: it is the one agent others cannot message, read or
+  wait on, and it cannot reach them.
 - **Delivery steers first.** A busy agent that can steer reads the message at its next
   tool call; an idle one gets it as a new turn. Only an agent that can do neither, such as
   a terminal agent mid-turn, has it queued in the core, up to ten, and delivered when its
@@ -49,6 +50,14 @@ MCP server every agent is launched with.
   routes into, sends a worker's question to its lead; the lead answers or passes it to the
   person. A worker that is not blocked goes ahead on a stated assumption, and a card with an
   open question or an unseen assumption does not merge.
+- **Auto's merge needs a blind review beside the questions gate.** Once a card's checks pass,
+  Auto starts a reviewer of its own on another CLI than the builder's, with no lead and no
+  session to resume. It reads only the card, its acceptance criteria, which only the person
+  writes, and the diff from the run's start to the pushed commit, in a read-only checkout of
+  that commit. Its approval is kept against that commit, so any later push needs a new one.
+  Findings go back to the builder as review comments do, and each round gets a fresh
+  reviewer. With no signed-in agent on another CLI, or no verdict, the card waits for the
+  person.
 - **Work is tracked on one board per project.** Cards have a parent and dependencies and no
   types. Claiming is a single step in the core. Only the person moves a Jira or Linear
   ticket onto the board, and the board's automatic pickup starts agents only for cards the
@@ -63,6 +72,8 @@ MCP server every agent is launched with.
 - The rail lists workers flat, right after their lead, joined by the lead's tree line.
 - Phones reach the same tools as `Call` methods (ADR 0010), never new wire requests.
 - A lead that is compacted or closed does not lose the plan: it lives on the board.
+- A reviewer and its checkout go when its review ends, when its card leaves Auto, or, after a
+  restart that lost it, when Auto starts the review again on the same commit.
 
 ## Alternatives considered
 
@@ -74,5 +85,7 @@ MCP server every agent is launched with.
   model for agents that are all local processes the core already drives.
 - **Holding messages from other projects for approval.** Rejected: every agent is the
   person's own and can already reach the other project's files.
+- **Letting the builder pick or brief its reviewer.** Rejected: a reviewer that shares the
+  builder's CLI, context or account of what it meant to do shares its blind spots.
 - **Nesting workers under their lead in the rail.** Rejected: rows already hang their own
   project, branch and pull request tree, and a tree inside a tree truncates titles.

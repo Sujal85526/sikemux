@@ -17,6 +17,7 @@ use serde_json::Value;
 use crate::agent_accounts::status::{self, AgentStatus};
 use crate::agent_accounts::Book;
 use crate::agent_catalog::AGENTS;
+use crate::cli::protocol::{REVIEWER_OFFER, TOOLS_OFFER_ENV};
 use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
 use crate::launch::{skills, AgentSpec};
 use crate::protocol::{
@@ -848,6 +849,48 @@ impl Workspaces {
         Ok((launch, chosen.id))
     }
 
+    /// The CLI the app's launcher `id` runs, such as `claude`.
+    pub(crate) fn launcher_cli(&self, id: &str) -> Option<String> {
+        self.lock()
+            .launchers
+            .iter()
+            .find(|launcher| launcher.id == id)
+            .map(|launcher| launcher.agent.provider.clone())
+    }
+
+    /// The launcher a reviewer starts with: `chosen`, else the first signed
+    /// in that runs another CLI than `builder`. None when there is none.
+    pub(crate) fn reviewer_launcher(
+        &self,
+        chosen: Option<&str>,
+        builder: Option<&str>,
+    ) -> Result<Option<String>, String> {
+        let published = self.lock();
+        let other = |launcher: &&Launcher| builder != Some(launcher.agent.provider.as_str());
+        let Some(id) = chosen else {
+            return Ok(published
+                .launchers
+                .iter()
+                .filter(other)
+                .find(|launcher| launcher.status.as_deref() == Some("ready"))
+                .map(|launcher| launcher.id.clone()));
+        };
+        let launcher = published
+            .launchers
+            .iter()
+            .find(|launcher| launcher.id == id)
+            .ok_or_else(|| {
+                format!("Sikemux can no longer start the reviewer {id}; pick another in the board's Auto settings")
+            })?;
+        if !other(&launcher) {
+            return Err(format!(
+                "The reviewer chosen in Auto's settings, {}, runs the same CLI as the card's agent; pick one on another",
+                launcher.label
+            ));
+        }
+        Ok(Some(launcher.id.clone()))
+    }
+
     /// Keeps how the agent's chat runs as it stops, so a device can wake it
     /// when the app is not there to.
     pub(crate) fn note_stopping(&self, chat: &chat::Chat) {
@@ -895,12 +938,25 @@ impl Workspaces {
 
 /// Gives `launch` to `agent_id`, with the secret and tools that are its own.
 pub(crate) fn own_launch(core: &Core, launch: &mut ChatLaunch, agent_id: &str) {
+    own_launch_offering(core, launch, agent_id, None);
+}
+
+/// [`own_launch`] for a reviewer Auto starts, which also gets the tools only
+/// a reviewer has.
+pub(crate) fn own_review_launch(core: &Core, launch: &mut ChatLaunch, agent_id: &str) {
+    own_launch_offering(core, launch, agent_id, Some(REVIEWER_OFFER));
+}
+
+fn own_launch_offering(core: &Core, launch: &mut ChatLaunch, agent_id: &str, offer: Option<&str>) {
     let secret = core.agent_key.secret(agent_id);
     launch.agent_id = agent_id.to_owned();
     launch.mcp_servers = cli_endpoint(core)
-        .and_then(|endpoint| tools_server(agent_id, &secret, &endpoint))
+        .and_then(|endpoint| tools_server(agent_id, &secret, &endpoint, offer))
         .into_iter()
         .collect();
+    if let Some(offer) = offer {
+        launch.env.insert(TOOLS_OFFER_ENV.into(), offer.to_owned());
+    }
     launch
         .env
         .insert("SIKEMUX_AGENT_ID".into(), agent_id.to_owned());
@@ -909,7 +965,12 @@ pub(crate) fn own_launch(core: &Core, launch: &mut ChatLaunch, agent_id: &str) {
 
 /// The agents' own tools, served by this binary run as an MCP server, the
 /// same way the app wires them into a chat it starts.
-fn tools_server(agent_id: &str, secret: &str, endpoint: &Path) -> Option<Value> {
+fn tools_server(
+    agent_id: &str,
+    secret: &str,
+    endpoint: &Path,
+    offer: Option<&str>,
+) -> Option<Value> {
     let executable = std::env::current_exe().ok()?;
     let mut server = McpServerStdio::new("sikemux-tools", executable);
     server.args = vec!["--tools-mcp".into()];
@@ -918,6 +979,9 @@ fn tools_server(agent_id: &str, secret: &str, endpoint: &Path) -> Option<Value> 
         EnvVariable::new("SIKEMUX_AGENT_SECRET", secret),
         EnvVariable::new("SIKEMUX_CLI_ENDPOINT", endpoint.to_string_lossy()),
     ];
+    server
+        .env
+        .extend(offer.map(|offer| EnvVariable::new(TOOLS_OFFER_ENV, offer)));
     serde_json::to_value(McpServer::Stdio(server)).ok()
 }
 

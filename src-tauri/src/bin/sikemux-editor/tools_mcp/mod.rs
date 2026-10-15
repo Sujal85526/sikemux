@@ -21,7 +21,8 @@ use serde_json::{json, Value};
 
 use manifest::{Manifest, Tool};
 use sikemux_core::cli::protocol::{
-    PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
+    PLUGINS_CHANGED_METHOD, REVIEWER_OFFER, SIM_CANCEL_METHOD, SIM_OFFERED_METHOD,
+    TOOLS_MANIFEST_METHOD, TOOLS_OFFER_ENV,
 };
 
 const LATEST_PROTOCOL_VERSION: &str = "2025-11-25";
@@ -47,7 +48,8 @@ pub fn run() -> i32 {
     };
     watch_parent();
     let simulator = simulator_offered(&agent_id);
-    serve(Arc::new(Offer::new(simulator)), agent_id);
+    let reviewer = std::env::var(TOOLS_OFFER_ENV).is_ok_and(|offer| offer == REVIEWER_OFFER);
+    serve(Arc::new(Offer::new(simulator, reviewer)), agent_id);
     0
 }
 
@@ -105,6 +107,7 @@ fn watch_parent() {}
 /// out a restart and asks again.
 struct Offer {
     simulator: bool,
+    reviewer: bool,
     built: Arc<Manifest>,
     served: Mutex<Option<Arc<Manifest>>>,
     plugins: Mutex<Option<Arc<Vec<Tool>>>>,
@@ -113,10 +116,11 @@ struct Offer {
 }
 
 impl Offer {
-    fn new(simulator: bool) -> Self {
+    fn new(simulator: bool, reviewer: bool) -> Self {
         Self {
             simulator,
-            built: Arc::new(Manifest::load().offering(simulator)),
+            reviewer,
+            built: Arc::new(Manifest::load().offering(simulator, reviewer)),
             served: Mutex::default(),
             plugins: Mutex::default(),
             given: Mutex::default(),
@@ -127,6 +131,7 @@ impl Offer {
     fn with(manifest: Manifest, plugins: Option<Vec<Tool>>) -> Self {
         Self {
             simulator: true,
+            reviewer: false,
             built: Arc::new(Manifest::load()),
             served: Mutex::new(Some(Arc::new(manifest))),
             plugins: Mutex::new(plugins.map(Arc::new)),
@@ -148,7 +153,7 @@ impl Offer {
 
     fn ask_manifest(&self, relay: &Relay<'_>) -> Option<Manifest> {
         let answer = relay(TOOLS_MANIFEST_METHOD, &json!({})).ok()?;
-        Some(Manifest::served(&answer)?.offering(self.simulator))
+        Some(Manifest::served(&answer)?.offering(self.simulator, self.reviewer))
     }
 
     fn ask_plugins(&self, relay: &Relay<'_>) -> Option<Vec<Tool>> {

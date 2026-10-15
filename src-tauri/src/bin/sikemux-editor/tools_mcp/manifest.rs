@@ -4,6 +4,7 @@
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_core::cli::manifest::{GUIDE, TOOLS};
+use sikemux_core::cli::protocol::REVIEWER_OFFER;
 
 /// A tool from browser/tools.json, or one a plugin offers, which the app
 /// describes in the same shape.
@@ -70,11 +71,13 @@ impl Manifest {
     }
 
     /// Leaves out the simulator tools unless the app said this Mac can run
-    /// them, and tools offered on a condition this binary does not know.
-    pub fn offering(mut self, simulator: bool) -> Self {
+    /// them, the reviewer's tools unless the agent is one Auto started to
+    /// review, and tools offered on a condition this binary does not know.
+    pub fn offering(mut self, simulator: bool, reviewer: bool) -> Self {
         self.tools.retain(|tool| match tool.offered.as_deref() {
             None => true,
             Some("simulator") => simulator,
+            Some(REVIEWER_OFFER) => reviewer,
             Some(_) => false,
         });
         self

@@ -32,6 +32,7 @@ const FILE: &str = "agent-mailbox.json";
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_WAITING: usize = 10;
 const BOARD: &str = "board";
+const AUTO: &str = "auto";
 /// The same text to the same agent again within this long is dropped.
 const REPEAT_WINDOW_MS: u64 = 2 * 60 * 1000;
 /// Two agents answering each other forever stop here.
@@ -499,17 +500,17 @@ pub(crate) async fn hand_task(
     task: String,
 ) -> Result<(), String> {
     let mailbox = &core.harness.mailbox;
-    let origin = core
+    let from = core
         .names
         .get(agent_id)
         .and_then(|named| named.parent)
-        .map(|lead| Origin {
-            from: lead,
-            kind: Kind::Message,
-        });
+        .unwrap_or_else(|| AUTO.to_owned());
     let queued = Queued {
         text: task.clone(),
-        origin,
+        origin: Some(Origin {
+            from,
+            kind: Kind::Message,
+        }),
     };
     if mailbox.has_waiting(agent_id) {
         log(core, agent_id, [&queued], Outcome::Waiting);
@@ -747,7 +748,9 @@ pub(crate) async fn list(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
                     "title": agent.title,
                     "status": status_word(agent.standing(&core)),
                     "lastActive": since(agent.active_at, now),
-                    "canMessage": agent.reach != Reach::Stopped && agent.agent_id != caller,
+                    "canMessage": agent.reach != Reach::Stopped
+                        && agent.agent_id != caller
+                        && blind_between(&core, &caller, &agent.agent_id, "").is_ok(),
                 });
                 let fields = row.as_object_mut().expect("a row is an object");
                 if let Some(parent) = &agent.parent {
@@ -857,6 +860,18 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             if target.agent_id == from {
                 return Err("That agent is you".into());
             }
+            let name = target.name.as_deref().unwrap_or(&target.agent_id);
+            if let Err(why) = blind_between(&core, &from, &target.agent_id, name) {
+                let refused = Queued {
+                    text: String::new(),
+                    origin: Some(Origin {
+                        from: from.clone(),
+                        kind: Kind::Message,
+                    }),
+                };
+                log(&core, &target.agent_id, [&refused], Outcome::Refused);
+                return Err(why.into());
+            }
             let mut letter = letter_from(&agents, Kind::Message, from, text, None);
             if let Some(id) = &answers {
                 let name = target.name.as_deref().unwrap_or(&target.agent_id);
@@ -884,6 +899,25 @@ pub(crate) async fn send(core: &Arc<Core>, request: &HarnessRequest) -> Result<V
             .lead_answered(&from, &target.agent_id, &id);
     }
     Ok(sent)
+}
+
+/// Refuses any contact between a reviewer Auto started blind and another
+/// agent, either way.
+pub(crate) fn blind_between(
+    core: &Core,
+    from: &str,
+    to: &str,
+    to_name: &str,
+) -> Result<(), String> {
+    if core.names.is_blind(from) {
+        return Err("You review a card blind for Auto, so you may not reach other agents; ask the person with ask if you must".into());
+    }
+    if core.names.is_blind(to) {
+        return Err(format!(
+            "{to_name} reviews a card blind for Auto, so no agent may reach it"
+        ));
+    }
+    Ok(())
 }
 
 /// Puts the question `text` from one agent to its lead, with `note` in
@@ -985,7 +1019,7 @@ const AUTO_NOTE: &str = "Sent by Sikemux's Auto, which runs this project's board
 fn auto_letter(text: String) -> Letter {
     Letter {
         kind: Kind::Message,
-        from_id: "auto".to_owned(),
+        from_id: AUTO.to_owned(),
         from_name: "Auto".to_owned(),
         cli: "sikemux".to_owned(),
         text,

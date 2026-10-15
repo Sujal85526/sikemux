@@ -1057,8 +1057,9 @@ you and Done, one band for each lead's team.
 A card has a `title`, `details`, a `status` (open, in progress or done), the
 agent that owns it, the card it sits under (`parent`), the cards it waits on
 (`dependsOn`) and a `result` note. Cards are numbered within the project,
-such as `3`. The person can put a Jira or Linear ticket on the board as a card;
-you cannot attach one.
+such as `3`. A card may also carry `acceptance` criteria, which only the person
+writes; you read them in `board_list` but cannot set or change them. The person
+can put a Jira or Linear ticket on the board as a card; you cannot attach one.
 
 ### Reading the board
 
@@ -1114,6 +1115,25 @@ once none of them is still working, so a turn that ends while they work does
 not ship half the change. Marking such a card done with
 `board_update` keeps it in progress until it lands. If its checks fail, a
 message from `Auto` asks you once to fix them.
+
+Once the checks pass, and before it merges, Auto has an agent on another CLI
+review the change blind: it reads only the card, its acceptance criteria and
+the diff, in a read-only checkout of the pushed commit. Only its approval of
+that very commit lets the card merge; anything pushed after needs a new one. If
+it asks for changes, a message from `Auto` lists its findings: fix them and
+commit, and a fresh reviewer looks at the new change, for a few rounds before
+the card goes back to the person. You cannot message, read or wait on the
+reviewer, and it cannot reach you.
+
+### When Auto started you to review
+
+Your task comes as a message from `Auto` holding the card and the diff, and
+your folder is a read-only checkout of the change. Judge it from those alone:
+the board, other agents and starting agents are closed to you, and an `ask`
+goes to the person. Give your verdict once with `review_verdict`: `approve:
+true` to let it merge, or `approve: false` with `findings`, each a `text` and,
+where it applies, a `file` and `line`. Then end your turn. A turn that ends
+without a verdict, and waits on no answer, sends the card back to the person.
 
 ## shell: The same operations from a shell
 

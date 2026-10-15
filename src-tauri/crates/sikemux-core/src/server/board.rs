@@ -26,6 +26,7 @@ use super::wake::{sooner, Wake};
 use super::Core;
 
 mod auto;
+mod blind;
 mod codehost;
 mod finish;
 mod git;
@@ -50,6 +51,8 @@ const IDLE_BEFORE_OFFER_MS: u64 = 5_000;
 const MAX_OFFERED: usize = 6;
 const MAX_RECORDINGS: usize = 8;
 const WINDOW_ANSWER_WAIT: Duration = Duration::from_secs(10);
+const ONLY_PERSON_ACCEPTS: &str =
+    "Only the person writes a card's acceptance criteria; leave out acceptance";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -105,6 +108,9 @@ struct Card {
     title: String,
     #[serde(default)]
     details: String,
+    /// What the work must do to count as done, written only by the person.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    acceptance: String,
     status: Status,
     /// The agent working it, or that did.
     #[serde(default)]
@@ -276,6 +282,8 @@ struct State {
     reship: HashSet<(String, u64)>,
     /// Runs Auto no longer holds, whose agents and worktrees are to go.
     dropped: Vec<finish::Dropped>,
+    /// Reviewers whose review ended, whose agents and checkouts are to go.
+    dismissed: Vec<blind::Reviewer>,
     /// Cards whose ticket is being updated.
     syncing: HashSet<(String, u64)>,
     /// When each card's pull request or ticket was last asked about.
@@ -453,6 +461,7 @@ fn optional_text(params: &Value, key: &str) -> Result<Option<String>, String> {
 struct Adding {
     title: String,
     details: String,
+    acceptance: String,
     parent: Option<u64>,
     depends_on: Vec<u64>,
     ticket: Option<Ticket>,
@@ -467,6 +476,7 @@ impl Adding {
         Ok(Self {
             title,
             details: optional_text(params, "details")?.unwrap_or_default(),
+            acceptance: optional_text(params, "acceptance")?.unwrap_or_default(),
             parent: optional_id(params.get("parent"), "parent")?.flatten(),
             depends_on: match params.get("dependsOn") {
                 None | Some(Value::Null) => Vec::new(),
@@ -482,6 +492,7 @@ impl Adding {
 struct Changes {
     title: Option<String>,
     details: Option<String>,
+    acceptance: Option<String>,
     status: Option<Status>,
     result: Option<String>,
     depends_on: Option<Vec<u64>>,
@@ -497,6 +508,7 @@ impl Changes {
                 Some(_) => return Err("title must be text".into()),
             },
             details: optional_text(params, "details")?,
+            acceptance: optional_text(params, "acceptance")?,
             status: match params.get("status") {
                 None | Some(Value::Null) => None,
                 Some(Value::String(status)) => Some(Status::parse(status)?),
@@ -514,6 +526,7 @@ impl Changes {
     fn is_empty(&self) -> bool {
         self.title.is_none()
             && self.details.is_none()
+            && self.acceptance.is_none()
             && self.status.is_none()
             && self.result.is_none()
             && self.depends_on.is_none()
@@ -658,6 +671,7 @@ fn app_view(core: &Core, board: &Board, card: &Card) -> Value {
         "id": card.id,
         "title": card.title,
         "details": card.details,
+        "acceptance": card.acceptance,
         "status": card.status,
         "owner": card.owner,
         "ownerName": card.owner_name(core),
@@ -708,6 +722,9 @@ fn agent_view(core: &Core, board: &Board, card: &Card, full: bool) -> Value {
     let fields = view.as_object_mut().expect("a card is an object");
     if !card.details.is_empty() {
         fields.insert("details".into(), text(&card.details).into());
+    }
+    if !card.acceptance.is_empty() {
+        fields.insert("acceptance".into(), text(&card.acceptance).into());
     }
     if let Some(parent) = card.parent {
         fields.insert("parent".into(), parent.into());
@@ -787,6 +804,9 @@ fn add_card(
             ));
         }
     }
+    if matches!(by, By::Agent(_)) && !adding.acceptance.is_empty() {
+        return Err(ONLY_PERSON_ACCEPTS.into());
+    }
     board.check_parent(None, adding.parent)?;
     board.check_depends(None, &adding.depends_on)?;
     let now = unix_ms();
@@ -800,6 +820,7 @@ fn add_card(
         id,
         title: adding.title,
         details: adding.details,
+        acceptance: adding.acceptance,
         status: Status::Open,
         owner: None,
         owner_name: None,
@@ -894,6 +915,9 @@ fn change_card(
     if changes.is_empty() {
         return Err("Say what changes: title, details, status, result, dependsOn or parent".into());
     }
+    if matches!(by, By::Agent(_)) && changes.acceptance.is_some() {
+        return Err(ONLY_PERSON_ACCEPTS.into());
+    }
     let boards = &core.boards;
     let mut state = boards.lock();
     let board = state
@@ -934,6 +958,9 @@ fn change_card(
     }
     if let Some(details) = changes.details {
         card.details = details;
+    }
+    if let Some(acceptance) = changes.acceptance {
+        card.acceptance = acceptance;
     }
     if let Some(result) = changes.result {
         card.result = (!result.is_empty()).then_some(result);
@@ -1361,10 +1388,24 @@ impl Card {
     }
 }
 
+/// The card the agent works, or the one it reviews for Auto.
 pub(crate) fn agent_card(core: &Core, agent_id: &str) -> Option<Summary> {
     let mut state = core.boards.lock();
-    let (project, card) = held_card(&mut state, agent_id)?;
+    if let Some((project, card)) = held_card(&mut state, agent_id) {
+        return Some(card.summary(core, project));
+    }
+    let (project, card) = blind::reviewed_card(&state, agent_id)?;
     Some(card.summary(core, project))
+}
+
+/// A reviewer Auto started gives its verdict on the change it reviews.
+pub(crate) async fn verdict(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
+    let agent = caller(request, "review_verdict")?;
+    let params = request.params.clone();
+    let core = core.clone();
+    blocking(move || blind::record(&core, &agent, &params).map_err(Into::into))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// The cards Auto handed back to the person, and those done since
@@ -1476,13 +1517,28 @@ pub(crate) async fn person_settings(core: &Arc<Core>, params: Value) -> Result<V
     let core = core.clone();
     blocking(move || {
         let project = project_param(&core, &params)?;
+        let current = {
+            let state = core.boards.lock();
+            state
+                .boards
+                .get(&project)
+                .map(|board| board.settings.clone())
+                .unwrap_or_default()
+        };
+        let settings = current.changed(&params)?;
+        if let (Some(builder), Some(reviewer)) = (&settings.launcher, &settings.reviewer) {
+            let cli = |id: &str| core.workspaces.launcher_cli(id);
+            if cli(builder).is_some() && cli(builder) == cli(&reviewer.launcher) {
+                return Err("The reviewer must run another CLI than Auto's agents, so it does not share their blind spots".into());
+            }
+        }
         {
             let mut state = core.boards.lock();
             let board = state
                 .boards
                 .entry(project.clone())
                 .or_insert_with(|| Board::empty(&project));
-            board.settings = board.settings.changed(&params)?;
+            board.settings = settings;
             core.boards.save(&mut state, &project);
         }
         Ok(project_view(&core, &project))

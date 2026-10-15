@@ -129,7 +129,7 @@ fn every_served_tool_comes_from_the_manifest() {
 
 #[test]
 fn schemas_stay_lean_so_prose_lives_in_the_guide() {
-    let served = Manifest::load().offering(false).declarations();
+    let served = Manifest::load().offering(false, false).declarations();
     let mut prose = 0;
     for tool in &served {
         let description = field(tool, "description");
@@ -157,25 +157,25 @@ fn the_simulator_tools_are_listed_only_where_they_work_and_stay_within_budget() 
             .map(|tool| field(tool, "name").to_owned())
             .collect()
     };
-    let everywhere = names(Manifest::load().offering(false));
-    let with_xcode = names(Manifest::load().offering(true));
+    let everywhere = names(Manifest::load().offering(false, false));
+    let with_xcode = names(Manifest::load().offering(true, false));
     assert!(everywhere.iter().all(|name| !name.starts_with("sim_")));
     assert!(with_xcode.iter().any(|name| name == "sim_attach"));
     assert!(!Manifest::load()
-        .offering(false)
+        .offering(false, false)
         .instructions()
         .contains("sim_"));
     assert!(Manifest::load()
-        .offering(true)
+        .offering(true, false)
         .instructions()
         .contains("sim_attach"));
     assert!(Manifest::load()
-        .offering(true)
+        .offering(true, false)
         .instructions()
         .contains("live on your desk"));
 
     let simulator: Vec<Value> = Manifest::load()
-        .offering(true)
+        .offering(true, false)
         .declarations()
         .into_iter()
         .filter(|tool| field(tool, "name").starts_with("sim_"))

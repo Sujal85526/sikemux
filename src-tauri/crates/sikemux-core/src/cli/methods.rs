@@ -64,6 +64,7 @@ pub const HARNESS_METHODS: &[&str] = &[
     "board.list",
     "board.claim",
     "board.update",
+    "review.verdict",
     "git.commit",
     "skills.manage",
     "app.console",

@@ -38,6 +38,10 @@ struct Entry {
     /// started it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     quiet: bool,
+    /// A reviewer Auto started, which no agent may reach and which may reach
+    /// none.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    blind: bool,
     #[serde(default)]
     provider: Option<String>,
     /// The provider's own session.
@@ -224,6 +228,7 @@ impl Names {
             project,
             parent: Some(worker.lead.to_owned()),
             quiet: !worker.reports,
+            blind: false,
             provider: Some(worker.provider.to_owned()),
             session_id: worker.session.map(str::to_owned),
             at: unix_ms(),
@@ -241,6 +246,21 @@ impl Names {
         if book.remove(|entry| entry.agent_id == agent_id) {
             self.save(&book);
         }
+    }
+
+    pub(crate) fn make_blind(&self, agent_id: &str) {
+        let mut book = self.lock();
+        if let Some(entry) = book.entry_mut(agent_id).filter(|entry| !entry.blind) {
+            entry.blind = true;
+            self.save(&book);
+        }
+    }
+
+    pub(crate) fn is_blind(&self, agent_id: &str) -> bool {
+        self.lock()
+            .agents
+            .iter()
+            .any(|entry| entry.agent_id == agent_id && entry.blind)
     }
 
     /// The agent that hears how the agent's turns end, if any.
@@ -497,6 +517,7 @@ impl Book {
             project,
             parent: None,
             quiet: false,
+            blind: false,
             provider: provider.map(str::to_owned),
             session_id: resume_id.map(str::to_owned),
             at: unix_ms(),
