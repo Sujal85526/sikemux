@@ -178,7 +178,7 @@
         "terminalBypass": true,
         "auto": false,
         "commitModels": [],
-        "efforts": ["low", "medium", "high", "xhigh", "max"],
+        "efforts": [],
         "install": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
         "login": null,
         "chat": "acp"

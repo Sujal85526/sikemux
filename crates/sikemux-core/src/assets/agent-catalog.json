@@ -378,7 +378,7 @@
             "usage": false,
             "freeModels": false,
             "deletableChats": false,
-            "efforts": ["low", "medium", "high", "xhigh", "max"],
+            "efforts": [],
             "install": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
             "login": null,
             "update": ["update"],
@@ -392,7 +392,7 @@
                 "normal": ["--settings", "{\"modelProvider\":\"gemini\"}", "--mode", "accept-edits"],
                 "bypass": ["--settings", "{\"modelProvider\":\"gemini\"}", "--dangerously-skip-permissions"],
                 "auto": null,
-                "effort": ["--effort", "{}"],
+                "effort": null,
                 "resume": {
                     "flag": "--conversation"
                 },
