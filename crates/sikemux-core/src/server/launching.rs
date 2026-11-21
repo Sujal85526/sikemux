@@ -88,11 +88,27 @@ pub(crate) fn clear_temp(core: &Core, agent_id: &str) {
 
 /// Gives a terminal agent its tools, its account and the connected model providers, and
 /// answers with what keeps its token for them good. A launch that cannot be told about the
-/// tools still runs.
+/// tools still runs; one the agent cannot sign in with as Sikemux gave it is refused.
 pub(crate) async fn terminal_agent(
     core: &Arc<Core>,
     spawn: &mut TerminalSpawn,
-) -> Option<ModelGrant> {
+) -> CoreResult<Option<ModelGrant>> {
+    let grant = give_terminal_agent(core, spawn).await;
+    let agent = spawn
+        .context
+        .as_ref()
+        .and_then(|context| context.agent_type.as_deref())
+        .and_then(AgentKind::from_name);
+    if let (Some(agent), Some(_)) = (agent, &spawn.direct_command) {
+        let env: BTreeMap<String, String> = spawn.env.clone().into_iter().collect();
+        if let Some(Err(refused)) = agent.ops().chat_sign_in(&env) {
+            return Err(refused.into());
+        }
+    }
+    Ok(grant)
+}
+
+async fn give_terminal_agent(core: &Arc<Core>, spawn: &mut TerminalSpawn) -> Option<ModelGrant> {
     let (Some(command), Some(context)) = (spawn.direct_command.as_mut(), spawn.context.as_ref())
     else {
         return None;
@@ -919,7 +935,7 @@ pub(crate) async fn spawn(
     let mut model_grant = None;
     if let SpawnTarget::Terminal(spawn) = target.as_mut() {
         core.spares().note_size(spawn.cols, spawn.rows);
-        model_grant = terminal_agent(&core, spawn).await;
+        model_grant = terminal_agent(&core, spawn).await?;
     }
     blocking(move || {
         let mut prepared = match *target {
