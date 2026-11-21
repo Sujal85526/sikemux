@@ -176,7 +176,7 @@ fn client() -> Result<&'static Client, String> {
 
 fn check_failure(label: &str, status: StatusCode) -> Option<String> {
     match status {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+        StatusCode::BAD_REQUEST | StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
             Some(format!("{label} did not accept that key"))
         }
         status if status.is_success() => None,
