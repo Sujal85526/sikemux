@@ -466,13 +466,13 @@ ${agents.map((agent) => `            Self::${pascal(agent.type)} => ${JSON.strin
 
 await emit(
   bundledPath,
-  `// ${banner}
+  rustfmt(`// ${banner}
 use super::AgentKind;
 
 pub(super) const BUNDLED_MANIFESTS: &[(AgentKind, &str)] = &[
 ${agents.map((agent) => `    (AgentKind::${pascal(agent.type)}, include_str!("manifests/${agent.type}.json")),`).join("\n")}
 ];
-`,
+`),
 );
 
 await emit(
