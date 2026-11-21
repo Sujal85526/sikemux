@@ -607,7 +607,23 @@ impl Backend for Acp {
             .map_err(failed)?;
         let command =
             crate::agent_catalog::agent(&launch.provider).map_or("", |entry| entry.command);
-        let sign_in = crate::acp::sign_in::methods(&initialized, command);
+        let fixed_sign_in = crate::agent_catalog::AgentKind::from_name(&launch.provider)
+            .and_then(|agent| agent.ops().chat_sign_in(&launch.env));
+        let sign_in = match fixed_sign_in {
+            Some(method) => {
+                let method = method.map_err(failed)?;
+                driver
+                    .call(
+                        AGENT_METHOD_NAMES.authenticate,
+                        json!({ "methodId": method }),
+                        None,
+                    )
+                    .await
+                    .map_err(failed)?;
+                Vec::new()
+            }
+            None => crate::acp::sign_in::methods(&initialized, command),
+        };
         let signs_in = !sign_in.is_empty();
         let initialized: InitializeResponse =
             serde_json::from_value(initialized).map_err(|error| failed(error.to_string()))?;
