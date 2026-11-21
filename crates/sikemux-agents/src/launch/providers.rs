@@ -344,7 +344,8 @@ impl Custom {
 pub struct KeySpec {
     /// Every name an agent looks for this key under.
     pub env: Vec<String>,
-    /// Answers 401 or 403 to a key the provider does not know.
+    /// Answers 401 or 403 to a key the provider does not know. Google answers 400, saying
+    /// to pass a valid API key.
     pub check: String,
 }
 

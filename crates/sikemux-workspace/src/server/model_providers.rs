@@ -176,7 +176,7 @@ fn client() -> Result<&'static Client, String> {
 
 fn check_failure(label: &str, status: StatusCode) -> Option<String> {
     match status {
-        StatusCode::BAD_REQUEST | StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
             Some(format!("{label} did not accept that key"))
         }
         status if status.is_success() => None,
@@ -197,7 +197,14 @@ async fn check_key(provider: &Provider, key: &str) -> CoreResult<()> {
         .send()
         .await
         .map_err(|_| format!("Could not reach {} to check the key", provider.label))?;
-    match check_failure(&provider.label, response.status()) {
+    let status = response.status();
+    if status == StatusCode::BAD_REQUEST && provider.gemini.is_some() {
+        let said = response.text().await.unwrap_or_default();
+        if said.contains("valid API key") {
+            return Err(format!("{} did not accept that key", provider.label).into());
+        }
+    }
+    match check_failure(&provider.label, status) {
         Some(failure) => Err(failure.into()),
         None => Ok(()),
     }
