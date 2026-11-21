@@ -65,7 +65,7 @@
                 "driver": "claude"
             },
             "providers": "routed",
-            "routed": { "api": "anthropic", "rank": 2 },
+            "routed": { "api": "anthropic", "rank": 1 },
             "resumesByPath": false,
             "relocatableSessions": true,
             "historyBeforeStart": true,
@@ -121,7 +121,7 @@
                 "driver": "codex"
             },
             "providers": "routed",
-            "routed": { "api": "responses", "rank": 3 },
+            "routed": { "api": "responses", "rank": 2 },
             "resumesByPath": false,
             "relocatableSessions": true,
             "historyBeforeStart": false,
@@ -265,7 +265,7 @@
             },
             "chat": { "driver": "opencode", "bypass": true },
             "providers": "reads",
-            "routed": { "api": "chat", "rank": 5 },
+            "routed": { "api": "chat", "rank": 4 },
             "resumesByPath": false,
             "relocatableSessions": false,
             "historyBeforeStart": true,
@@ -308,7 +308,7 @@
                 "args": ["acp"]
             },
             "providers": "reads",
-            "routed": { "api": "chat", "rank": 4 },
+            "routed": { "api": "chat", "rank": 3 },
             "resumesByPath": true,
             "relocatableSessions": false,
             "historyBeforeStart": true,
@@ -403,7 +403,7 @@
                 "args": ["acp"]
             },
             "providers": "routed",
-            "routed": { "api": "gemini", "rank": 6 },
+            "routed": { "api": "gemini", "rank": 5 },
             "resumesByPath": false,
             "relocatableSessions": false,
             "historyBeforeStart": false,

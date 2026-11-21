@@ -286,7 +286,7 @@ pub const AGENTS: &[AgentEntry] = &[
         providers: Some(ProviderUse::Routed),
         routed: Some(Routed {
             api: RoutedApi::Anthropic,
-            rank: 2,
+            rank: 1,
         }),
     },
     AgentEntry {
@@ -371,7 +371,7 @@ pub const AGENTS: &[AgentEntry] = &[
         providers: Some(ProviderUse::Routed),
         routed: Some(Routed {
             api: RoutedApi::Responses,
-            rank: 3,
+            rank: 2,
         }),
     },
     AgentEntry {
@@ -531,7 +531,7 @@ pub const AGENTS: &[AgentEntry] = &[
         providers: Some(ProviderUse::Reads),
         routed: Some(Routed {
             api: RoutedApi::Chat,
-            rank: 5,
+            rank: 4,
         }),
     },
     AgentEntry {
@@ -579,7 +579,7 @@ pub const AGENTS: &[AgentEntry] = &[
         providers: Some(ProviderUse::Reads),
         routed: Some(Routed {
             api: RoutedApi::Chat,
-            rank: 4,
+            rank: 3,
         }),
     },
     AgentEntry {
@@ -693,7 +693,7 @@ pub const AGENTS: &[AgentEntry] = &[
         providers: Some(ProviderUse::Routed),
         routed: Some(Routed {
             api: RoutedApi::Gemini,
-            rank: 6,
+            rank: 5,
         }),
     },
     AgentEntry {
