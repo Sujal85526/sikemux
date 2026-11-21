@@ -91,6 +91,12 @@ fn routed_api(agent: &str) -> Option<RoutedApi> {
     Some(agent_catalog::agent(agent)?.routed.as_ref()?.api)
 }
 
+/// Whether `agent` names its models apart from the provider it is routed to, so it picks
+/// them itself: `agy` on Google's Gemini API.
+pub fn picks_own_models(agent: &str) -> bool {
+    routed_api(agent) == Some(RoutedApi::Gemini)
+}
+
 /// A provider an agent that speaks chat completions is pointed at.
 pub struct ChatRoute<'a> {
     /// The provider's id as the agent knows it, apart from any provider of its own.
@@ -482,15 +488,15 @@ impl Provider {
     /// recommended one while models.dev lists it and the provider serves it,
     /// else the newest that reasons and calls tools, else the first served.
     /// `served` is what the provider listed, when it was asked. Claude Code
-    /// is told of a context of a million tokens by the `[1m]` suffix. None for an agent on
-    /// Google's Gemini API: `agy` names its models apart from the API, so it starts on its own.
+    /// is told of a context of a million tokens by the `[1m]` suffix. None for an agent
+    /// that [`picks_own_models`].
     pub fn coding_model(
         &self,
         agent: &str,
         feed: &Snapshot,
         served: Option<&[String]>,
     ) -> Option<String> {
-        if routed_api(agent) == Some(RoutedApi::Gemini) {
+        if picks_own_models(agent) {
             return None;
         }
         let serves = |id: &str| served.is_none_or(|served| served.iter().any(|model| model == id));
