@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::future::ready;
 use std::path::PathBuf;
 
 use rusqlite::{Connection, OpenFlags};
@@ -8,7 +9,8 @@ use super::grok::percent_decode;
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::AgentSession;
 use super::FileStamp;
-use crate::agent_ops::{AgentOps, SessionPlaces};
+use crate::agent_ops::{AgentOps, Pending, SessionPlaces};
+use crate::launch::tools::TerminalSetup;
 
 fn antigravity_root() -> Option<PathBuf> {
     Some(home()?.join(".gemini/antigravity-cli"))
@@ -130,6 +132,13 @@ impl AgentOps for Antigravity {
 
     fn prose_stamp(&self, found: &Found) -> Option<FileStamp> {
         Some(FileStamp::at_secs(found.session.mtime))
+    }
+
+    fn terminal_tools<'a>(
+        &'a self,
+        _setup: &'a mut TerminalSetup<'_>,
+    ) -> Pending<'a, Result<Vec<String>, String>> {
+        Box::pin(ready(Ok(Vec::new())))
     }
 
     fn chat_sign_in(&self, env: &BTreeMap<String, String>) -> Option<Result<&'static str, String>> {
