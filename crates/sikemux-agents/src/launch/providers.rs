@@ -481,13 +481,17 @@ impl Provider {
     /// recommended one while models.dev lists it and the provider serves it,
     /// else the newest that reasons and calls tools, else the first served.
     /// `served` is what the provider listed, when it was asked. Claude Code
-    /// is told of a context of a million tokens by the `[1m]` suffix.
+    /// is told of a context of a million tokens by the `[1m]` suffix. None for an agent on
+    /// Google's Gemini API: `agy` names its models apart from the API, so it starts on its own.
     pub fn coding_model(
         &self,
         agent: &str,
         feed: &Snapshot,
         served: Option<&[String]>,
     ) -> Option<String> {
+        if routed_api(agent) == Some(RoutedApi::Gemini) {
+            return None;
+        }
         let serves = |id: &str| served.is_none_or(|served| served.iter().any(|model| model == id));
         let listed = self.models_dev.as_deref().and_then(|id| feed.models(id));
         let recommended = self
