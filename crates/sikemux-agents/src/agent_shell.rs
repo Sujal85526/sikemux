@@ -47,8 +47,9 @@ pub fn install(data_dir: &Path) {
 /// `.zshenv` may move, then comes back here for the next file.
 fn startup(name: &str, options: Option<&str>) -> String {
     let user = format!("${{{}:-$HOME}}", vars::USER_ZDOTDIR);
+    let kept = vars::KEPT_OVER_PROFILE;
     let mut text = format!(
-        "_sikemux_zdotdir=$ZDOTDIR\nZDOTDIR={user}\n[[ -f $ZDOTDIR/{name} ]] && source $ZDOTDIR/{name}\nexport {}=$ZDOTDIR\nZDOTDIR=$_sikemux_zdotdir\nunset _sikemux_zdotdir\n",
+        "_sikemux_zdotdir=$ZDOTDIR\nZDOTDIR={user}\ntypeset -A _sikemux_kept\nfor _sikemux_name in ${{={kept}}}; do _sikemux_kept[$_sikemux_name]=${{(P)_sikemux_name}}; done\n[[ -f $ZDOTDIR/{name} ]] && source $ZDOTDIR/{name}\nfor _sikemux_name in ${{={kept}}}; do export \"$_sikemux_name=${{_sikemux_kept[$_sikemux_name]}}\"; done\nunset _sikemux_kept _sikemux_name\nexport {}=$ZDOTDIR\nZDOTDIR=$_sikemux_zdotdir\nunset _sikemux_zdotdir\n",
         vars::USER_ZDOTDIR
     );
     text.push_str(&format!(

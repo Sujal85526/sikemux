@@ -646,6 +646,10 @@ impl Provider {
             self.reached_at("gemini", url),
         );
         env.insert("GEMINI_API_KEY".into(), token);
+        env.insert(
+            sikemux_process::vars::KEPT_OVER_PROFILE.into(),
+            "GEMINI_API_KEY GOOGLE_GEMINI_BASE_URL".into(),
+        );
         Some(())
     }
 

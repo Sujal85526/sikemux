@@ -23,6 +23,9 @@ pub const BUILD_TURN: &str = "SIKEMUX_BUILD_TURN";
 /// makes one the project marks final wait as any other.
 pub const PRIORITY: &str = "SIKEMUX_PRIORITY";
 pub const USER_ZDOTDIR: &str = "SIKEMUX_USER_ZDOTDIR";
+/// The variables, space-separated, an agent's shell sets back after each of the person's startup
+/// files, so a key Sikemux hands the agent wins over one the person exports there.
+pub const KEPT_OVER_PROFILE: &str = "SIKEMUX_KEPT_OVER_PROFILE";
 /// Set on an agent whose repository's remote has an identity of the agents' own, for its shell
 /// to drop [`PERSON_GITHUB_TOKENS`] again after the person's startup files set them.
 pub const GITHUB_TOKENS_WITHHELD: &str = "SIKEMUX_GITHUB_TOKENS_WITHHELD";
@@ -69,7 +72,7 @@ pub const CLAUDE_ENTRYPOINT: (&str, &str) = ("CLAUDE_CODE_ENTRYPOINT", "sikemux"
 /// agent's transcript saving off and hand it the session's messaging socket, its Claude home, and
 /// Sikemux's names for that session's agent, which Sikemux sets afresh for each program. Claude
 /// Code's own settings, such as `CLAUDE_CODE_USE_BEDROCK`, are the person's and go through.
-pub const LAUNCHING_SESSION: [&str; 20] = [
+pub const LAUNCHING_SESSION: [&str; 21] = [
     "CLAUDECODE",
     "CLAUDE_CODE_CHILD_SESSION",
     "CLAUDE_CODE_ENTRYPOINT",
@@ -89,6 +92,7 @@ pub const LAUNCHING_SESSION: [&str; 20] = [
     REAL_GIT,
     BUILD_TURN,
     GITHUB_TOKENS_WITHHELD,
+    KEPT_OVER_PROFILE,
     PUSH_GRANT,
 ];
 
