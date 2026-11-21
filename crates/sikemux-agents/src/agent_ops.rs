@@ -70,6 +70,15 @@ pub trait AgentOps: Sync {
         None
     }
 
+    /// The one sign-in a chat uses, chosen from the environment `env` it starts with, for an
+    /// agent whose own sign-ins Sikemux never offers; an error says what to set up first.
+    fn chat_sign_in(
+        &self,
+        _env: &BTreeMap<String, String>,
+    ) -> Option<Result<&'static str, String>> {
+        None
+    }
+
     /// Its saved sessions that ran in `cwd`, newest first.
     fn sessions(&self, cwd: &str, config_path: Option<&str>) -> Vec<AgentSession>;
 
@@ -343,6 +352,7 @@ impl AgentKind {
             AgentKind::Pi => &sessions::pi::Pi,
             AgentKind::Opencode => &sessions::opencode::Opencode,
             AgentKind::Omp => &sessions::omp::Omp,
+            AgentKind::Antigravity => &sessions::antigravity::Antigravity,
             AgentKind::Grok => &sessions::grok::Grok,
             AgentKind::Muse => &sessions::muse::Muse,
         }

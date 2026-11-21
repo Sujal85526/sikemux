@@ -46,7 +46,7 @@ const FLAGS = [
 const CORE_FLAGS = ["historyBeforeStart"];
 const DRIVERS = ["claude", "codex", "muse", "pi", "opencode", "acp"];
 const PROVIDERS = ["routed", "reads"];
-const ROUTED_APIS = ["anthropic", "responses", "chat"];
+const ROUTED_APIS = ["anthropic", "responses", "chat", "gemini"];
 
 /** Everything the share page paints in an agent's colour, as a selector with `%` for the agent and the property it sets. */
 const BRANDED = [[".agent-glyph.%", "color"]];
@@ -579,6 +579,8 @@ pub enum RoutedApi {
     /// OpenAI's chat completions, which every provider serves. The agent knows the
     /// provider by an id of Sikemux's and its models as \`<id>/<model>\`.
     Chat,
+    /// Google's Gemini API, which takes the key in \`x-goog-api-key\`.
+    Gemini,
 }
 
 /// How Sikemux points the agent at a provider in place of its maker's account.
