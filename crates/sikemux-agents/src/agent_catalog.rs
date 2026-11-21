@@ -693,7 +693,7 @@ pub const AGENTS: &[AgentEntry] = &[
         providers: Some(ProviderUse::Routed),
         routed: Some(Routed {
             api: RoutedApi::Gemini,
-            rank: 1,
+            rank: 6,
         }),
     },
     AgentEntry {

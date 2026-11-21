@@ -403,7 +403,7 @@
                 "args": ["acp"]
             },
             "providers": "routed",
-            "routed": { "api": "gemini", "rank": 1 },
+            "routed": { "api": "gemini", "rank": 6 },
             "resumesByPath": false,
             "relocatableSessions": false,
             "historyBeforeStart": false,
