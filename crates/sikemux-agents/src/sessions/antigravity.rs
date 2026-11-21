@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use rusqlite::{Connection, OpenFlags};
 use sikemux_process::paths::home;
-use sikemux_process::user_environment::shell_var;
 
 use super::grok::percent_decode;
 use super::recent::{Found, Hit, Listed, PageScan};
@@ -134,16 +133,11 @@ impl AgentOps for Antigravity {
     }
 
     fn chat_sign_in(&self, env: &BTreeMap<String, String>) -> Option<Result<&'static str, String>> {
-        let set = |name: &str| {
-            env.get(name)
-                .cloned()
-                .or_else(|| shell_var(name))
-                .is_some_and(|value| !value.trim().is_empty())
-        };
-        Some(if set("GEMINI_API_KEY") {
+        let keyed = env
+            .get("GEMINI_API_KEY")
+            .is_some_and(|key| !key.trim().is_empty());
+        Some(if keyed {
             Ok("gemini-api-key")
-        } else if set("GOOGLE_CLOUD_PROJECT") {
-            Ok("agent-platform")
         } else {
             Err("Connect Google AI Studio in Settings › Models to run Antigravity".to_owned())
         })
