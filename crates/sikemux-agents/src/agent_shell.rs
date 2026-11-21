@@ -49,7 +49,7 @@ fn startup(name: &str, options: Option<&str>) -> String {
     let user = format!("${{{}:-$HOME}}", vars::USER_ZDOTDIR);
     let kept = vars::KEPT_OVER_PROFILE;
     let mut text = format!(
-        "_sikemux_zdotdir=$ZDOTDIR\nZDOTDIR={user}\ntypeset -A _sikemux_kept\nfor _sikemux_name in ${{={kept}}}; do _sikemux_kept[$_sikemux_name]=${{(P)_sikemux_name}}; done\n[[ -f $ZDOTDIR/{name} ]] && source $ZDOTDIR/{name}\nfor _sikemux_name in ${{={kept}}}; do export \"$_sikemux_name=${{_sikemux_kept[$_sikemux_name]}}\"; done\nunset _sikemux_kept _sikemux_name\nexport {}=$ZDOTDIR\nZDOTDIR=$_sikemux_zdotdir\nunset _sikemux_zdotdir\n",
+        "_sikemux_zdotdir=$ZDOTDIR\nZDOTDIR={user}\ntypeset -A _sikemux_kept\nfor _sikemux_name in ${{={kept}-}}; do _sikemux_kept[$_sikemux_name]=${{(P)_sikemux_name-}}; done\n[[ -f $ZDOTDIR/{name} ]] && source $ZDOTDIR/{name}\nfor _sikemux_name in ${{={kept}-}}; do if [[ ${{(tP)_sikemux_name-}} == *readonly* ]]; then print -u2 \"Sikemux: $_sikemux_name is read-only in your shell startup files, so it keeps their value\"; else export \"$_sikemux_name=${{_sikemux_kept[$_sikemux_name]}}\"; fi; done\nunset _sikemux_kept _sikemux_name\nexport {}=$ZDOTDIR\nZDOTDIR=$_sikemux_zdotdir\nunset _sikemux_zdotdir\n",
         vars::USER_ZDOTDIR
     );
     text.push_str(&format!(
