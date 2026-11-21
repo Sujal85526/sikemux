@@ -669,8 +669,17 @@ pub const AGENTS: &[AgentEntry] = &[
         git_shim_args: &[],
         home: None,
         terminal: Terminal {
-            normal: &["--mode", "accept-edits"],
-            bypass: Some(&["--dangerously-skip-permissions"]),
+            normal: &[
+                "--settings",
+                "{\"modelProvider\":\"gemini\"}",
+                "--mode",
+                "accept-edits",
+            ],
+            bypass: Some(&[
+                "--settings",
+                "{\"modelProvider\":\"gemini\"}",
+                "--dangerously-skip-permissions",
+            ]),
             auto: None,
             effort: Some(["--effort", "{}"]),
             resume: Resume::Flag("--conversation"),

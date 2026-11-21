@@ -389,8 +389,8 @@
             "gitShimArgs": [],
             "home": null,
             "terminal": {
-                "normal": ["--mode", "accept-edits"],
-                "bypass": ["--dangerously-skip-permissions"],
+                "normal": ["--settings", "{\"modelProvider\":\"gemini\"}", "--mode", "accept-edits"],
+                "bypass": ["--settings", "{\"modelProvider\":\"gemini\"}", "--dangerously-skip-permissions"],
                 "auto": null,
                 "effort": ["--effort", "{}"],
                 "resume": {

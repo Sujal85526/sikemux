@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap};
-use std::future::ready;
 use std::path::PathBuf;
 
 use rusqlite::{Connection, OpenFlags};
@@ -10,11 +9,7 @@ use super::grok::percent_decode;
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::AgentSession;
 use super::FileStamp;
-use crate::agent_ops::{AgentOps, Pending, SessionPlaces};
-use crate::launch::tools::TerminalSetup;
-
-/// Settings for this run only, so `agy` uses the Gemini API key and never a Google sign-in.
-const GEMINI_SETTINGS: &str = r#"{"modelProvider":"gemini"}"#;
+use crate::agent_ops::{AgentOps, SessionPlaces};
 
 fn antigravity_root() -> Option<PathBuf> {
     Some(home()?.join(".gemini/antigravity-cli"))
@@ -152,15 +147,5 @@ impl AgentOps for Antigravity {
         } else {
             Err("Connect Google AI Studio in Settings › Models to run Antigravity".to_owned())
         })
-    }
-
-    fn terminal_tools<'a>(
-        &'a self,
-        _setup: &'a mut TerminalSetup<'_>,
-    ) -> Pending<'a, Result<Vec<String>, String>> {
-        Box::pin(ready(Ok(vec![
-            "--settings".to_owned(),
-            GEMINI_SETTINGS.to_owned(),
-        ])))
     }
 }
