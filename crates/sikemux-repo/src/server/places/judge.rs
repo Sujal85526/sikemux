@@ -282,6 +282,12 @@ fn production_fact(ship: &Ship, found_in: Option<String>) -> Option<Place> {
             format!("The {name} database"),
             Recognise::Database { name: name.clone() },
         )),
+        Target::Site { origin } if manages_domains(origin, &ship.what) => Some(place(
+            format!("Domains at {}", origin.trim_start_matches("https://")),
+            Recognise::Site {
+                origin: origin.clone(),
+            },
+        )),
         Target::Workflow {
             file, environments, ..
         } if workflow_asks(target) => {
@@ -296,6 +302,43 @@ fn production_fact(ship: &Ship, found_in: Option<String>) -> Option<Place> {
         }
         _ => None,
     }
+}
+
+/// Whether a write to the site at `origin`, as `what`, changes where a domain points: one to a
+/// registrar's or a DNS host's panel, or one whose request, past its host, names nameservers,
+/// DNS or a domain.
+fn manages_domains(origin: &str, what: &str) -> bool {
+    const PANELS: &[&str] = &[
+        "tasjeel.ae",
+        "godaddy.com",
+        "namecheap.com",
+        "dash.cloudflare.com",
+        "porkbun.com",
+        "name.com",
+        "namesilo.com",
+        "gandi.net",
+        "dynadot.com",
+        "hover.com",
+        "domains.squarespace.com",
+        "ionos.com",
+        "networksolutions.com",
+        "enom.com",
+        "hostinger.com",
+        "route53.console.aws.amazon.com",
+        "domains.google.com",
+    ];
+    const WORDS: &[&str] = &["nameserver", "dns", "domain", "registrar", "whois"];
+    let host = origin.split("://").nth(1).unwrap_or(origin);
+    let host = host
+        .split([':', '/'])
+        .next()
+        .unwrap_or(host)
+        .to_ascii_lowercase();
+    let at_panel = PANELS
+        .iter()
+        .any(|panel| host == *panel || host.ends_with(&format!(".{panel}")));
+    let rest = what.to_ascii_lowercase().replace(&host, "");
+    at_panel || WORDS.iter().any(|word| rest.contains(word))
 }
 
 /// Whether a fact of `ship` says it lands somewhere that isn't production. Only asked once
@@ -460,6 +503,41 @@ mod tests {
             judged.place.map(|place| place.shown.name),
             Some("Payments".into())
         );
+    }
+
+    /// voire's Ryosuke changed voire.ae's nameservers in its registrar's panel with the desk
+    /// browser on 2026-11-23; nothing placed the site, so the write ran unheld and took the
+    /// live site down.
+    #[test]
+    fn a_registrar_panel_write_holds_and_ordinary_sites_do_not() {
+        let submit = |what: &str, origin: &str| Ship {
+            kind: ShipKind::Publish,
+            what: what.to_owned(),
+            target: Some(Target::Site {
+                origin: origin.into(),
+            }),
+        };
+        let nameservers = submit(
+            "POST https://my.tasjeel.ae/clientarea.php?action=domaindetails",
+            "https://my.tasjeel.ae",
+        );
+        let judged = judged(&[], true, &nameservers, "Ryosuke");
+        assert_eq!(judged.goes, Goes::Asks);
+        assert!(judged.keep);
+        let own_panel = submit(
+            "POST https://hosting.example.com/clientarea.php?action=domaindns",
+            "https://hosting.example.com",
+        );
+        assert_eq!(judged_on(&own_panel), Goes::Asks);
+        let search = submit(
+            "GET https://www.google.com/search",
+            "https://www.google.com",
+        );
+        assert_eq!(judged_on(&search), Goes::Unplaced);
+    }
+
+    fn judged_on(ship: &Ship) -> Goes {
+        judged(&[], true, ship, "Ryosuke").goes
     }
 
     #[test]
