@@ -644,10 +644,10 @@ fn place_worker(
     }) else {
         return;
     };
-    if placed.id == current {
+    let id = LauncherId::on(provider, &placed.id).to_string();
+    if placed.id == current && launcher.as_deref() == Some(id.as_str()) {
         return;
     }
-    let id = LauncherId::on(provider, &placed.id).to_string();
     let Ok(picked) = core.workspaces().launcher(&id) else {
         return;
     };
