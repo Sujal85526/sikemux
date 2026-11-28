@@ -36,16 +36,23 @@ fn held() -> &'static Mutex<Held> {
     HELD.get_or_init(Default::default)
 }
 
-/// Keeps the unpaid accounts in `file`, taking up what an earlier core kept there.
+/// Keeps the unpaid accounts in `file`, taking up what an earlier core kept there along with
+/// any refused since this core started.
 pub fn keep_in(file: PathBuf) {
-    let kept = std::fs::read(&file)
+    let mut kept: BTreeMap<String, Refusal> = std::fs::read(&file)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
-    *held().locked() = Held {
+    let mut held = held().locked();
+    let refused_since = !held.by_account.is_empty();
+    kept.append(&mut held.by_account);
+    *held = Held {
         file: Some(file),
         by_account: kept,
     };
+    if refused_since {
+        save(&held);
+    }
 }
 
 fn save(held: &Held) {
