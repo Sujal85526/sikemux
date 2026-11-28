@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use sikemux_fold::UpdateKind;
 
 use crate::agent_accounts::sign_in::{self, SignIn};
-use crate::agent_accounts::{allocate, usage};
+use crate::agent_accounts::{allocate, unpaid, usage};
 use sikemux_process::clock::epoch_ms;
 
 use super::native::SessionEnd;
@@ -140,9 +140,9 @@ pub fn switches_at_limit(chat: &Chat) -> bool {
     })
 }
 
-/// The account to move to that is signed in and not known to be full for the chat: of those,
-/// the one next in line, else the first. `person` when the chat answers the person's own
-/// message, which may use the last tenth agents leave them.
+/// The account to move to that is signed in, paid for and not known to be full for the chat:
+/// of those, the one next in line, else the first. `person` when the chat answers the person's
+/// own message, which may use the last tenth agents leave them.
 pub fn next_account<'a>(
     chat: &Chat,
     provider: &str,
@@ -163,6 +163,7 @@ pub fn next_account<'a>(
                     .as_ref()
                     .is_none_or(|book| book.allowed_in(&launch.cwd, &fallback.id))
                 && sign_in::signed_in(provider, env) != Some(SignIn::SignedOut)
+                && !unpaid::is_unpaid(provider, crate::launch::named_account(provider, env))
                 && !usage::last_reading(provider, crate::launch::named_account(provider, env))
                     .is_some_and(|reading| {
                         let placing = allocate::Chat {
