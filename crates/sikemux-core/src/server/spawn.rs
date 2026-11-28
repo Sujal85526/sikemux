@@ -628,8 +628,8 @@ fn place_worker(
         person: false,
         cwd: Some(cwd.to_path_buf()),
     };
-    let current = (launcher.as_deref())
-        .and_then(|id| LauncherId::parse(id).account.map(str::to_owned))
+    let folder = crate::launch::named_account(provider, &launch.env);
+    let current = (book.account_in(provider, folder).map(|profile| profile.id))
         .or_else(|| launch.account.as_ref().map(|account| account.id.clone()))
         .unwrap_or_else(|| book.chosen(provider));
     let placed = smart
@@ -644,10 +644,10 @@ fn place_worker(
     }) else {
         return;
     };
-    let id = LauncherId::on(provider, &placed.id).to_string();
-    if launcher.as_deref() == Some(id.as_str()) {
+    if placed.id == current {
         return;
     }
+    let id = LauncherId::on(provider, &placed.id).to_string();
     let Ok(picked) = core.workspaces().launcher(&id) else {
         return;
     };
