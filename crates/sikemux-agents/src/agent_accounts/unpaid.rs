@@ -112,3 +112,22 @@ pub fn is_unpaid(provider: &str, config_path: Option<&str>) -> bool {
     save(&held);
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unpaid_account_is_still_held_after_a_restart() {
+        let data = tempfile::tempdir().expect("data");
+        let account = tempfile::tempdir().expect("account");
+        let folder = account.path().to_str().expect("folder");
+        let file = data.path().join("unpaid-accounts.json");
+        keep_in(file.clone());
+        mark("claude", Some(folder));
+
+        keep_in(file);
+
+        assert!(is_unpaid("claude", Some(folder)));
+    }
+}
