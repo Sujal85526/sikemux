@@ -501,7 +501,7 @@ fn start(
             (core.workspaces()).worker_launch(&lead, &provider, &cwd, None, Paid::By(None))?;
     }
     if resume.is_none() && launch.model_provider.is_none() {
-        smart_place_worker(core, &provider, &cwd, &mut launch, &mut launcher);
+        place_worker(core, &provider, &cwd, &mut launch, &mut launcher);
     }
     if let Some(was) = &was {
         launch.effort = was.effort.clone();
@@ -602,7 +602,9 @@ fn start(
     }))
 }
 
-fn smart_place_worker(
+/// Moves a new worker off the account it took from its lead when smart accounts would place it
+/// elsewhere, or when that account is unpaid, signed out, kept from the project or full.
+fn place_worker(
     core: &Core,
     provider: &str,
     cwd: &Path,
@@ -610,7 +612,8 @@ fn smart_place_worker(
     launcher: &mut Option<String>,
 ) {
     let book = core.workspaces().accounts().unwrap_or_default();
-    if !book.smart_for(provider) {
+    let smart = book.smart_for(provider);
+    if !smart && crate::agent_accounts::by_hand(provider) {
         return;
     }
     let accounts = (book.clone().with_built_ins().profiles.iter())
@@ -629,13 +632,16 @@ fn smart_place_worker(
         .and_then(|id| LauncherId::parse(id).account.map(str::to_owned))
         .or_else(|| launch.account.as_ref().map(|account| account.id.clone()))
         .unwrap_or_else(|| book.chosen(provider));
-    let Some(placed) = super::agent_accounts::placement(&book, provider, &placing, |_| true)
-        .or_else(|| {
-            super::agent_accounts::is_full(&book, provider, &current, model.as_deref())
-                .then(|| super::agent_accounts::with_quota(&book, provider, &placing))
-                .flatten()
-        })
-    else {
+    let placed = smart
+        .then(|| super::agent_accounts::placement(&book, provider, &placing, |_| true))
+        .flatten();
+    let Some(placed) = placed.or_else(|| {
+        let stuck = !book.can_keep(provider, &current, cwd)
+            || super::agent_accounts::is_full(&book, provider, &current, model.as_deref());
+        stuck
+            .then(|| super::agent_accounts::with_quota(&book, provider, &placing))
+            .flatten()
+    }) else {
         return;
     };
     let id = LauncherId::on(provider, &placed.id).to_string();
