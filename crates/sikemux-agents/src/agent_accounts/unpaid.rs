@@ -1,19 +1,63 @@
 //! Accounts whose provider refused a chat because the plan is unpaid. Each is kept off new
-//! chats until a turn goes through on it again or it is signed in as someone else.
+//! chats until a turn goes through on it again, it is signed in as someone else, or a day
+//! has passed, across restarts once the core names a file to keep them in.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
+use serde::{Deserialize, Serialize};
+use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::key;
 use super::sign_in::{signed_in, SignIn};
 use crate::launch::account_environment;
 
-/// Each unpaid account, with who it was signed in as when its plan was refused.
-fn held() -> &'static Mutex<HashMap<String, Option<SignIn>>> {
-    static HELD: OnceLock<Mutex<HashMap<String, Option<SignIn>>>> = OnceLock::new();
-    HELD.get_or_init(|| Mutex::new(HashMap::new()))
+/// How long a refused plan keeps its account off new chats, so a bill paid since is tried again.
+const HOLD_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// Who the account was signed in as when its plan was refused, and when.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Refusal {
+    signed_in: Option<SignIn>,
+    at_ms: u64,
+}
+
+#[derive(Default)]
+struct Held {
+    file: Option<PathBuf>,
+    by_account: BTreeMap<String, Refusal>,
+}
+
+fn held() -> &'static Mutex<Held> {
+    static HELD: OnceLock<Mutex<Held>> = OnceLock::new();
+    HELD.get_or_init(Default::default)
+}
+
+/// Keeps the unpaid accounts in `file`, taking up what an earlier core kept there.
+pub fn keep_in(file: PathBuf) {
+    let kept = std::fs::read(&file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    *held().locked() = Held {
+        file: Some(file),
+        by_account: kept,
+    };
+}
+
+fn save(held: &Held) {
+    let Some(file) = &held.file else {
+        return;
+    };
+    let written = serde_json::to_vec(&held.by_account)
+        .map_err(std::io::Error::other)
+        .and_then(|bytes| sikemux_process::files::write_atomic(file, &bytes, true));
+    if let Err(error) = written {
+        eprintln!("sikemux core: could not keep the unpaid accounts: {error}");
+    }
 }
 
 fn sign_in_of(provider: &str, config_path: Option<&str>) -> Option<SignIn> {
@@ -24,28 +68,47 @@ fn sign_in_of(provider: &str, config_path: Option<&str>) -> Option<SignIn> {
 }
 
 pub fn mark(provider: &str, config_path: Option<&str>) {
-    let signed = sign_in_of(provider, config_path);
-    held().locked().insert(key(provider, config_path), signed);
+    let refusal = Refusal {
+        signed_in: sign_in_of(provider, config_path),
+        at_ms: epoch_ms(),
+    };
+    let mut held = held().locked();
+    held.by_account.insert(key(provider, config_path), refusal);
+    save(&held);
 }
 
 pub fn any() -> bool {
-    !held().locked().is_empty()
+    !held().locked().by_account.is_empty()
 }
 
 /// Answers whether the account was held as unpaid.
 pub fn clear(provider: &str, config_path: Option<&str>) -> bool {
     let mut held = held().locked();
-    !held.is_empty() && held.remove(&key(provider, config_path)).is_some()
+    let cleared = held
+        .by_account
+        .remove(&key(provider, config_path))
+        .is_some();
+    if cleared {
+        save(&held);
+    }
+    cleared
 }
 
+/// Whether the account is held as unpaid. A sign-in that cannot be read now, such as a file
+/// caught halfway through being written, keeps the hold; only another sign-in lifts it early.
 pub fn is_unpaid(provider: &str, config_path: Option<&str>) -> bool {
     let key = key(provider, config_path);
-    let Some(refused) = held().locked().get(&key).cloned() else {
+    let Some(refusal) = held().locked().by_account.get(&key).cloned() else {
         return false;
     };
-    if sign_in_of(provider, config_path) == refused {
+    let now = sign_in_of(provider, config_path);
+    let signed_in_anew = now.is_some() && refusal.signed_in.is_some() && now != refusal.signed_in;
+    let lapsed = epoch_ms().saturating_sub(refusal.at_ms) >= HOLD_MS;
+    if !signed_in_anew && !lapsed {
         return true;
     }
-    held().locked().remove(&key);
+    let mut held = held().locked();
+    held.by_account.remove(&key);
+    save(&held);
     false
 }

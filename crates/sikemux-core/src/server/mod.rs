@@ -931,6 +931,7 @@ pub(crate) async fn run_core(
     goal_summary::name_unnamed(&core);
     if let Some(data_dir) = config.data_dir.as_deref() {
         crate::agent_accounts::usage::keep_readings_in(data_dir.join("plan-limits.json"));
+        crate::agent_accounts::unpaid::keep_in(data_dir.join("unpaid-accounts.json"));
         let startup = core.clone();
         tokio::spawn(async move {
             workspace::refresh_launchers(startup.clone()).await;
