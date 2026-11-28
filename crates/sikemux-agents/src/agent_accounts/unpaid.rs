@@ -3,7 +3,7 @@
 //! has passed, across restarts once the core names a file to keep them in.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
@@ -39,10 +39,7 @@ fn held() -> &'static Mutex<Held> {
 /// Keeps the unpaid accounts in `file`, taking up what an earlier core kept there along with
 /// any refused since this core started.
 pub fn keep_in(file: PathBuf) {
-    let mut kept: BTreeMap<String, Refusal> = std::fs::read(&file)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default();
+    let mut kept = read(&file);
     let mut held = held().locked();
     let refused_since = !held.by_account.is_empty();
     kept.append(&mut held.by_account);
@@ -53,6 +50,13 @@ pub fn keep_in(file: PathBuf) {
     if refused_since {
         save(&held);
     }
+}
+
+fn read(file: &Path) -> BTreeMap<String, Refusal> {
+    std::fs::read(file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
 }
 
 fn save(held: &Held) {
@@ -125,7 +129,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_unpaid_account_is_still_held_after_a_restart() {
+    fn an_unpaid_account_is_kept_for_the_core_after_a_restart() {
         let data = tempfile::tempdir().expect("data");
         let account = tempfile::tempdir().expect("account");
         let folder = account.path().to_str().expect("folder");
@@ -133,8 +137,8 @@ mod tests {
         keep_in(file.clone());
         mark("claude", Some(folder));
 
-        keep_in(file);
+        let kept = read(&file);
 
-        assert!(is_unpaid("claude", Some(folder)));
+        assert!(kept.contains_key(&key("claude", Some(folder))));
     }
 }
